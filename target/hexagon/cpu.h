@@ -37,8 +37,12 @@ typedef struct HexagonGlobalRegState HexagonGlobalRegState;
 #include "mmvec/mmvec.h"
 #include "hw/core/registerfields.h"
 #include "qemu/bitmap.h"
+#ifndef CONFIG_USER_ONLY
+#include "hw/intc/l2vic.h"
+#endif
 
 #include "target/hexagon/reg_fields.h"
+#include "hw/intc/l2vic.h"
 
 #define NUM_PREGS 4
 #define TOTAL_PER_THREAD_REGS 64
@@ -195,9 +199,11 @@ struct ArchCPU {
     bool short_circuit;
 #ifndef CONFIG_USER_ONLY
     HexagonTLBState *tlb;
+    uint32_t hvx_contexts;
     uint32_t boot_addr;
     HexagonGlobalRegState *globalregs;
     uint32_t htid;
+    L2VicInterface *l2vic;
 #endif
 };
 
