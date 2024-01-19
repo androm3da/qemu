@@ -26,6 +26,10 @@
 #define __SELF_DEF_EXTINSN 1
 #endif
 
+/*
+ * EJP: FIXME: a lot of this is a mess.  Lots of copypasta.  We should be using more
+ * macros to increase terseness.
+ */
 #ifndef NO_MMVEC
 
 #define DO_FOR_EACH_CODE(WIDTH, CODE) \
@@ -3283,6 +3287,9 @@ ITERATOR_INSN_IEEE_FP_16_32_LATE(16, vmin_bf, "Vd32.bf=vmin(Vu32.bf,Vv32.bf)",
 #undef ATTR_VMEM
 #undef ATTR_VMEMU
 #undef ATTR_VMEM_NT
+#undef ITERATOR_INSN_SHIFT3_SLOT
+#undef WHIST
+#undef PRINT_VU
 
 #endif /* NO_MMVEC */
 
