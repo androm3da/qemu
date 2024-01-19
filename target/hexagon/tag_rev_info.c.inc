@@ -701,7 +701,6 @@ static const struct tag_rev_info tag_rev_info[XX_LAST_OPCODE] = {
     [V6_vsub_hf_mix] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [V6_vsub_qf16] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [V6_vsub_qf16_mix] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
-    [V6_vsub_qf32] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [V6_vsub_qf32_mix] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [V6_vsub_sf] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [V6_vsub_sf_mix] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },

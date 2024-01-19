@@ -227,6 +227,12 @@ void hexagon_cpu_soft_reset(CPUHexagonState *env);
 void hexagon_clear_llsc(CPUHexagonState *env);
 typedef HexagonCPU ArchCPU;
 
+static inline HexagonVersion hexagon_version_env(CPUHexagonState *env)
+{
+    HexagonCPU *hex_cpu = container_of(env, HexagonCPU, env);
+    return hex_cpu->cfg.hex_def->hex_version;
+}
+
 void hexagon_translate_init(void);
 void hexagon_translate_code(CPUState *cs, TranslationBlock *tb,
                             int *max_insns, vaddr pc, void *host_pc);

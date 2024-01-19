@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
+#include "mappings.idef"
+
+#define STRINGIZE(X) #X
+
+#define Q6INSN(TAG, BEH, ATTRIBS, DESCR, SEM) \
+	Q6INSN_REV(HEXAGON_REV, #TAG, BEH, #ATTRIBS, DESCR, STRINGIZE(SEM)) \
+	Q6INSN_REV_END
+
+#define HEXAGON_REV 75
+#include "mmvec/ext-v75.idef"
+#undef HEXAGON_REV
+
+#define HEXAGON_REV 79
+#include "mmvec/ext-v79.idef"
+#undef HEXAGON_REV

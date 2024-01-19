@@ -755,3 +755,74 @@ uint32_t get_usr_reg_fpsat_field(CPUHexagonState *env)
 {
     return get_usr_field(env, USR_FPSAT);
 }
+
+unfloat legacy_parse_qf32(int32_t in)
+{
+    unfloat out = { 0 };
+    int32_t signif;
+
+    out.sign = (in >> 31) & 1;
+    out.exp = (in & 0xff) - BIAS_QF32;
+    signif = ((int64_t)in >> 7) | 1;
+    out.sig = (double)signif * 0x1p-23;
+    return out;
+}
+
+int32_t legacy_rnd_sat_qf32(int exp, double sig, double sig_low)
+{
+    double scale = 1.0;
+    double sig_f = 0.0;
+    double sig_s;
+    double r1;
+    double r2;
+    double r3;
+    uint64_t sig_bits;
+    uint64_t sig_64;
+    uint32_t sig_32;
+    int exp_df;
+    int sign = sig < 0.0;
+    int exp_adj = 0;
+    bool prod_ovf = fabs(sig) >= 2.0 && sig != -2.0;
+
+    if (exp >= 129 || (prod_ovf && exp == 128)) {
+        return (((sign - 1) & 0x7fffff) | (sign << 23)) << 8 | 0xff;
+    }
+    if (exp <= -129) {
+        return (((-sign) & 0x7fffff) | (sign << 23)) << 8;
+    }
+    if (exp == -128 || (prod_ovf && exp < 128)) {
+        scale = 2.0;
+        exp_adj = 1;
+    }
+    sig_s = sig / scale;
+    r1 = sig_s * 0x1p23;
+    r2 = floor(r1 / 4.0) * 4.0;
+    r3 = r1 - r2;
+    if ((r3 == 0.0 && sig_low < 0.0)) {
+        sig_f = sig_s + (3.0 - r3 - 4.0) * 0x1p-23;
+    } else if (exp == 128 || exp == -128 || prod_ovf) {
+        sig_f = sig_s + ((r3 < 2.0 || (r3 == 2.0 && sig_low <= 0.0)) ?
+                         1.0 - r3 : 3.0 - r3) * 0x1p-23;
+    } else if (r3 < 1.5 || (r3 == 1.5 && sig_low <= 0.0)) {
+        sig_f = sig_s + (1.0 - r3) * 0x1p-23;
+    } else if (r3 < 2.5 || (r3 == 2.5 && sig_low <= 0.0)) {
+        sig_f = (sig + (2.0 - r3) * 0x1p-23) * 0.5;
+        exp_adj = 1;
+    } else {
+        sig_f = sig_s + (3.0 - r3) * 0x1p-23;
+    }
+    memcpy(&sig_bits, &sig_f, sizeof(sig_bits));
+    exp_df = ((sig_bits >> 52) & 0x7ff) - 1023;
+    sig_64 = ((sig_bits & UINT64_C(0xfffffffffffff)) |
+              UINT64_C(0x10000000000000)) << 11;
+    sig_64 = exp_df >= 0 ? sig_64 << exp_df : sig_64 >> -exp_df;
+    sig_32 = (sig_64 >> 41) & 0x7fffff;
+    if (sign) {
+        sig_32 = ~sig_32;
+    }
+    if (sig == 0.0 && sig_low == 0.0) {
+        exp = -BIAS_QF32 - exp_adj;
+    }
+    return (((sign << 23) | (sig_32 & 0x7fffff)) << 8) |
+           ((exp + BIAS_QF32 + exp_adj) & 0xff);
+}

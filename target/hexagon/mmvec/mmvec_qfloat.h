@@ -219,4 +219,7 @@ int signum(double val);
 bool is_daz_mode(CPUHexagonState *env);
 uint32_t get_usr_reg_fpsat_field(CPUHexagonState *env);
 
+unfloat legacy_parse_qf32(int32_t in);
+int32_t legacy_rnd_sat_qf32(int exp, double sig, double sig_low);
+
 #endif
