@@ -19,6 +19,7 @@
  * Top level instruction definition file
  */
 
+#include "mappings.idef"
 #include "branch.idef"
 #include "ldst.idef"
 #include "compare.idef"
