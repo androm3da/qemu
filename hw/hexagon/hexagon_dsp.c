@@ -1,34 +1,25 @@
 /*
  * Hexagon Baseboard System emulation.
  *
- * Copyright (c) 2020 Qualcomm Innovation Center, Inc. All Rights Reserved.
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * Copyright (c) 2020-2024 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-
 #include "qemu/osdep.h"
-#include "qemu/units.h"
-#include "system/address-spaces.h"
-#include "hw/hw.h"
+#include "cpu.h"
+#include "elf.h"
 #include "hw/boards.h"
-#include "hw/qdev-properties.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/timer/qct-qtimer.h"
 #include "hw/intc/l2vic.h"
 #include "hw/char/pl011.h"
+#include "hw/hexagon/hexagon_sysreg.h"
+#include "hw/hw.h"
 #include "hw/loader.h"
+#include "hw/qdev-properties.h"
+#include "include/migration/cpu.h"
+#include "include/semihosting/semihost.h"
+#include "include/system/system.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
@@ -42,6 +33,10 @@
 #include "system/reset.h"
 #include "system/qtest.h"
 #include "semihosting/semihost.h"
+#include "qemu/units.h"
+#include "system/address-spaces.h"
+#include "system/reset.h"
+#include "target/hexagon/internal.h"
 
 #include "machine_configs.h.inc"
 #include "qemu/osdep.h"
@@ -307,6 +302,14 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
     HexagonCPU *cpu_0 = NULL;
     Error **errp = NULL;
 
+    Object *gsregs_obj = object_new(TYPE_HEXAGON_SYSREG);
+    object_property_add_child(OBJECT(machine), "global-sregs", gsregs_obj);
+
+    if (!qdev_realize_and_unref(DEVICE(gsregs_obj), NULL, errp)) {
+        error_report("Failed to realize global system registers device");
+        return;
+    }
+
     for (int i = 0; i < machine->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(machine->cpu_type));
         CPUHexagonState *env = &cpu->env;
@@ -342,6 +345,13 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
                              (m_cfg->cfgtable.coproc2_fp16_acc_exp >> 1) & 1);
 
         env->shm_fd = shm_fd;
+        /* Link the global system registers object to this CPU */
+        if (!object_property_set_link(OBJECT(cpu), "global-sregs", gsregs_obj,
+                                      errp)) {
+            error_report("Failed to link global system registers to CPU");
+            return;
+        }
+
         if (i == 0) {
             if (cpu->rev_reg) {
                 rev = cpu->rev_reg;

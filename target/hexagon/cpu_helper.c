@@ -22,8 +22,11 @@
 #include "qemu.h"
 #include "exec/helper-proto.h"
 #else
+#include "hex_interrupts.h"
+#include "hex_mmu.h"
 #include "hw/boards.h"
 #include "hw/hexagon/hexagon.h"
+#include "hw/hexagon/hexagon_sysreg.h"
 #endif
 #include "accel/tcg/cpu-ldst.h"
 #include "qemu/log.h"
@@ -75,7 +78,12 @@ uint32_t arch_get_system_reg(CPUHexagonState *env, uint32_t reg)
     }
 
     g_assert(reg < NUM_SREGS);
-    return reg < HEX_SREG_GLB_START ? env->t_sreg[reg] : env->g_sreg[reg];
+    if (reg < HEX_SREG_GLB_START) {
+        return env->t_sreg[reg];
+    } else {
+        HexagonCPU *cpu = env_archcpu(env);
+        return hexagon_sysreg_read(cpu->sysregs, reg);
+    }
 }
 
 #define BYTES_LEFT_IN_PAGE(A) (TARGET_PAGE_SIZE - ((A) % TARGET_PAGE_SIZE))

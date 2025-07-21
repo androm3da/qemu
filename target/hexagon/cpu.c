@@ -32,6 +32,7 @@
 #include "macros.h"
 #include "accel/tcg/cpu-ops.h"
 
+
 #if !defined(CONFIG_USER_ONLY)
 #include "migration/vmstate.h"
 #include "macros.h"
@@ -43,6 +44,7 @@
 #include "hex_interrupts.h"
 #include "qemu/cutils.h"
 #include "hexswi.h"
+#include "hw/hexagon/hexagon_sysreg.h"
 #endif
 #include "opcodes.h"
 #include "coproc.h"
@@ -126,6 +128,8 @@ static const Property hexagon_cpu_properties[] = {
     DEFINE_PROP_UINT32("subsystem-id", HexagonCPU, subsystem_id, 0),
     DEFINE_PROP_UINT32("jtlb-entries", HexagonCPU, jtlb_entries, MAX_TLB_ENTRIES),
     DEFINE_PROP_UINT32("dma-jtlb-entries", HexagonCPU, dma_jtlb_entries, 0),
+    DEFINE_PROP_LINK("global-sregs", HexagonCPU, sysregs, TYPE_HEXAGON_SYSREG,
+                     HexagonSysregState *),
 #endif
     DEFINE_PROP_BOOL("hvx-bfloat", HexagonCPU, hvx_bfloat, false),
     DEFINE_PROP_BOOL("coproc2-bfloat", HexagonCPU, coproc2_bfloat, false),
@@ -667,6 +671,18 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
 
     env->t_cycle_count = 0;
 
+#if 0
+    if (cs->cpu_index == 0) {
+        if (cpu->sysregs) {
+            hexagon_sysreg_reset(cpu->sysregs);
+        }
+        arch_set_system_reg(env, HEX_SREG_MODECTL, 0x1);
+        arch_set_system_reg(env, HEX_SREG_REV, cpu->rev_reg);
+        *(env->g_pcycle_base) = 0;
+    }
+#endif
+    memset(env->t_sreg, 0, sizeof(target_ulong) * NUM_SREGS);
+    memset(env->greg, 0, sizeof(target_ulong) * NUM_GREGS);
     memset(env->gpr, 0, sizeof(target_ulong) * TOTAL_PER_THREAD_REGS);
     memset(env->pred, 0, sizeof(target_ulong) * NUM_PREGS);
     memset(env->VRegs, 0, sizeof(MMVector) * NUM_VREGS);
@@ -836,6 +852,10 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
         error_report("Number of TLBs selected is invalid");
         exit(1);
     }
+    if (!cpu->sysregs) {
+        error_setg(errp, "System registers object not linked");
+        return;
+    }
     cpu->num_tlbs = DMA_TLB_OFFSET + cpu->dma_jtlb_entries;
 #endif
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
@@ -869,7 +889,6 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
 
     hex_mmu_realize(env);
     if (cs->cpu_index == 0) {
-        env->g_sreg = g_new0(target_ulong, NUM_SREGS);
         env->g_gcycle = g_new0(target_ulong, NUM_GLOBAL_GCYCLE);
         env->g_pcycle_base = g_malloc0(sizeof(*env->g_pcycle_base));
         env->pmu.g_ctrs_off = g_malloc0(NUM_PMU_CTRS * sizeof(*env->pmu.g_ctrs_off));
