@@ -496,8 +496,6 @@ struct ArchCPU {
     uint32_t vmstate_num_g_sreg;
     uint32_t vmstate_num_g_gcycle;
     uint32_t hvx_contexts;
-    uint32_t boot_addr;
-    uint64_t config_table_addr;
 
     struct HexagonSysregState *sysregs;
 #endif
