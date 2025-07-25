@@ -25,6 +25,7 @@
 #include "hw/boards.h"
 #include "hw/qdev-properties.h"
 #include "hw/hexagon/hexagon.h"
+#include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/timer/qct-qtimer.h"
 #include "hw/intc/l2vic.h"
 #include "hw/char/pl011.h"
@@ -307,15 +308,29 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
     HexagonCPU *cpu_0 = NULL;
     Error **errp = NULL;
 
+    /* Create L2VIC first but don't realize it yet */
+    DeviceState *l2vic_dev = qdev_new("l2vic");
+
+    /* Create and configure globalreg with L2VIC link */
+    DeviceState *glob_regs_dev = qdev_new(TYPE_HEXAGON_GLOBALREG);
+    object_property_add_child(OBJECT(machine), "global-regs",
+                              OBJECT(glob_regs_dev));
+    qdev_prop_set_uint64(glob_regs_dev, "config-table-addr", m_cfg->cfgbase);
+    qdev_prop_set_uint32(glob_regs_dev, "dsp-rev", rev);
+    qdev_prop_set_uint32(glob_regs_dev, "qtimer-base-addr", m_cfg->qtmr_region);
+
+    /* Link to L2VIC before realization */
+    object_property_set_link(OBJECT(glob_regs_dev), "l2vic", OBJECT(l2vic_dev),
+                             &error_abort);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(glob_regs_dev), errp);
+
+    /* Now create CPUs and link them to global registers before realization */
     for (int i = 0; i < machine->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(machine->cpu_type));
         CPUHexagonState *env = &cpu->env;
         qemu_register_reset(do_cpu_reset, cpu);
 
         qdev_prop_set_uint32(DEVICE(cpu), "thread-count", machine->smp.cpus);
-        qdev_prop_set_uint32(DEVICE(cpu), "config-table-addr", m_cfg->cfgbase);
-        qdev_prop_set_uint32(DEVICE(cpu), "l2vic-base-addr", m_cfg->l2vic_base);
-        qdev_prop_set_uint32(DEVICE(cpu), "qtimer-base-addr", m_cfg->qtmr_region);
         qdev_prop_set_uint32(DEVICE(cpu), "vtcm-base-addr",
                              m_cfg->cfgtable.vtcm_base << 16);
         qdev_prop_set_uint32(DEVICE(cpu), "vtcm-size-kb",
@@ -356,29 +371,36 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
 
         qdev_prop_set_uint32(DEVICE(cpu), "dsp-rev", rev);
 
+        if (!object_property_set_link(OBJECT(cpu), "global-regs",
+                                      OBJECT(glob_regs_dev), errp)) {
+            error_report("Failed to link global system registers to CPU %d", i);
+            return;
+        }
+
+        object_property_set_link(OBJECT(cpu), "l2vic", OBJECT(l2vic_dev),
+                                 &error_abort);
+
         if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             return;
         }
     }
 
-    HexagonCPU *cpu = cpu_0;
-    DeviceState *dev;
-    dev = sysbus_create_varargs(
-        "l2vic", m_cfg->l2vic_base,
-        /* IRQ#, Evnt#,CauseCode */
-        qdev_get_gpio_in(DEVICE(cpu), 0), /* IRQ 0, 16, 0xc0 */
-        qdev_get_gpio_in(DEVICE(cpu), 1), /* IRQ 1, 17, 0xc1 */
-        qdev_get_gpio_in(DEVICE(cpu), 2), /* IRQ 2, 18, 0xc2  VIC0 interface */
-        qdev_get_gpio_in(DEVICE(cpu), 3), /* IRQ 3, 19, 0xc3  VIC1 interface */
-        qdev_get_gpio_in(DEVICE(cpu), 4), /* IRQ 4, 20, 0xc4  VIC2 interface */
-        qdev_get_gpio_in(DEVICE(cpu), 5), /* IRQ 5, 21, 0xc5  VIC3 interface */
-        qdev_get_gpio_in(DEVICE(cpu), 6), /* IRQ 6, 22, 0xc6 */
-        qdev_get_gpio_in(DEVICE(cpu), 7), /* IRQ 7, 23, 0xc7 */
-        NULL);
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, m_cfg->cfgtable.fastl2vic_base << 16);
+    /* Now realize L2VIC and connect IRQs to CPU #0 */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(l2vic_dev), errp);
+    sysbus_mmio_map(SYS_BUS_DEVICE(l2vic_dev), 0, m_cfg->l2vic_base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(l2vic_dev), 1,
+                    m_cfg->cfgtable.fastl2vic_base << 16);
+
+    /* Connect L2VIC IRQs to CPU #0 */
+    if (cpu_0) {
+        for (int i = 0; i < 8; i++) {
+            sysbus_connect_irq(SYS_BUS_DEVICE(l2vic_dev), i,
+                               qdev_get_gpio_in(DEVICE(cpu_0), i));
+        }
+    }
 
     /* for linux dts you must add 32 to these values */
-    pl011_create(0x10000000, qdev_get_gpio_in(dev, 15), serial_hd(0));
+    pl011_create(0x10000000, qdev_get_gpio_in(l2vic_dev, 15), serial_hd(0));
 
     /*
      * This is tightly with the IRQ selected must match the value below
@@ -398,9 +420,9 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
     unsigned QTMR0_IRQ = syscfg_is_linux ? 2 : 3;
     sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
     sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 0,
-                       qdev_get_gpio_in(dev, QTMR0_IRQ));
+                       qdev_get_gpio_in(l2vic_dev, QTMR0_IRQ));
     sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
-                       qdev_get_gpio_in(dev, 4));
+                       qdev_get_gpio_in(l2vic_dev, 4));
 
     hexagon_config_table *config_table = &m_cfg->cfgtable;
 

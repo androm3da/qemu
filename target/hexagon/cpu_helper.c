@@ -22,8 +22,11 @@
 #include "qemu.h"
 #include "exec/helper-proto.h"
 #else
+#include "hex_interrupts.h"
+#include "hex_mmu.h"
 #include "hw/boards.h"
 #include "hw/hexagon/hexagon.h"
+#include "hw/hexagon/hexagon_globalreg.h"
 #endif
 #include "accel/tcg/cpu-ldst.h"
 #include "qemu/log.h"
@@ -43,6 +46,8 @@
 #include "system/runstate.h"
 #include "trace.h"
 
+#ifndef CONFIG_USER_ONLY
+
 uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
 {
     uint64_t cycles = 0;
@@ -51,7 +56,8 @@ uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
         CPUHexagonState *thread_env = cpu_env(cs);
         cycles += thread_env->t_cycle_count;
     }
-    return *(env->g_pcycle_base) + cycles;
+    HexagonCPU *cpu = env_archcpu(env);
+    return hexagon_globalreg_get_pcycle_base(cpu->globalregs) + cycles;
 }
 
 uint32_t hexagon_get_sys_pcycle_count_high(CPUHexagonState *env)
@@ -64,8 +70,6 @@ uint32_t hexagon_get_sys_pcycle_count_low(CPUHexagonState *env)
     return extract64(hexagon_get_sys_pcycle_count(env), 0, 32);
 }
 
-#ifndef CONFIG_USER_ONLY
-
 uint32_t arch_get_system_reg(CPUHexagonState *env, uint32_t reg)
 {
     if (reg == HEX_SREG_PCYCLELO) {
@@ -75,8 +79,37 @@ uint32_t arch_get_system_reg(CPUHexagonState *env, uint32_t reg)
     }
 
     g_assert(reg < NUM_SREGS);
-    return reg < HEX_SREG_GLB_START ? env->t_sreg[reg] : env->g_sreg[reg];
+    if (reg < HEX_SREG_GLB_START) {
+        return env->t_sreg[reg];
+    } else {
+        HexagonCPU *cpu = env_archcpu(env);
+        return hexagon_globalreg_read(cpu->globalregs, reg);
+    }
 }
+
+void arch_set_system_reg(CPUHexagonState *env, uint32_t reg, uint32_t val)
+{
+    g_assert(reg < NUM_SREGS);
+    if (reg < HEX_SREG_GLB_START) {
+        env->t_sreg[reg] = val;
+    } else {
+        HexagonCPU *cpu = env_archcpu(env);
+        hexagon_globalreg_write(cpu->globalregs, reg, val);
+    }
+}
+
+void arch_set_system_reg_masked(CPUHexagonState *env, uint32_t reg,
+                                uint32_t val)
+{
+    g_assert(reg < NUM_SREGS);
+    if (reg < HEX_SREG_GLB_START) {
+        env->t_sreg[reg] = val;
+    } else {
+        HexagonCPU *cpu = env_archcpu(env);
+        hexagon_globalreg_write_masked(cpu->globalregs, reg, val);
+    }
+}
+
 
 #define BYTES_LEFT_IN_PAGE(A) (TARGET_PAGE_SIZE - ((A) % TARGET_PAGE_SIZE))
 
@@ -777,7 +810,8 @@ void hexagon_set_sys_pcycle_count_low(CPUHexagonState *env,
 
 void hexagon_set_sys_pcycle_count(CPUHexagonState *env, uint64_t cycles)
 {
-    *(env->g_pcycle_base) = cycles;
+    HexagonCPU *cpu = env_archcpu(env);
+    hexagon_globalreg_set_pcycle_base(cpu->globalregs, cycles);
 
     CPUState *cs;
     CPU_FOREACH(cs) {

@@ -162,10 +162,15 @@ static void l2vic_write(void *opaque, hwaddr offset, uint64_t val,
 
     if (offset == L2VIC_VID_0) {
         if ((int)val != L2VIC_CIAD_INSTRUCTION) {
-            s->vid0 = val;
+            /* L2VIC_NO_PENDING should not update the VID register */
+            if (val != L2VIC_NO_PENDING) {
+                s->vid0 = val;
+            }
         } else {
             /* ciad issued: clear int_status */
-            clear_bit(s->vid0, (unsigned long *)s->int_status);
+            if (s->vid0 < L2VIC_INTERRUPT_MAX) {
+                clear_bit(s->vid0, (unsigned long *)s->int_status);
+            }
         }
     } else if (offset >= L2VIC_INT_ENABLEn &&
                offset < (L2VIC_INT_ENABLE_CLEARn)) {
@@ -301,9 +306,10 @@ static void fastl2vic_write(void *opaque, hwaddr offset, uint64_t val,
             l2vic_write(opaque, L2VIC_INT_ENABLE_CLEARn + slice, val, size);
         } else if (cmd == FASTL2VIC_INT) {
             l2vic_write(opaque, L2VIC_SOFT_INTn + slice, val, size);
+        } else {
+            qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid write cmd %d\n", __func__,
+                          cmd);
         }
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid write cmd %d\n", __func__,
-                      cmd);
         return;
     }
     qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid write offset 0x%08x\n",
@@ -368,6 +374,28 @@ static void l2vic_init(Object *obj)
     qemu_mutex_init(&s->active); /* TODO: Remove this is an experiment */
 }
 
+static uint32_t l2vic_get_last_irq(Object *obj)
+{
+    L2VICState *s = L2VIC(obj);
+
+    qemu_mutex_lock(&s->active);
+    uint32_t last_irq = s->vid0;
+    qemu_mutex_unlock(&s->active);
+
+    return last_irq;
+}
+
+static void l2vic_clear_last_irq(Object *obj)
+{
+    L2VICState *s = L2VIC(obj);
+
+    qemu_mutex_lock(&s->active);
+    if (s->vid0 < L2VIC_INTERRUPT_MAX) {
+        clear_bit(s->vid0, (unsigned long *)s->int_status);
+    }
+    qemu_mutex_unlock(&s->active);
+}
+
 static const VMStateDescription vmstate_l2vic = {
     .name = "l2vic",
     .version_id = 1,
@@ -392,6 +420,14 @@ static const VMStateDescription vmstate_l2vic = {
             VMSTATE_END_OF_LIST() }
 };
 
+static void l2vic_interface_class_init(ObjectClass *klass, const void *data)
+{
+    L2VICInterfaceClass *ic = L2VIC_INTERFACE_CLASS(klass);
+
+    ic->get_last_irq = l2vic_get_last_irq;
+    ic->clear_last_irq = l2vic_clear_last_irq;
+}
+
 static void l2vic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -401,16 +437,28 @@ static void l2vic_class_init(ObjectClass *klass, const void *data)
     rc->phases.hold = l2vic_reset_hold;
 }
 
+static const TypeInfo l2vic_interface_info = {
+    .name = TYPE_L2VIC_INTERFACE,
+    .parent = TYPE_INTERFACE,
+    .class_size = sizeof(L2VICInterfaceClass),
+    .class_init = l2vic_interface_class_init,
+};
+
 static const TypeInfo l2vic_info = {
     .name = TYPE_L2VIC,
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(L2VICState),
     .instance_init = l2vic_init,
     .class_init = l2vic_class_init,
+    .interfaces = (InterfaceInfo[]) {
+        { TYPE_L2VIC_INTERFACE },
+        { }
+    },
 };
 
 static void l2vic_register_types(void)
 {
+    type_register_static(&l2vic_interface_info);
     type_register_static(&l2vic_info);
 }
 

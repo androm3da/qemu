@@ -6,20 +6,22 @@
  */
 
 #include "qemu/osdep.h"
-#include "system/address-spaces.h"
+#include "hw/hexagon/virt.h"
+#include "elf.h"
 #include "hw/char/pl011.h"
 #include "hw/core/sysbus-fdt.h"
 #include "hw/hexagon/hexagon.h"
-#include "hw/hexagon/virt.h"
+#include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/loader.h"
 #include "hw/qdev-properties.h"
 #include "hw/register.h"
 #include "hw/timer/qct-qtimer.h"
+#include "machine_cfg_v68n_1024.h.inc"
+#include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "qemu/units.h"
-#include "elf.h"
-#include "machine_cfg_v68n_1024.h.inc"
+#include "system/address-spaces.h"
 #include "system/device_tree.h"
 #include "system/reset.h"
 #include "system/system.h"
@@ -382,6 +384,7 @@ static void virt_init(MachineState *ms)
                            sizeof(m_cfg->cfgtable), errp);
     memory_region_add_subregion(vms->sys, m_cfg->cfgbase, &vms->cfgtable);
     fdt_add_hvx(vms, m_cfg, errp);
+
     const char *cpu_model = ms->cpu_type;
 
     if (!cpu_model) {
@@ -405,9 +408,6 @@ static void virt_init(MachineState *ms)
         qdev_prop_set_uint32(DEVICE(cpu), "hvx-contexts",
                              m_cfg->cfgtable.ext_contexts);
         qdev_prop_set_uint32(DEVICE(cpu), "thread-count", ms->smp.cpus);
-        qdev_prop_set_uint32(DEVICE(cpu), "config-table-addr", m_cfg->cfgbase);
-        qdev_prop_set_uint32(DEVICE(cpu), "l2vic-base-addr", m_cfg->l2vic_base);
-        qdev_prop_set_uint32(DEVICE(cpu), "qtimer-base-addr", m_cfg->qtmr_region);
         qdev_prop_set_uint32(DEVICE(cpu), "vtcm-base-addr",
                              m_cfg->cfgtable.vtcm_base << 16);
         qdev_prop_set_uint32(DEVICE(cpu), "vtcm-size-kb",
@@ -427,12 +427,50 @@ static void virt_init(MachineState *ms)
             return;
         }
     }
+
+    /* Create L2VIC first */
     vms->l2vic = sysbus_create_varargs(
         "l2vic", m_cfg->l2vic_base, qdev_get_gpio_in(DEVICE(cpu_0), 0),
         qdev_get_gpio_in(DEVICE(cpu_0), 1), qdev_get_gpio_in(DEVICE(cpu_0), 2),
         qdev_get_gpio_in(DEVICE(cpu_0), 3), qdev_get_gpio_in(DEVICE(cpu_0), 4),
         qdev_get_gpio_in(DEVICE(cpu_0), 5), qdev_get_gpio_in(DEVICE(cpu_0), 6),
         qdev_get_gpio_in(DEVICE(cpu_0), 7), NULL);
+
+    /* Now create and configure globalreg with L2VIC link */
+    DeviceState *gsregs_dev = qdev_new(TYPE_HEXAGON_GLOBALREG);
+    object_property_add_child(OBJECT(ms), "global-regs", OBJECT(gsregs_dev));
+
+    qdev_prop_set_uint64(gsregs_dev, "config-table-addr", m_cfg->cfgbase);
+    qdev_prop_set_uint32(gsregs_dev, "dsp-rev", v68_rev);
+    qdev_prop_set_uint32(gsregs_dev, "qtimer-base-addr", m_cfg->qtmr_region);
+
+    /* Link globalreg to l2vic before realization */
+    object_property_set_link(OBJECT(gsregs_dev), "l2vic",
+                             OBJECT(vms->l2vic), &error_abort);
+
+    /* Realize the device on sysbus */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(gsregs_dev), errp);
+
+    /* Link the global system registers object to all CPUs */
+    for (int i = 0; i < ms->smp.cpus; i++) {
+        CPUState *cs = qemu_get_cpu(i);
+        if (cs) {
+            if (!object_property_set_link(OBJECT(cs), "global-regs",
+                                          OBJECT(gsregs_dev), errp)) {
+                error_report("Failed to link global system registers to CPU");
+                return;
+            }
+        }
+    }
+
+    /* Link l2vic to all CPUs for direct CIAD instruction access */
+    for (int i = 0; i < ms->smp.cpus; i++) {
+        CPUState *cs = qemu_get_cpu(i);
+        if (cs) {
+            object_property_set_link(OBJECT(cs), "l2vic",
+                                     OBJECT(vms->l2vic), &error_abort);
+        }
+    }
 
     fdt_add_hvm_pic_node(vms, m_cfg);
     fdt_add_virtio_devices(vms);

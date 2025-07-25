@@ -5,6 +5,12 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#ifndef L2VIC_H
+#define L2VIC_H
+
+#include "qom/object.h"
+#include "qom/object_interfaces.h"
+
 #define L2VIC_VID_GRP_0 0x0 /* Read */
 #define L2VIC_VID_GRP_1 0x4 /* Read */
 #define L2VIC_VID_GRP_2 0x8 /* Read */
@@ -26,6 +32,7 @@
 
 #define L2VIC_INTERRUPT_MAX 1024
 #define L2VIC_CIAD_INSTRUCTION -1
+#define L2VIC_NO_PENDING 0xffffffff
 /*
  * Note about l2vic groups:
  * Each interrupt to L2VIC can be configured to associate with one of
@@ -35,3 +42,27 @@
  * Group 2 interrupts go to IRQ4 via VID 2 (SSR: 0xC4)
  * Group 3 interrupts go to IRQ5 via VID 3 (SSR: 0xC5)
  */
+
+#define TYPE_L2VIC_INTERFACE "l2vic-interface"
+
+typedef struct L2VICInterface L2VICInterface;
+typedef struct L2VICInterfaceClass L2VICInterfaceClass;
+
+DECLARE_OBJ_CHECKERS(L2VICInterface, L2VICInterfaceClass,
+                     L2VIC_INTERFACE, TYPE_L2VIC_INTERFACE)
+
+struct L2VICInterfaceClass {
+    InterfaceClass parent_class;
+
+    /* Method to get the last set IRQ number for VID register reads */
+    uint32_t (*get_last_irq)(Object *obj);
+
+    /* Method to clear the last set IRQ */
+    void (*clear_last_irq)(Object *obj);
+};
+
+struct L2VICInterface {
+    Object parent_obj;
+};
+
+#endif /* L2VIC_H */

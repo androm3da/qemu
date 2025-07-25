@@ -15,7 +15,21 @@ def read_skip_file(dirname):
     return set(skip_names)
 
 def list_test_cases(dirname):
-    return glob(f'{dirname}/*.pbn') + glob(f'{dirname}/*.elf')
+    # Look for executable files without extensions (systests_standalone format)
+    test_cases = []
+    for filename in os.listdir(dirname):
+        full_path = os.path.join(dirname, filename)
+        # Check if it's an executable file
+        if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
+            # Skip common non-test files
+            if filename not in ['SKIP']:
+                test_cases.append(full_path)
+
+    # Fallback to legacy formats if no executables found
+    if not test_cases:
+        test_cases = glob(f'{dirname}/*.pbn') + glob(f'{dirname}/*.elf')
+
+    return test_cases
 
 
 class HexagonCheckError(Exception):
