@@ -63,10 +63,12 @@
 #
 # @cryptodev: since 8.0
 #
+# @hexagon: since 10.1
+#
 # Since: 7.1
 ##
 { 'enum': 'StatsProvider',
-  'data': [ 'kvm', 'cryptodev' ] }
+  'data': [ 'kvm', 'cryptodev', 'hexagon' ] }
 
 ##
 # @StatsTarget:

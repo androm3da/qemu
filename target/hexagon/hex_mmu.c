@@ -8,6 +8,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/qemu-print.h"
 #include "qemu/units.h"
+#include "qemu/timer.h"
 #include "cpu.h"
 #include "system/cpus.h"
 #include "internal.h"
@@ -540,6 +541,15 @@ void hex_tlb_lock(CPUHexagonState *env)
     uint8_t tlb_lock = GET_SYSCFG_FIELD(SYSCFG_TLBLOCK, syscfg);
     if (tlb_lock) {
         if (env->tlb_lock_state == HEX_LOCK_QUEUED) {
+            /* Thread was waiting and now gets the lock */
+            uint64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+            uint64_t wait_time_ns = now_ns -
+                env->tlb_lock_state_data.wait_start_ns;
+            env->tlb_lock_state_data.acquire_start_ns = now_ns;
+
+            hexagon_stats_track_lock_acquisition(
+                &env->tlb_lock_state_data.stats, wait_time_ns, true, 0);
+
             env->next_PC += 4;
             env->tlb_lock_count++;
             env->tlb_lock_state = HEX_LOCK_OWNER;
@@ -557,11 +567,22 @@ void hex_tlb_lock(CPUHexagonState *env)
             cpu_interrupt(cs, CPU_INTERRUPT_HALT);
             return;
         }
+
+        /* Track failed attempt - lock is held by another thread */
+        hexagon_stats_track_failed_attempt(&env->tlb_lock_state_data.stats);
         trace_hexagon_tlb_lock_info(env->threadId, "Waiting for tlb_lock");
         env->tlb_lock_state = HEX_LOCK_WAITING;
+        env->tlb_lock_state_data.wait_start_ns =
+            qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         CPUState *cs = env_cpu(env);
         cpu_interrupt(cs, CPU_INTERRUPT_HALT);
     } else {
+        /* Lock acquired immediately - no contention */
+        uint64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        env->tlb_lock_state_data.acquire_start_ns = now_ns;
+
+        hexagon_stats_track_lock_acquisition(
+            &env->tlb_lock_state_data.stats, 0, false, 0);
         trace_hexagon_tlb_lock_info(env->threadId, "Acquired tlb_lock");
         env->next_PC += 4;
         env->tlb_lock_count++;
@@ -597,6 +618,12 @@ void hex_tlb_unlock(CPUHexagonState *env)
     }
 
     trace_hexagon_tlb_lock_info(env->threadId, "Unlocking tlb_lock");
+
+    /* Track lock hold time */
+    uint64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    uint64_t hold_time_ns = now_ns - env->tlb_lock_state_data.acquire_start_ns;
+    hexagon_stats_track_lock_release(&env->tlb_lock_state_data.stats,
+                                     hold_time_ns);
     env->tlb_lock_count--;
     env->tlb_lock_state = HEX_LOCK_UNLOCKED;
     SET_SYSCFG_FIELD(env, SYSCFG_TLBLOCK, 0);

@@ -348,6 +348,7 @@ test_timeouts += {
   'hexagon_qurt': 1200,
   'hexagon_minivm': 180,
   'hexagon_linux': 180,
+  'hexagon_systests': 120,
 }
 
 tests_hexagon_system_thorough = [
@@ -356,6 +357,7 @@ tests_hexagon_system_thorough = [
   'hexagon_sival',
   'hexagon_qurt',
   'hexagon_virtio',
+  'hexagon_systests',
 ]
 # end of QUIC-specific
 

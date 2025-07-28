@@ -1284,6 +1284,10 @@ static void hexagon_cpu_class_init(ObjectClass *c, const void *data)
 #ifdef CONFIG_TCG
     cc->tcg_ops = &hexagon_tcg_ops;
 #endif
+
+#ifndef CONFIG_USER_ONLY
+    hexagon_stats_init();
+#endif
 }
 
 #ifndef CONFIG_USER_ONLY

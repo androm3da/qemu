@@ -24,6 +24,7 @@ typedef struct CPUArchState CPUHexagonState;
 typedef struct ProcessorState processor_t;
 
 #include "fpu/softfloat-types.h"
+#include "qemu/stats64.h"
 
 
 uint8_t hexagon_rev_byte(CPUHexagonState *env);
@@ -312,6 +313,23 @@ typedef enum {
     HEX_LOCK_QUEUED        = 3
 } hex_lock_state_t;
 
+typedef struct HexagonLockStats {
+    Stat64 acquisitions;
+    Stat64 failed_attempts;
+    Stat64 total_wait_time_ns;
+    Stat64 max_wait_time_ns;
+    Stat64 total_hold_time_ns;
+    Stat64 max_hold_time_ns;
+    Stat64 contention_events;
+    Stat64 wait_cycles;
+} HexagonLockStats;
+
+typedef struct HexagonLockState {
+    HexagonLockStats stats;
+    uint64_t wait_start_ns;
+    uint64_t acquire_start_ns;
+} HexagonLockState;
+
 typedef struct PMUState {
     uint32_t vmstate_num_ctrs;
     uint32_t *g_ctrs_off;
@@ -432,6 +450,8 @@ typedef struct CPUArchState {
     hex_lock_state_t k0_lock_state; /* different threads modify */
     int32_t k0_lock_count;
     int32_t tlb_lock_count;
+    HexagonLockState tlb_lock_state_data;
+    HexagonLockState k0_lock_state_data;
     uint16_t nmi_threads;
     uint32_t last_cpu;
     GList **g_dir_list;
@@ -532,6 +552,17 @@ static inline bool rev_implements_64b_hvx(CPUHexagonState *env)
 G_NORETURN void hexagon_raise_exception_err(CPUHexagonState *env,
                                             uint32_t exception,
                                             uintptr_t pc);
+
+#ifndef CONFIG_USER_ONLY
+void hexagon_stats_init(void);
+void hexagon_stats_track_lock_acquisition(HexagonLockStats *stats,
+                                          uint64_t wait_time_ns,
+                                          bool had_contention,
+                                          uint64_t wait_cycles);
+void hexagon_stats_track_lock_release(HexagonLockStats *stats,
+                                      uint64_t hold_time_ns);
+void hexagon_stats_track_failed_attempt(HexagonLockStats *stats);
+#endif
 
 #ifndef CONFIG_USER_ONLY
 
