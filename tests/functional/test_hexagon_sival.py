@@ -126,40 +126,10 @@ class SivalTests(QemuSystemTest):
         with tempfile.NamedTemporaryFile() as fp:
             self.run_single_sival_test(arch_name, test_bin, timeout, fp)
 
-    @skipUnless(os.getenv("QEMU_TEST_ALLOW_UNTRUSTED_CODE"), "untrusted code")
-    def test_discovery_trigger(self):
-        """Trigger test method injection by running the first available test"""
-        # Extract archive if not done yet
-        if not hasattr(self.__class__, "_archive_extracted"):
-            self.archive_extract(self.ASSET_TARBALL)
-            self.__class__._archive_extracted = True
-
-        # Find the first available test to run
-        for arch_name in self.SIVAL_MACHINES.keys():
-            test_dir = f"{self.workdir}/qemu-sival-tests-{self.GIT_REF}/{arch_name}/"
-            if not os.path.exists(test_dir):
-                continue
-
-            try:
-                skip = read_skip_file(test_dir)
-            except FileNotFoundError:
-                skip = set()
-            test_bins = list_test_cases(test_dir)
-
-            for test_bin in test_bins:
-                test_name = os.path.basename(test_bin)
-                if test_name not in skip:
-                    # Run the first available test
-                    self._run_generic_test(arch_name, test_name)
-                    return
-
-        # If no tests found, skip
-        self.skipTest("No Sival tests found to run")
-
 
 # Generate individual test methods for QEMU test discovery
 def _inject_individual_tests():
-    """Dynamically inject individual test methods into SivalTests class"""
+    """Inject actual test methods by discovering real test cases from the archive"""
 
     def create_test_method(arch_name, test_name):
         @skipUnless(os.getenv("QEMU_TEST_ALLOW_UNTRUSTED_CODE"), "untrusted code")
@@ -168,55 +138,57 @@ def _inject_individual_tests():
 
         return test_method
 
-    # Hook into _run_generic_test to inject methods after first archive extraction
-    original_run_generic = SivalTests._run_generic_test
+    # Create temporary directory for archive extraction during import
+    import tempfile
 
-    def enhanced_run_generic(self, arch_name, test_name):
-        # Run the original method first
-        result = original_run_generic(self, arch_name, test_name)
+    temp_dir = tempfile.mkdtemp(prefix="qemu_sival_discovery_")
 
-        # Inject individual test methods after first successful run
-        if not hasattr(self.__class__, "_individual_methods_injected"):
-            self.__class__._individual_methods_injected = True
+    try:
+        # Extract archive to discover real test cases
+        from qemu_test.archive import archive_extract
 
-            # Inject individual test methods
-            for arch_name_iter in self.SIVAL_MACHINES.keys():
-                test_dir = (
-                    f"{self.workdir}/qemu-sival-tests-{self.GIT_REF}/{arch_name_iter}/"
-                )
-                if not os.path.exists(test_dir):
+        SivalTests.ASSET_TARBALL.fetch()
+        archive_extract(SivalTests.ASSET_TARBALL, temp_dir)
+
+        # Discover actual test cases
+        for arch_name in SivalTests.SIVAL_MACHINES.keys():
+            test_dir = f"{temp_dir}/qemu-sival-tests-{SivalTests.GIT_REF}/{arch_name}/"
+            if not os.path.exists(test_dir):
+                continue
+
+            try:
+                skip = read_skip_file(test_dir)
+            except FileNotFoundError:
+                skip = set()
+
+            test_bins = list_test_cases(test_dir)
+            for test_bin in test_bins:
+                test_name = os.path.basename(test_bin)
+                if test_name in skip:
                     continue
 
-                try:
-                    skip = read_skip_file(test_dir)
-                except FileNotFoundError:
-                    skip = set()
-                test_bins = list_test_cases(test_dir)
+                # Create safe method name
+                safe_arch = re.sub(r"[^a-zA-Z0-9_]", "_", arch_name)
+                safe_test = re.sub(
+                    r"[^a-zA-Z0-9_]", "_", os.path.splitext(test_name)[0]
+                )
+                method_name = f"test_{safe_arch}_{safe_test}"
 
-                for test_bin in test_bins:
-                    test_name_iter = os.path.basename(test_bin)
-                    if test_name_iter in skip:
-                        continue
+                # Only inject if method doesn't already exist
+                if not hasattr(SivalTests, method_name):
+                    test_method = create_test_method(arch_name, test_name)
+                    test_method.__name__ = method_name
+                    test_method.__doc__ = f"Sival test: {arch_name}/{test_name}"
+                    setattr(SivalTests, method_name, test_method)
 
-                    # Create safe method name
-                    safe_arch = re.sub(r"[^a-zA-Z0-9_]", "_", arch_name_iter)
-                    safe_test = re.sub(
-                        r"[^a-zA-Z0-9_]", "_", os.path.splitext(test_name_iter)[0]
-                    )
-                    method_name = f"test_{safe_arch}_{safe_test}"
+    finally:
+        # Clean up temporary directory
+        import shutil
 
-                    # Only inject if method doesn't already exist
-                    if not hasattr(self.__class__, method_name):
-                        test_method = create_test_method(arch_name_iter, test_name_iter)
-                        test_method.__name__ = method_name
-                        test_method.__doc__ = (
-                            f"Sival test: {arch_name_iter}/{test_name_iter}"
-                        )
-                        setattr(self.__class__, method_name, test_method)
-
-        return result
-
-    SivalTests._run_generic_test = enhanced_run_generic
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
 
 
 # Inject individual test methods for QEMU test discovery
