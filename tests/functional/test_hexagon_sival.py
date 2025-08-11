@@ -138,15 +138,14 @@ def _inject_individual_tests():
 
         return test_method
 
-    # Create temporary directory for archive extraction during import
+    # Use the same archive extraction approach as _run_generic_test
     import tempfile
+    from qemu_test.archive import archive_extract
 
     temp_dir = tempfile.mkdtemp(prefix="qemu_sival_discovery_")
 
     try:
-        # Extract archive to discover real test cases
-        from qemu_test.archive import archive_extract
-
+        # Extract archive using the same method as the test infrastructure
         SivalTests.ASSET_TARBALL.fetch()
         archive_extract(SivalTests.ASSET_TARBALL, temp_dir)
 
