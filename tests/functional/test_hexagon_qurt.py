@@ -10,17 +10,24 @@ import tempfile
 from qemu_test import QemuSystemTest, Asset
 from qemu_test import wait_for_console_pattern
 from unittest import skipUnless
-from hexagon.utils import HexagonCheckError, scale_timeout, read_skip_file, list_test_cases
+from hexagon.utils import (
+    HexagonCheckError,
+    scale_timeout,
+    read_skip_file,
+    list_test_cases,
+)
+
 
 class QURTTests(QemuSystemTest):
 
     QURT_TIMEOUT_SEC = 300
 
-    REPO = 'https://gitlab.qualcomm.com/qqvp/testing/qemu-qurt-tests'
-    GIT_REF = '79ab6880bd4eb893439af73331355c3dc2a241b4'
-    ASSET_TARBALL = \
-        Asset(f'{REPO}/-/archive/{GIT_REF}/qemu-qurt-tests-{GIT_REF}.tar.gz',
-              '96672ff657464afd7cd3b7755c832f2332b642d9aae338d6edda044d0bae602a')
+    REPO = "https://gitlab.qualcomm.com/qqvp/testing/qemu-qurt-tests"
+    GIT_REF = "79ab6880bd4eb893439af73331355c3dc2a241b4"
+    ASSET_TARBALL = Asset(
+        f"{REPO}/-/archive/{GIT_REF}/qemu-qurt-tests-{GIT_REF}.tar.gz",
+        "96672ff657464afd7cd3b7755c832f2332b642d9aae338d6edda044d0bae602a",
+    )
 
     QURT_MACHINES = {
         "nspv79NA_1": "V79NA_1",
@@ -34,29 +41,27 @@ class QURTTests(QemuSystemTest):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # Extract archive once for all test methods
-        if hasattr(cls, '_archive_extracted'):
-            return
-        cls.archive_extract(cls.ASSET_TARBALL)
-        cls._archive_extracted = True
+        # We can't extract the archive in setUpClass because it requires an instance
+        # Archive extraction will happen in individual test methods
+        pass
 
     def check_test_result(self, test_name):
         if self.vm.exitcode() != 0:
-            raise HexagonCheckError(self.vm.get_log() or '')
+            raise HexagonCheckError(self.vm.get_log() or "")
 
     def run_single_qurt_test(self, arch_name, test_bin, timeout):
         """Run a single QURT test case"""
         test_name = os.path.basename(test_bin)
 
         # Configure VM for this architecture
-        self.set_vm_arg('-M', self.QURT_MACHINES[arch_name])
+        self.set_vm_arg("-M", self.QURT_MACHINES[arch_name])
         if arch_name in self.QURT_CPUS:
-            self.set_vm_arg('-cpu', self.QURT_CPUS[arch_name])
+            self.set_vm_arg("-cpu", self.QURT_CPUS[arch_name])
 
         # Set up VM args
-        self.vm.add_args('-m', '4G', '-no-reboot')
+        self.vm.add_args("-m", "4G", "-no-reboot")
         self.vm.set_encoding("ISO-8859-1")  # Some qurt tests output unicode
-        self.set_vm_arg('-kernel', test_bin)
+        self.set_vm_arg("-kernel", test_bin)
 
         # Run the test
         self.vm.launch()
@@ -66,17 +71,25 @@ class QURTTests(QemuSystemTest):
         try:
             self.check_test_result(test_name)
         except HexagonCheckError as e:
-            err_msg = f'FAILED (exit code {self.vm.exitcode()})\n' + \
-                      '----------\n' + str(self.vm) + '\n----------\n' + \
-                      str(e) + '\n----------'
-            self.fail(f'Test {test_name} failed:\n{err_msg}')
+            err_msg = (
+                f"FAILED (exit code {self.vm.exitcode()})\n"
+                + "----------\n"
+                + str(self.vm)
+                + "\n----------\n"
+                + str(e)
+                + "\n----------"
+            )
+            self.fail(f"Test {test_name} failed:\n{err_msg}")
 
     def _run_generic_test(self, arch_name, test_name):
         """Generic test runner that can be called by dynamically injected test methods"""
-        self.setUpClass()
+        # Extract archive if not done yet
+        if not hasattr(self.__class__, "_archive_extracted"):
+            self.archive_extract(self.ASSET_TARBALL)
+            self.__class__._archive_extracted = True
 
         # Find the test binary path
-        test_dir = f'{self.workdir}/qemu-qurt-tests-{self.GIT_REF}/{arch_name}/'
+        test_dir = f"{self.workdir}/qemu-qurt-tests-{self.GIT_REF}/{arch_name}/"
         test_bins = list_test_cases(test_dir)
         test_bin = None
         for candidate in test_bins:
@@ -87,11 +100,41 @@ class QURTTests(QemuSystemTest):
         # Check if test should be skipped
         skip = read_skip_file(test_dir)
         if test_name in skip:
-            self.skipTest(f'Test {test_name} is in SKIP file')
+            self.skipTest(f"Test {test_name} is in SKIP file")
 
         # Run the specific test
         timeout_scale, timeout = scale_timeout(self.QURT_TIMEOUT_SEC)
         self.run_single_qurt_test(arch_name, test_bin, timeout)
+
+    @skipUnless(os.getenv("QEMU_TEST_ALLOW_UNTRUSTED_CODE"), "untrusted code")
+    def test_discovery_trigger(self):
+        """Trigger test method injection by running the first available test"""
+        # Extract archive if not done yet
+        if not hasattr(self.__class__, "_archive_extracted"):
+            self.archive_extract(self.ASSET_TARBALL)
+            self.__class__._archive_extracted = True
+
+        # Find the first available test to run
+        for arch_name in self.QURT_MACHINES.keys():
+            test_dir = f"{self.workdir}/qemu-qurt-tests-{self.GIT_REF}/{arch_name}/"
+            if not os.path.exists(test_dir):
+                continue
+
+            try:
+                skip = read_skip_file(test_dir)
+            except FileNotFoundError:
+                skip = set()
+            test_bins = list_test_cases(test_dir)
+
+            for test_bin in test_bins:
+                test_name = os.path.basename(test_bin)
+                if test_name not in skip:
+                    # Run the first available test
+                    self._run_generic_test(arch_name, test_name)
+                    return
+
+        # If no tests found, skip
+        self.skipTest("No QURT tests found to run")
 
 
 # Generate individual test methods for QEMU test discovery
@@ -99,30 +142,28 @@ def _inject_individual_tests():
     """Dynamically inject individual test methods into QURTTests class"""
 
     def create_test_method(arch_name, test_name):
-        @skipUnless(os.getenv('QEMU_TEST_ALLOW_UNTRUSTED_CODE'), 'untrusted code')
+        @skipUnless(os.getenv("QEMU_TEST_ALLOW_UNTRUSTED_CODE"), "untrusted code")
         def test_method(self):
             self._run_generic_test(arch_name, test_name)
+
         return test_method
 
-    # Hook into setUpClass to inject individual tests after archive extraction
-    original_setup = QURTTests.setUpClass
+    # Hook into _run_generic_test to inject methods after first archive extraction
+    original_run_generic = QURTTests._run_generic_test
 
-    @classmethod
-    def enhanced_setup(cls):
-        # Call original setup to extract archive
-        result = original_setup()
+    def enhanced_run_generic(self, arch_name, test_name):
+        # Run the original method first
+        result = original_run_generic(self, arch_name, test_name)
 
-        # Inject individual test methods on first setup
-        if not hasattr(cls, '_individual_methods_injected'):
-            cls._individual_methods_injected = True
-
-            # Create a temporary instance to access workdir after extraction
-            temp_instance = cls.__new__(cls)
-            temp_instance.setUpClass()
+        # Inject individual test methods after first successful run
+        if not hasattr(self.__class__, "_individual_methods_injected"):
+            self.__class__._individual_methods_injected = True
 
             # Inject individual test methods
-            for arch_name in cls.QURT_MACHINES.keys():
-                test_dir = f'{temp_instance.workdir}/qemu-qurt-tests-{cls.GIT_REF}/{arch_name}/'
+            for arch_name_iter in self.QURT_MACHINES.keys():
+                test_dir = (
+                    f"{self.workdir}/qemu-qurt-tests-{self.GIT_REF}/{arch_name_iter}/"
+                )
                 if not os.path.exists(test_dir):
                     continue
 
@@ -133,28 +174,33 @@ def _inject_individual_tests():
                 test_bins = list_test_cases(test_dir)
 
                 for test_bin in test_bins:
-                    test_name = os.path.basename(test_bin)
-                    if test_name in skip:
+                    test_name_iter = os.path.basename(test_bin)
+                    if test_name_iter in skip:
                         continue
 
                     # Create safe method name
-                    safe_arch = re.sub(r'[^a-zA-Z0-9_]', '_', arch_name)
-                    safe_test = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.splitext(test_name)[0])
-                    method_name = f'test_{safe_arch}_{safe_test}'
+                    safe_arch = re.sub(r"[^a-zA-Z0-9_]", "_", arch_name_iter)
+                    safe_test = re.sub(
+                        r"[^a-zA-Z0-9_]", "_", os.path.splitext(test_name_iter)[0]
+                    )
+                    method_name = f"test_{safe_arch}_{safe_test}"
 
                     # Only inject if method doesn't already exist
-                    if not hasattr(cls, method_name):
-                        test_method = create_test_method(arch_name, test_name)
+                    if not hasattr(self.__class__, method_name):
+                        test_method = create_test_method(arch_name_iter, test_name_iter)
                         test_method.__name__ = method_name
-                        test_method.__doc__ = f'QURT test: {arch_name}/{test_name}'
-                        setattr(cls, method_name, test_method)
+                        test_method.__doc__ = (
+                            f"QURT test: {arch_name_iter}/{test_name_iter}"
+                        )
+                        setattr(self.__class__, method_name, test_method)
 
         return result
 
-    QURTTests.setUpClass = enhanced_setup
+    QURTTests._run_generic_test = enhanced_run_generic
+
 
 # Inject individual test methods for QEMU test discovery
 _inject_individual_tests()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     QemuSystemTest.main()
