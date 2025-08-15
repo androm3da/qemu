@@ -66,6 +66,10 @@ enum hex_swi_flag {
 static inline bool is_hexagon_specific_swi_flag(enum hex_swi_flag what_swi)
 {
     switch (what_swi) {
+    case HEX_SYS_READ:
+    case HEX_SYS_READC:
+    case HEX_SYS_WRITE:
+    case HEX_SYS_WRITEC:
     HEXAGON_SPECIFIC_SWI_FLAGS
         return true;
     }
