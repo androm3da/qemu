@@ -464,6 +464,65 @@ static void sim_handle_trap0(CPUHexagonState *env)
         coredump(env);
         break;
 
+    case HEX_SYS_READ:
+    {
+        target_ulong fd, buf, len;
+        hexagon_read_memory(env, swi_info, 4, &fd, retaddr);
+        hexagon_read_memory(env, swi_info + 4, 4, &buf, retaddr);
+        hexagon_read_memory(env, swi_info + 8, 4, &len, retaddr);
+
+        /*
+         * Do preload: touch the memory before calling the read operation.
+         * This prevents file pointer position issues if memory access faults.
+         */
+        hexagon_touch_memory(env, buf, len, retaddr);
+
+        /* Delegate to standard semihosting */
+        do_common_semihosting(cs);
+        return;
+    }
+
+    case HEX_SYS_READC:
+    {
+        /*
+         * READC returns a character, so no buffer to preload.
+         * Just delegate to standard semihosting.
+         */
+        do_common_semihosting(cs);
+        return;
+    }
+
+    case HEX_SYS_WRITE:
+    {
+        target_ulong fd, buf, len;
+        hexagon_read_memory(env, swi_info, 4, &fd, retaddr);
+        hexagon_read_memory(env, swi_info + 4, 4, &buf, retaddr);
+        hexagon_read_memory(env, swi_info + 8, 4, &len, retaddr);
+
+        /*
+         * Do preload: touch the memory before calling the write operation.
+         * This prevents file pointer position issues if memory access faults.
+         */
+        hexagon_touch_memory(env, buf, len, retaddr);
+
+        /* Delegate to standard semihosting */
+        do_common_semihosting(cs);
+        return;
+    }
+
+    case HEX_SYS_WRITEC:
+    {
+        /*
+         * Do preload: touch the memory containing the character to write.
+         * This prevents file pointer position issues if memory access faults.
+         */
+        hexagon_touch_memory(env, swi_info, 1, retaddr);
+
+        /* Delegate to standard semihosting */
+        do_common_semihosting(cs);
+        return;
+    }
+
     case HEX_SYS_FTELL:
     {
         int fd;
