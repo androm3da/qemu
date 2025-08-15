@@ -54,6 +54,10 @@
 
 #define DEF_SWI_FLAG(name, val) HEX_SYS_ ##name = val,
 enum hex_swi_flag {
+    HEX_SYS_READ = 0x06,
+    HEX_SYS_READC = 0x07,
+    HEX_SYS_WRITE = 0x05,
+    HEX_SYS_WRITEC = 0x03,
     HEXAGON_SPECIFIC_SWI_FLAGS
 };
 #undef DEF_SWI_FLAG
