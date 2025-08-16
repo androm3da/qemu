@@ -34,14 +34,13 @@
 #include "semihosting/guestfd.h"
 #include "gdbstub/syscalls.h"
 #include "semihosting/syscalls.h"
+#include "semihosting/console.h"
 
 #ifndef CONFIG_USER_ONLY
 
 /* non-arm-compatible semihosting calls */
 #define HEXAGON_SPECIFIC_SWI_FLAGS \
     DEF_SWI_FLAG(OPEN,             0x01) \
-    DEF_SWI_FLAG(WRITEC,           0x03) \
-    DEF_SWI_FLAG(WRITE0,           0x04) \
     DEF_SWI_FLAG(ISTTY,            0x09) \
     DEF_SWI_FLAG(HEAPINFO,         0x16) \
     DEF_SWI_FLAG(ENTERSVC,         0x17) /* from newlib */ \
@@ -83,6 +82,8 @@
  * We use the arm-compatible semihosting routines for these ones, but we do
  * need some hexagon-specific preprocessing.
  */
+#define HEX_SYS_WRITEC      0x03
+#define HEX_SYS_WRITE0      0x04
 #define HEX_SYS_WRITE       0x05
 #define HEX_SYS_READ        0x06
 #define HEX_SYS_READC       0x07
@@ -143,6 +144,13 @@ static void sim_handle_trap0(CPUHexagonState *env)
             what_swi == HEX_SYS_WRITE) {
             /* avoid page faulting if the dest buffer is not in memory yet. */
             do_preload(env, swi_info);
+        } else if (what_swi == HEX_SYS_WRITEC) {
+            /* WRITEC: swi_info points to a single character */
+            hexagon_touch_memory(env, swi_info, 1, MMU_DATA_LOAD);
+        } else if (what_swi == HEX_SYS_WRITE0) {
+            /* WRITE0: swi_info points to null-terminated string */
+            /* Touch first page, the common semihosting will handle the rest */
+            hexagon_touch_memory(env, swi_info, 1, MMU_DATA_LOAD);
         }
         CPUState *cs = env_cpu(env);
         do_common_semihosting(cs);
@@ -257,45 +265,12 @@ static void sim_handle_trap0(CPUHexagonState *env)
     }
     break;
 
-    /* We override arm-compatible version to print at stdout, not console. */
-    case HEX_SYS_WRITEC:
-    {
-        FILE *fp = stdout;
-        char c;
-        rcu_read_lock();
-        DEBUG_MEMORY_READ(swi_info, 1, &c);
-        fprintf(fp, "%c", c);
-        fflush(fp);
-        rcu_read_unlock();
-    }
-    break;
-
     case HEX_SYS_WRITECREG:
     {
         char c = swi_info;
-        FILE *fp = stdout;
-
-        fprintf(fp, "%c", c);
-        fflush(stdout);
+        qemu_semihosting_console_write(&c, 1);
     }
     break;
-
-    /* We override arm-compatible version to print at stdout, not console. */
-    case HEX_SYS_WRITE0:
-    {
-        FILE *fp = stdout;
-        char c;
-        int i = 0;
-        rcu_read_lock();
-        do {
-            DEBUG_MEMORY_READ(swi_info + i, 1, &c);
-            fprintf(fp, "%c", c);
-            i++;
-        } while (c);
-        fflush(fp);
-        rcu_read_unlock();
-        break;
-    }
 
     /*
      * Hexagon's SYS_ISTTY is a bit different than arm's: we do not return -1
