@@ -125,4 +125,31 @@
 #define fGEN_TCG_Y4_nmi(SHORTCODE) \
     gen_helper_nmi(tcg_env, RsV)
 
+/*
+ * trap1 instruction generation (system mode override)
+ * Handles VM instructions when in guest mode with GRE enabled
+ * For specific immediate values (1, 3, 4, 6), calls VM instruction handlers
+ * Otherwise, generates a regular trap exception
+ */
+#undef fGEN_TCG_J2_trap1
+#define fGEN_TCG_J2_trap1(SHORTCODE) \
+    do { \
+        /* Check if this is a VM instruction by testing the immediate value */ \
+        bool is_vm_insn = false; \
+        if (uiV == 1 || uiV == 3 || uiV == 4 || uiV == 6) { \
+            /* These are VM instruction immediates when GRE is enabled */ \
+            /* For now, generate VM call for all cases - guest mode check */ \
+            /* happens at runtime in the VM instruction dispatcher */ \
+            is_vm_insn = true; \
+        } \
+        \
+        if (is_vm_insn) { \
+            /* Generate VM instruction call */ \
+            gen_vminst(ctx, uiV); \
+        } else { \
+            /* Generate regular trap1 exception */ \
+            hex_gen_exception_end_tb(ctx, HEX_EVENT_TRAP1); \
+        } \
+    } while (0)
+
 #endif

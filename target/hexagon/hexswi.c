@@ -819,6 +819,11 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
             set_addresses(env, 0, cs->exception_index);
             break;
 
+        case HEX_CAUSE_TRAP1:
+            hexagon_ssr_set_cause(env, env->cause_code);
+            set_addresses(env, 0, cs->exception_index);
+            break;
+
         default:
             cpu_abort(cs,
                       "3:Hexagon exception %d/0x%x: "
@@ -856,4 +861,5 @@ void register_trap_exception(CPUHexagonState *env, int traptype, int imm,
     env->gpr[HEX_REG_PC] = PC;
     cpu_loop_exit(cs);
 }
+
 #endif

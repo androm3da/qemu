@@ -36,6 +36,7 @@
 #ifndef CONFIG_USER_ONLY
 #include "reg_fields.h"
 typedef struct CPUHexagonTLBContext CPUHexagonTLBContext;
+typedef struct HexagonVMState HexagonVMState;
 #endif
 
 #define NUM_PREGS 4
@@ -199,6 +200,10 @@ struct ArchCPU {
     uint32_t hvx_contexts;
     uint32_t boot_addr;
     struct HexagonGlobalRegState *globalregs;
+    bool vm_enabled;
+    bool hexagon_vm;
+
+    HexagonVMState *vm;
 #endif
 };
 

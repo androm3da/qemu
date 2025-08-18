@@ -62,4 +62,8 @@ void probe_noshuf_load(TCGv va, int s, int mi);
 
 extern const target_ulong reg_immut_masks[TOTAL_PER_THREAD_REGS];
 
+#ifndef CONFIG_USER_ONLY
+void gen_vminst(DisasContext *ctx, int operand);
+#endif
+
 #endif

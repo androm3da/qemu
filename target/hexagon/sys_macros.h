@@ -13,6 +13,7 @@
 
 #ifndef CONFIG_USER_ONLY
 
+
 #define READ_SREG(NUM) arch_get_system_reg(env, NUM)
 #define READ_SGP0()    arch_get_system_reg(env, HEX_SREG_SGP0)
 #define READ_SGP1()    arch_get_system_reg(env, HEX_SREG_SGP1)
@@ -99,14 +100,49 @@
 #define fTRAP(TRAPTYPE, IMM) \
     register_trap_exception(env, TRAPTYPE, IMM, PC)
 
-#define fVIRTINSN_SPSWAP(IMM, REG)
-#define fVIRTINSN_GETIE(IMM, REG) { REG = 0xdeafbeef; }
-#define fVIRTINSN_SETIE(IMM, REG)
-#define fVIRTINSN_RTE(IMM, REG)
+#define fVIRTINSN_SPSWAP(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Placeholder return value */ \
+    } while (0)
+#define fVIRTINSN_VMSTOP(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Placeholder return value */ \
+    } while (0)
+#define fVIRTINSN_GETIE(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0xdeafbeef; /* Placeholder return value */ \
+    } while (0)
+#define fVIRTINSN_SETIE(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Placeholder return value */ \
+    } while (0)
+#define fVIRTINSN_RTE(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Placeholder return value */ \
+    } while (0)
+#define fVIRTINSN_VMNEWMAP(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Return success */ \
+    } while (0)
+#define fVIRTINSN_VMSTART(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Return success */ \
+    } while (0)
+#define fVIRTINSN_VMWAIT(IMM, REG) \
+    do { \
+        hexagon_vm_instruction(env, IMM, REG); \
+        REG = 0; /* Return success */ \
+    } while (0)
 #define fGRE_ENABLED() GET_FIELD(CCR_GRE, READ_SREG(HEX_SREG_CCR))
 #define fTRAP1_VIRTINSN(IMM) \
-    (fGRE_ENABLED() && \
-        (((IMM) == 1) || ((IMM) == 3) || ((IMM) == 4) || ((IMM) == 6)))
+    (fGRE_ENABLED() && ((IMM) >= 1) && ((IMM) <= 0x20))
 
 /* Not modeled in qemu */
 

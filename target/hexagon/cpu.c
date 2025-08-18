@@ -30,6 +30,9 @@
 #include "cpu_helper.h"
 #include "hex_mmu.h"
 #include "hw/hexagon/hexagon.h"
+#ifndef CONFIG_USER_ONLY
+#include "hw/hexagon/hexagon_vm.h"
+#endif
 
 #ifndef CONFIG_USER_ONLY
 #include "macros.h"
@@ -79,8 +82,12 @@ static const Property hexagon_cpu_properties[] = {
         0xffffffffULL),
     DEFINE_PROP_UINT32("hvx-contexts", HexagonCPU, hvx_contexts, 0),
     DEFINE_PROP_UINT32("exec-start-addr", HexagonCPU, boot_addr, 0xffffffffULL),
+
     DEFINE_PROP_LINK("global-regs", HexagonCPU, globalregs,
                      TYPE_HEXAGON_GLOBALREG, HexagonGlobalRegState *),
+    DEFINE_PROP_LINK("vm-state", HexagonCPU, vm, TYPE_HEXAGON_VM,
+                     HexagonVMState *),
+    DEFINE_PROP_BOOL("vm", HexagonCPU, vm_enabled, false),
 #endif
     DEFINE_PROP_UINT32("dsp-rev", HexagonCPU, rev_reg, 0),
     DEFINE_PROP_BOOL("lldb-compat", HexagonCPU, lldb_compat, false),
@@ -392,6 +399,11 @@ static void mmu_reset(CPUHexagonState *env)
     CPUState *cs = env_cpu(env);
     if (cs->cpu_index == 0) {
         memset(env->hex_tlb, 0, sizeof(*env->hex_tlb));
+        /* Reinitialize next_vm_index after reset - only if VM state exists */
+        HexagonCPU *cpu = HEXAGON_CPU(cs);
+        if (cpu->vm) {
+            hexagon_vm_reset_tlb_index(cpu->vm);
+        }
     }
 }
 

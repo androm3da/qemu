@@ -37,15 +37,12 @@ Q6INSN(J2_trap1,"trap1(Rx32,#u8)",ATTRIBS(A_COF,A_NOTE_NOPACKET,A_RESTRICT_NOPAC
 	 * Since trap1 is SOLO, this means the register will effectively not be updated
 	 */
 	if (!fTRAP1_VIRTINSN(uiV)) {
+		trace_hexagon_trap1_call(uiV, RxV, PC);
 		fTRAP(1,uiV);
-	} else if (uiV == 1) {
-		fVIRTINSN_RTE(uiV,RxV);
-	} else if (uiV == 3) {
-		fVIRTINSN_SETIE(uiV,RxV);
-	} else if (uiV == 4) {
-		fVIRTINSN_GETIE(uiV,RxV);
-	} else if (uiV == 6) {
-		fVIRTINSN_SPSWAP(uiV,RxV);
+	} else {
+		trace_hexagon_vm_instruction(uiV, PC);
+		hexagon_vm_instruction(env, uiV);
+		RxV = 0; /* Set return value to success for all VM instructions */
 	})
 
 Q6INSN(J2_pause,"pause(#u8)",ATTRIBS(A_COF,A_NOTE_NOPACKET,A_RESTRICT_NOPACKET),

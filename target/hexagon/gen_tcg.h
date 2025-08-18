@@ -1374,3 +1374,13 @@
 
 #define fGEN_TCG_A2_nop(SHORTCODE) do { } while (0)
 #define fGEN_TCG_SA1_setin1(SHORTCODE) tcg_gen_movi_tl(RdV, -1)
+
+/*
+ * trap1 instruction generation (default/user mode implementation)
+ */
+#define fGEN_TCG_J2_trap1(SHORTCODE) \
+    do { \
+        (void)uiV; /* Suppress unused variable warning */ \
+        (void)RxV; /* Suppress unused variable warning */ \
+        hex_gen_exception_end_tb(ctx, HEX_EVENT_TRAP1); \
+    } while (0)

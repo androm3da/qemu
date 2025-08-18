@@ -1992,6 +1992,7 @@ void HELPER(pending_interrupt)(CPUHexagonState *env)
     BQL_LOCK_GUARD();
     hex_interrupt_update(env);
 }
+
 #endif
 
 #ifdef CONFIG_USER_ONLY

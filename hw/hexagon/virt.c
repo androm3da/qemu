@@ -11,6 +11,7 @@
 #include "hw/core/sysbus-fdt.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/hexagon/virt.h"
+#include "hw/hexagon/hexagon_vm.h"
 #include "hw/loader.h"
 #include "hw/qdev-properties.h"
 #include "hw/register.h"
@@ -23,6 +24,7 @@
 #include "system/device_tree.h"
 #include "system/reset.h"
 #include "system/system.h"
+#include "qemu/option.h"
 #include <libfdt.h>
 
 static const int VIRTIO_DEV_COUNT = 8;
@@ -268,6 +270,9 @@ static void virt_instance_init(Object *obj)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
 
+    /* Set default values for machine properties */
+    vms->vm_enabled = false;  /* Default to VM mode disabled */
+
     create_fdt(vms);
 }
 
@@ -314,6 +319,18 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
     return bios_addr;  /* Return entry point at address 0x0 */
 }
 
+static bool virt_get_vm(Object *obj, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+    return vms->vm_enabled;
+}
+
+static void virt_set_vm(Object *obj, bool value, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+    vms->vm_enabled = value;
+}
+
 static void do_cpu_reset(void *opaque)
 {
     HexagonCPU *cpu = opaque;
@@ -326,6 +343,8 @@ static void virt_init(MachineState *ms)
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(ms);
     Error **errp = NULL;
     const hexagon_machine_config *m_cfg = &v68n_1024;
+
+    /* vm_enabled is set by command-line option parsing */
 
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs", ms->kernel_cmdline);
 
@@ -357,6 +376,14 @@ static void virt_init(MachineState *ms)
     qdev_prop_set_uint32(gsregs_dev, "qtimer-base-addr", m_cfg->qtmr_region);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gsregs_dev), errp);
 
+    /*
+     * Create VM state object that will be shared by all CPUs if VM is enabled
+     */
+    Object *vm_state = NULL;
+    if (vms->vm_enabled) {
+        vm_state = object_new(TYPE_HEXAGON_VM);
+    }
+
     HexagonCPU *cpu_0 = NULL;
     for (int i = 0; i < ms->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(ms->cpu_type));
@@ -379,6 +406,12 @@ static void virt_init(MachineState *ms)
         qdev_prop_set_uint32(DEVICE(cpu), "l2vic-base-addr", m_cfg->l2vic_base);
         qdev_prop_set_uint32(DEVICE(cpu), "jtlb-entries",
                              m_cfg->cfgtable.jtlb_size_entries);
+        qdev_prop_set_bit(DEVICE(cpu), "vm", vms->vm_enabled);
+
+        /* Set vm-state property only if VM is enabled */
+        if (vms->vm_enabled && vm_state) {
+            object_property_set_link(OBJECT(cpu), "vm-state", vm_state, errp);
+        }
 
         if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             return;
@@ -424,6 +457,11 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     mc->no_cdrom = 1;
     mc->numa_mem_supported = false;
     mc->default_nic = "virtio-mmio-bus";
+
+    /* Add vm command-line option */
+    object_class_property_add_bool(oc, "vm", virt_get_vm, virt_set_vm);
+    object_class_property_set_description(oc, "vm",
+        "Set on/off to enable/disable VM mode for Hexagon vCPUs (default: off)");
 }
 
 

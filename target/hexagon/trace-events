@@ -1,0 +1,8 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# Trap instructions
+hexagon_trap1_call(uint32_t operand, uint32_t rx_input, uint32_t pc) "TRAP1: operand=0x%02x rx_input=0x%08x pc=0x%08x"
+
+# VM instructions
+hexagon_vm_instruction(uint32_t operand, uint32_t pc) "VM instruction: operand=0x%02x pc=0x%08x"
+hexagon_vm_enabled_check(int enabled) "VM enabled check: %d"

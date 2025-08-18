@@ -23,6 +23,9 @@ struct HexagonVirtMachineState {
     MemoryRegion vtcm;
     MemoryRegion bios;
     DeviceState *l2vic;
+
+    /* Machine properties */
+    bool vm_enabled;
 };
 
 void hexagon_load_fdt(const struct HexagonVirtMachineState *vms);

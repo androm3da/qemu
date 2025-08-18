@@ -271,6 +271,7 @@ hexagon_softmmu_ss.add(files(
     'hex_mmu.c',
     'hex_interrupts.c',
     'hexswi.c',
+    'vm.c',
     'machine.c',
     'monitor.c',
 ))

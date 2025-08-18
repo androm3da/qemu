@@ -3736,6 +3736,7 @@ if have_system or have_user
     'target/s390x',
     'target/s390x/kvm',
     'target/sparc',
+    'target/hexagon',
   ]
 endif
 

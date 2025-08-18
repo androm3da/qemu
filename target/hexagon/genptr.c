@@ -36,6 +36,9 @@
 #endif
 
 #include "genptr.h"
+#ifndef CONFIG_USER_ONLY
+#include "vm.h"
+#endif
 
 TCGv gen_read_reg(TCGv result, int num)
 {
@@ -1625,6 +1628,115 @@ void gen_add_sat_i64(DisasContext *ctx, TCGv_i64 ret, TCGv_i64 a, TCGv_i64 b)
 
     gen_set_label(ret_label);
 }
+
+#ifndef CONFIG_USER_ONLY
+#include "hex_vm.c.inc"
+
+/* FIXME: this is mutually exclusive with hexagon_vm_instruction() - pick one */
+void gen_vminst(DisasContext *ctx, int operand)
+{
+    /* Save R29, then later check for changed value to know if
+       any VM* insn modified stack pointer (e.g. swap vm/user
+       stacks) */
+    TCGv s29 = tcg_temp_new();
+    tcg_gen_mov_tl(s29, hex_gpr[HEX_REG_R29]);
+    if ((operand & 0xF000) != 0) {
+        TCGLabel *skip_inst = gen_new_label();
+        int cond_val = operand >> 13;
+        bool is_pred_neg = operand & 0x1000;
+        tcg_gen_brcondi_tl(is_pred_neg ? TCG_COND_EQ : TCG_COND_NE,
+                           hex_pred[cond_val], 0, skip_inst);
+
+        gen_vminst(ctx, operand & 0x0FFF);
+        gen_set_label(skip_inst);
+        return;
+    }
+
+    /* Add entry trace call with R0 and R1 values */
+    gen_helper_vm_entry_trace(tcg_env, tcg_constant_i32(operand),
+                              hex_gpr[HEX_REG_R00], hex_gpr[HEX_REG_R01]);
+
+    /* TODO: when swapping guest/user, must exchange GOSP, R29... */
+    switch (operand) {
+    case HEX_VIRT_VMVERSION:
+        gen_vmversion();
+        break;
+    case HEX_VIRT_VMSETVEC:
+        gen_vmsetvec();
+        break;
+    case HEX_VIRT_VMGETSETREG:
+        gen_vmgetregs();
+        break;
+    case HEX_VIRT_VMSETIE:
+        gen_vmsetie();
+        break;
+    case HEX_VIRT_VMGETIE:
+        gen_vmgetie();
+        break;
+    case HEX_VIRT_VMINTOP:
+        gen_vmintop();
+        break;
+    case HEX_VIRT_VMSWAP:
+        gen_vmswap();
+        break;
+    case HEX_VIRT_VMVPID:
+        gen_vmvpid();
+        break;
+    case HEX_VIRT_VMCACHE:
+        gen_vmcache();
+        break;
+    case HEX_VIRT_VMGETTIME:
+        gen_vmgettime();
+        break;
+    case HEX_VIRT_VMSETTIME:
+        gen_vmsettime();
+        break;
+    case HEX_VIRT_VMRETURN:
+        gen_vmrte();
+        break;
+    case HEX_VIRT_VMYIELD:
+        gen_vmyield();
+        break;
+    case HEX_VIRT_VMSTOP:
+        gen_vmstop();
+        break;
+    case HEX_VIRT_VMNEWMAP:
+        gen_vmnewmap();
+        break;
+    case HEX_VIRT_VMRESUME:
+        gen_vmresume();
+        break;
+    case HEX_VIRT_VMCLEARMAP:
+        gen_vmclrmap();
+        break;
+    case HEX_VIRT_VMDUMPMAP:
+        gen_vmdumpmap();
+        break;
+    case HEX_VIRT_VMGETINFO:
+        gen_vmgetinfo();
+        break;
+    case HEX_VIRT_VMTIMEROP:
+        gen_vmtimerop();
+        break;
+    case HEX_VIRT_VMSTART:
+        gen_vmstart();
+        break;
+    case HEX_VIRT_VMWAIT:
+        gen_vmwait();
+        break;
+
+    default:
+        /* FIXME: Invalid packet exception? */
+        qemu_log_mask(LOG_GUEST_ERROR, "Invalid or Unimplemented trap1 %d\n", operand);
+        g_assert_not_reached();
+        break;
+    }
+
+    /* Add exit trace call with R0 and R1 values after instruction execution */
+    gen_helper_vm_exit_trace(tcg_env, tcg_constant_i32(operand),
+                             hex_gpr[HEX_REG_R00], hex_gpr[HEX_REG_R01]);
+}
+#endif
 
 #include "tcg_funcs_generated.c.inc"
 #include "tcg_func_table_generated.c.inc"
