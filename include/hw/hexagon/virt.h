@@ -21,6 +21,7 @@ struct HexagonVirtMachineState {
     MemoryRegion ram;
     MemoryRegion tcm;
     MemoryRegion vtcm;
+    MemoryRegion bios;
     DeviceState *l2vic;
 };
 
