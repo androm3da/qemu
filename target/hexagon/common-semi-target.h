@@ -77,7 +77,10 @@ static inline void hex_prepare_for_read(CPUState *cs, target_ulong fd,
 
 #define COMMA ,
 
-SEMIHOSTING_REGISTER_OPT_CALLBACKS(hex_opt_callbacks)
+SEMIHOSTING_REGISTER_OPT_CALLBACKS({
+    .prepare_for_read = hex_prepare_for_read COMMA
+    .set_err = hex_semi_set_err COMMA
+});
 
 #define SEMIHOSTING_EXT_OPEN_MODES
 
