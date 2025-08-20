@@ -75,10 +75,7 @@ static inline void hex_prepare_for_read(CPUState *cs, target_ulong fd,
     hexagon_touch_memory(env, buf, len, 0);
 }
 
-const struct semihosting_opt_callbacks hex_opt_callbacks = {
-    .prepare_for_read = hex_prepare_for_read,
-    .set_err = hex_semi_set_err,
-};
+#define COMMA ,
 
 SEMIHOSTING_REGISTER_OPT_CALLBACKS(hex_opt_callbacks)
 
