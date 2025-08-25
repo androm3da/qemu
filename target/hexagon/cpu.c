@@ -37,6 +37,7 @@
 #include "macros.h"
 #include "sys_macros.h"
 #include "hex_mmu.h"
+#include "hw/hexagon/hexagon_tlb.h"
 #include "hw/intc/l2vic.h"
 #include "qemu/main-loop.h"
 #include "system/cpus.h"
@@ -126,6 +127,8 @@ static const Property hexagon_cpu_properties[] = {
     DEFINE_PROP_UINT32("subsystem-id", HexagonCPU, subsystem_id, 0),
     DEFINE_PROP_UINT32("jtlb-entries", HexagonCPU, jtlb_entries, MAX_TLB_ENTRIES),
     DEFINE_PROP_UINT32("dma-jtlb-entries", HexagonCPU, dma_jtlb_entries, 0),
+    DEFINE_PROP_LINK("tlb", HexagonCPU, tlb_obj,
+                     TYPE_HEXAGON_TLB, HexagonTLBState *),
 #endif
     DEFINE_PROP_BOOL("hvx-bfloat", HexagonCPU, hvx_bfloat, false),
     DEFINE_PROP_BOOL("coproc2-bfloat", HexagonCPU, coproc2_bfloat, false),
@@ -641,13 +644,6 @@ void hexagon_cpu_soft_reset(CPUHexagonState *env)
 #define HEXAGON_CFG_ADDR_BASE(addr) (((addr) >> 16) & 0x0fffff)
 
 #ifndef CONFIG_USER_ONLY
-static void mmu_reset(CPUHexagonState *env)
-{
-    CPUState *cs = env_cpu(env);
-    if (cs->cpu_index == 0) {
-        memset(env->hex_tlb, 0, sizeof(*env->hex_tlb));
-    }
-}
 #endif
 
 static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
@@ -759,7 +755,6 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->tlb_lock_count = 0;
     env->ss_pending = false;
 
-    mmu_reset(env);
     hexagon_cpu_soft_reset(env);
     arch_set_thread_reg(env, HEX_REG_PC, cpu->boot_addr);
 #endif
@@ -867,7 +862,6 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
     cpu->vmstate_num_g_gcycle = NUM_GLOBAL_GCYCLE;
     env->pmu.vmstate_num_ctrs = NUM_PMU_CTRS;
 
-    hex_mmu_realize(env);
     if (cs->cpu_index == 0) {
         env->g_sreg = g_new0(target_ulong, NUM_SREGS);
         env->g_gcycle = g_new0(target_ulong, NUM_GLOBAL_GCYCLE);

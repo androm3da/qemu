@@ -25,6 +25,7 @@
 #include "hw/boards.h"
 #include "hw/qdev-properties.h"
 #include "hw/hexagon/hexagon.h"
+#include "hw/hexagon/hexagon_tlb.h"
 #include "hw/timer/qct-qtimer.h"
 #include "hw/intc/l2vic.h"
 #include "hw/char/pl011.h"
@@ -307,6 +308,11 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
     HexagonCPU *cpu_0 = NULL;
     Error **errp = NULL;
 
+    DeviceState *tlb_dev = qdev_new("hexagon-tlb");
+    qdev_prop_set_uint32(tlb_dev, "num-entries",
+                         m_cfg->cfgtable.jtlb_size_entries);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tlb_dev), errp);
+
     for (int i = 0; i < machine->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(machine->cpu_type));
         CPUHexagonState *env = &cpu->env;
@@ -355,6 +361,7 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
         }
 
         qdev_prop_set_uint32(DEVICE(cpu), "dsp-rev", rev);
+        object_property_set_link(OBJECT(cpu), "tlb", OBJECT(tlb_dev), errp);
 
         if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             return;

@@ -30,6 +30,7 @@
 #include "arch.h"
 #include "hex_arch_types.h"
 #include "op_helper.h"
+#include "hw/hexagon/hexagon_tlb.h"
 #include "fma_emu.h"
 #include "mmvec/mmvec.h"
 #include "mmvec/macros_auto.h"

@@ -230,8 +230,7 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_MMQREG_ARRAY(env.QRegs, HexagonCPU, NUM_QREGS),
         VMSTATE_MMQREG_ARRAY(env.future_QRegs, HexagonCPU, NUM_QREGS),
 
-        VMSTATE_POINTER(env.hex_tlb, HexagonCPU, 0,
-                        vmstate_info_hex_tlb_ptr, CPUHexagonTLBContext *),
+        /* TLB migration is now handled by the TLB QOM object */
 
         VMSTATE_STRUCT(env.pmu, HexagonCPU, 0, vmstate_pmustate, PMUState),
         VMSTATE_STRUCT(env.einfo, HexagonCPU, 0, vmstate_hex_exception_info,

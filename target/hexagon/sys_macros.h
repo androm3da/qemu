@@ -13,6 +13,8 @@
 
 #ifndef CONFIG_USER_ONLY
 
+typedef struct ArchCPU HexagonCPU;
+
 #define READ_SREG(NUM) arch_get_system_reg(env, NUM)
 
 #ifdef QEMU_GENERATE
@@ -169,7 +171,7 @@
         ? fTLB_NONPOW2WRAP(fDMATLB_IDXMASK(INDEX - DMA_TLB_OFFSET)) + DMA_TLB_OFFSET \
         : fTLB_NONPOW2WRAP(fTLB_IDXMASK(INDEX)))
 #define fTLBR(INDEX) \
-    (env->hex_tlb->entries[TLB_WRAP_INDEX(INDEX)])
+    hexagon_tlb_read_entry(env_archcpu(env), TLB_WRAP_INDEX(INDEX))
 #define fTLBR_EXTENDED(INDEX) \
     fTLBR(INDEX)
 

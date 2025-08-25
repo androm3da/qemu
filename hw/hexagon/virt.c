@@ -10,6 +10,7 @@
 #include "hw/char/pl011.h"
 #include "hw/core/sysbus-fdt.h"
 #include "hw/hexagon/hexagon.h"
+#include "hw/hexagon/hexagon_tlb.h"
 #include "hw/hexagon/virt.h"
 #include "hw/loader.h"
 #include "hw/qdev-properties.h"
@@ -388,6 +389,12 @@ static void virt_init(MachineState *ms)
         cpu_model = HEXAGON_CPU_TYPE_NAME("v73");
     }
 
+    /* Create shared TLB object that will be shared by all CPUs/threads */
+    DeviceState *tlb_dev = qdev_new("hexagon-tlb");
+    qdev_prop_set_uint32(tlb_dev, "num-entries",
+                         m_cfg->cfgtable.jtlb_size_entries);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tlb_dev), errp);
+
     HexagonCPU *cpu_0 = NULL;
     for (int i = 0; i < ms->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(ms->cpu_type));
@@ -422,6 +429,8 @@ static void virt_init(MachineState *ms)
                              (m_cfg->cfgtable.coproc2_fp16_acc_exp >> 0) & 1);
         qdev_prop_set_bit(DEVICE(cpu), "hvx-bfloat",
                              (m_cfg->cfgtable.coproc2_fp16_acc_exp >> 1) & 1);
+
+        object_property_set_link(OBJECT(cpu), "tlb", OBJECT(tlb_dev), errp);
 
         if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             return;
