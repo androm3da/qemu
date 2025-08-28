@@ -15,7 +15,8 @@
 #include "hw/qdev-properties.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/loader.h"
-#include "hw/timer/qct-qtimer.h"
+#include "hw/timer/sse-timer.h"
+#include "hw/timer/sse-counter.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
@@ -85,21 +86,38 @@ static void do_cpu_reset(void *opaque)
     cpu_reset(cs);
 }
 
-static void create_qtimer(DeviceState *l2vic_dev, const hexagon_machine_config *m_cfg)
+static void create_sse_timer(DeviceState *l2vic_dev, const hexagon_machine_config *m_cfg)
 {
     Error **errp = NULL;
-    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
 
-    object_property_set_uint(OBJECT(qtimer), "nr_frames", 2, errp);
-    object_property_set_uint(OBJECT(qtimer), "nr_views", 1, errp);
-    object_property_set_uint(OBJECT(qtimer), "cnttid", 0x111, errp);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), errp);
+    /* Create SSE Counter first as the timer depends on it */
+    SSECounter *counter = SSE_COUNTER(qdev_new(TYPE_SSE_COUNTER));
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(counter), errp);
+    /* Map counter at the base qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(counter), 0, m_cfg->qtmr_region);
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 0,
-                       qdev_get_gpio_in(l2vic_dev, 2)); /* IRQ 2 */
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
-                       qdev_get_gpio_in(l2vic_dev, 4)); /* IRQ 4 */
+    /* Create two SSE Timers to replace the two QTimer frames */
+    /* First timer replaces QTimer frame 0 */
+    SSETimer *timer0 = SSE_TIMER(qdev_new(TYPE_SSE_TIMER));
+    object_property_set_link(OBJECT(timer0), "counter", OBJECT(counter), errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(timer0), errp);
+
+    /* Map timer0 at offset 0x1000 from qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(timer0), 0, m_cfg->qtmr_region + 0x1000);
+    /* Connect timer0 interrupt to IRQ 2 (same as QTimer frame 0) */
+    sysbus_connect_irq(SYS_BUS_DEVICE(timer0), 0,
+                       qdev_get_gpio_in(l2vic_dev, 2));
+
+    /* Second timer replaces QTimer frame 1 */
+    SSETimer *timer1 = SSE_TIMER(qdev_new(TYPE_SSE_TIMER));
+    object_property_set_link(OBJECT(timer1), "counter", OBJECT(counter), errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(timer1), errp);
+
+    /* Map timer1 at offset 0x2000 from qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(timer1), 0, m_cfg->qtmr_region + 0x2000);
+    /* Connect timer1 interrupt to IRQ 4 (same as QTimer frame 1) */
+    sysbus_connect_irq(SYS_BUS_DEVICE(timer1), 0,
+                       qdev_get_gpio_in(l2vic_dev, 4));
 }
 
 static void hexagon_common_init(MachineState *machine, Rev_t rev,
@@ -167,8 +185,8 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
             sysbus_mmio_map(SYS_BUS_DEVICE(l2vic_dev), 1,
                 m_cfg->cfgtable.fastl2vic_base << 16);
 
-            /* Create QtTimer device */
-            create_qtimer(l2vic_dev, m_cfg);
+            /* Create SSE Timer device (replaces QtTimer) */
+            create_sse_timer(l2vic_dev, m_cfg);
         } else if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             env->dir_list = NULL;
             return;
