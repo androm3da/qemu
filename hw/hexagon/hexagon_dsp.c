@@ -15,6 +15,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/loader.h"
+#include "hw/timer/qct-qtimer.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
@@ -84,6 +85,23 @@ static void do_cpu_reset(void *opaque)
     cpu_reset(cs);
 }
 
+static void create_qtimer(DeviceState *l2vic_dev, const hexagon_machine_config *m_cfg)
+{
+    Error **errp = NULL;
+    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
+
+    object_property_set_uint(OBJECT(qtimer), "nr_frames", 2, errp);
+    object_property_set_uint(OBJECT(qtimer), "nr_views", 1, errp);
+    object_property_set_uint(OBJECT(qtimer), "cnttid", 0x111, errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), errp);
+
+    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
+    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 0,
+                       qdev_get_gpio_in(l2vic_dev, 2)); /* IRQ 2 */
+    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
+                       qdev_get_gpio_in(l2vic_dev, 4)); /* IRQ 4 */
+}
+
 static void hexagon_common_init(MachineState *machine, Rev_t rev,
                                 hexagon_machine_config *m_cfg)
 {
@@ -148,6 +166,9 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
                     NULL);
             sysbus_mmio_map(SYS_BUS_DEVICE(l2vic_dev), 1,
                 m_cfg->cfgtable.fastl2vic_base << 16);
+
+            /* Create QtTimer device */
+            create_qtimer(l2vic_dev, m_cfg);
         } else if (!qdev_realize_and_unref(DEVICE(cpu), NULL, errp)) {
             env->dir_list = NULL;
             return;
