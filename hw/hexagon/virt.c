@@ -14,7 +14,10 @@
 #include "hw/loader.h"
 #include "hw/qdev-properties.h"
 #include "hw/register.h"
-#include "hw/timer/qct-qtimer.h"
+#include "hw/timer/sse-timer.h"
+#include "hw/timer/sse-counter.h"
+#include "hw/clock.h"
+#include "hw/qdev-clock.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "qemu/units.h"
@@ -246,28 +249,49 @@ static void fdt_add_virtio_devices(const HexagonVirtMachineState *vms)
     }
 }
 
-static void create_qtimer(HexagonVirtMachineState *vms,
-                          const hexagon_machine_config *m_cfg)
+static void create_sse_timer(HexagonVirtMachineState *vms,
+                             const hexagon_machine_config *m_cfg)
 {
     Error **errp = NULL;
-    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
 
-    object_property_set_uint(OBJECT(qtimer), "nr_frames", 2, errp);
-    object_property_set_uint(OBJECT(qtimer), "nr_views", 1, errp);
-    object_property_set_uint(OBJECT(qtimer), "cnttid", 0x111, errp);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), errp);
+    /* Create SSE Counter first as the timer depends on it */
+    SSECounter *counter = SSE_COUNTER(qdev_new(TYPE_SSE_COUNTER));
+    /* Create and connect the clock for the SSE counter - use 24MHz frequency */
+    Clock *mainclk = clock_new(OBJECT(vms), "mainclk");
+    clock_set_hz(mainclk, 24000000);
+    qdev_connect_clock_in(DEVICE(counter), "CLK", mainclk);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(counter), errp);
+    /* Map counter at the base qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(counter), 0, m_cfg->qtmr_region);
 
+    /* Create two SSE Timers to replace the two QTimer frames */
+    /* First timer replaces QTimer frame 0 */
+    SSETimer *timer0 = SSE_TIMER(qdev_new(TYPE_SSE_TIMER));
+    object_property_set_link(OBJECT(timer0), "counter", OBJECT(counter), errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(timer0), errp);
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 0,
+    /* Map timer0 at offset 0x1000 from qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(timer0), 0, m_cfg->qtmr_region + 0x1000);
+    /* Connect timer0 interrupt to IRQ VIRT_QTMR0 (same as QTimer frame 0) */
+    sysbus_connect_irq(SYS_BUS_DEVICE(timer0), 0,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
+
+    /* Second timer replaces QTimer frame 1 */
+    SSETimer *timer1 = SSE_TIMER(qdev_new(TYPE_SSE_TIMER));
+    object_property_set_link(OBJECT(timer1), "counter", OBJECT(counter), errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(timer1), errp);
+
+    /* Map timer1 at offset 0x2000 from qtimer region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(timer1), 0, m_cfg->qtmr_region + 0x2000);
+    /* Connect timer1 interrupt to IRQ VIRT_QTMR1 (same as QTimer frame 1) */
+    sysbus_connect_irq(SYS_BUS_DEVICE(timer1), 0,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
 }
 
 static void virt_instance_init(Object *obj)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
 
     create_fdt(vms);
 }
@@ -440,7 +464,7 @@ static void virt_init(MachineState *ms)
     fdt_add_clocks(vms);
     fdt_add_uart(vms, VIRT_UART0);
     fdt_add_gpt_node(vms);
-    create_qtimer(vms, m_cfg);
+    create_sse_timer(vms, m_cfg);
 
     hexagon_config_table *config_table = (hexagon_config_table *)&m_cfg->cfgtable;
 

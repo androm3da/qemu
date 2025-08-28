@@ -9,6 +9,7 @@
 #define HW_HEXAGONVIRT_H
 
 #include "hw/boards.h"
+#include "hw/clock.h"
 #include "target/hexagon/cpu.h"
 
 struct HexagonVirtMachineState {
