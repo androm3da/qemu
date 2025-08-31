@@ -1953,26 +1953,27 @@ static void modify_syscfg(CPUHexagonState *env, uint32_t val)
 {
     g_assert(bql_locked());
 
-    uint32_t old;
     uint32_t syscfg_read_only_mask = 0x80001c00;
-    uint32_t syscfg = arch_get_system_reg(env, HEX_SREG_SYSCFG);
+    uint32_t old = arch_get_system_reg(env, HEX_SREG_SYSCFG);
+    uint8_t old_en = GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, old);
+    uint8_t old_gie = GET_SYSCFG_FIELD(SYSCFG_GIE, old);
+    uint8_t old_pm = GET_SYSCFG_FIELD(SYSCFG_PM, old);
+    uint8_t new_en = GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, val);
+    uint8_t new_gie = GET_SYSCFG_FIELD(SYSCFG_GIE, val);
+    uint8_t new_pm = GET_SYSCFG_FIELD(SYSCFG_PM, val);
+    CPUState *cs;
+    target_ulong old_mmu_enable = GET_SYSCFG_FIELD(SYSCFG_MMUEN, old);
+    target_ulong new_mmu_enable =
+        GET_SYSCFG_FIELD(SYSCFG_MMUEN, val);
 
     /* clear read-only bits if they are set in the new value. */
     val &= ~syscfg_read_only_mask;
     /* if read-only are currently set in syscfg keep them set. */
     val |= (syscfg & syscfg_read_only_mask);
 
-    uint32_t tmp = val;
-    old = arch_get_system_reg(env, HEX_SREG_SYSCFG);
-    arch_set_system_reg(env, HEX_SREG_SYSCFG, tmp);
+    arch_set_system_reg(env, HEX_SREG_SYSCFG, val);
 
     /* Check for change in MMU enable */
-    target_ulong old_mmu_enable = GET_SYSCFG_FIELD(SYSCFG_MMUEN, old);
-    uint8_t old_en = GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, old);
-    uint8_t old_gie = GET_SYSCFG_FIELD(SYSCFG_GIE, old);
-    uint8_t old_pm = GET_SYSCFG_FIELD(SYSCFG_PM, old);
-    target_ulong new_mmu_enable =
-        GET_SYSCFG_FIELD(SYSCFG_MMUEN, val);
     if (new_mmu_enable && !old_mmu_enable) {
         hex_mmu_on(env);
     } else if (!new_mmu_enable && old_mmu_enable) {
@@ -1980,17 +1981,13 @@ static void modify_syscfg(CPUHexagonState *env, uint32_t val)
     }
 
     /* Changing pcycle enable from 0 to 1 resets the counters */
-    uint8_t new_en = GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, val);
-    CPUState *cs;
     if (old_en == 0 && new_en == 1) {
         CPU_FOREACH(cs) {
-            CPUHexagonState *_env = cpu_env(cs);
-            _env->t_cycle_count = 0;
+            cpu_env(cs)->t_cycle_count = 0;
         }
     }
 
     /* See if global interrupts are turned on */
-    uint8_t new_gie = GET_SYSCFG_FIELD(SYSCFG_GIE, val);
     if (!old_gie && new_gie) {
         qemu_log_mask(CPU_LOG_INT, "%s: global interrupts enabled\n", __func__);
         hex_interrupt_update(env);
@@ -2003,7 +2000,6 @@ static void modify_syscfg(CPUHexagonState *env, uint32_t val)
         }
     }
 
-    uint8_t new_pm = GET_SYSCFG_FIELD(SYSCFG_PM, val);
     if (!old_pm && new_pm) {
         check_all_pmu_events(env);
     }
