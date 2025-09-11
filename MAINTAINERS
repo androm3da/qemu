@@ -1232,6 +1232,11 @@ M: Manos Pitsidianakis <manos.pitsidianakis@linaro.org>
 S: Maintained
 F: rust/hw/char/pl011/
 
+QCOM QUP Rust device
+M: Brian Cain <brian.cain@oss.qualcomm.com>
+S: Supported
+F: rust/hw/char/qup_geni_uart/
+
 AVR Machines
 -------------
 

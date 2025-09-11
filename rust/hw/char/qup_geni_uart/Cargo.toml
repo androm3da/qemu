@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+[package]
+name = "qup_geni_uart"
+version = "0.1.0"
+edition = "2021"
+authors = ["Brian Cain <brian.cain@oss.qualcomm.com>"]
+license = "GPL-2.0-or-later"
+description = "Qualcomm QUP GENI UART device model for QEMU"
+
+[dependencies]
+bits = { path = "../../../bits" }
+common = { path = "../../../common" }
+util = { path = "../../../util" }
+bql = { path = "../../../bql" }
+migration = { path = "../../../migration" }
+qom = { path = "../../../qom" }
+chardev = { path = "../../../chardev" }
+system = { path = "../../../system" }
+hwcore = { path = "../../../hw/core" }
+qemu-macros = { path = "../../../qemu-macros" }

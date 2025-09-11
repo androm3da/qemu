@@ -248,6 +248,8 @@ qtests_arm = \
   (config_all_devices.has_key('CONFIG_FSI_APB2OPB_ASPEED') ? ['aspeed_fsi-test'] : []) + \
   (config_all_devices.has_key('CONFIG_STM32L4X5_SOC') and
    config_all_devices.has_key('CONFIG_DM163')? ['dm163-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_PL011_C') ? ['pl011-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST') ? ['qup-geni-uart-test'] : []) + \
   ['arm-cpu-features',
    'boot-serial-test']
 
@@ -263,6 +265,8 @@ qtests_aarch64 = \
    config_all_devices.has_key('CONFIG_TPM_TIS_I2C') ? ['tpm-tis-i2c-test'] : []) + \
   (config_all_devices.has_key('CONFIG_ASPEED_SOC') ? qtests_aspeed64 : []) + \
   (config_all_devices.has_key('CONFIG_NPCM8XX') ? qtests_npcm8xx : []) + \
+  (config_all_devices.has_key('CONFIG_PL011_C') ? ['pl011-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST') ? ['qup-geni-uart-test'] : []) + \
   qtests_cxl +                                                                                  \
   ['arm-cpu-features',
    'numa-test',
@@ -283,6 +287,9 @@ qtests_riscv32 = \
 
 qtests_riscv64 = ['riscv-csr-test'] + \
   (unpack_edk2_blobs ? ['bios-tables-test'] : [])
+
+qtests_hexagon = \
+  (config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST') ? ['qup-geni-uart-test'] : [])
 
 qos_test_ss = ss.source_set()
 qos_test_ss.add(
