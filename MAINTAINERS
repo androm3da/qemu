@@ -945,6 +945,13 @@ F: roms/vbootrom
 F: docs/system/arm/nuvoton.rst
 F: tests/functional/arm/test_quanta_gsj.py
 
+QCOM QCS6490
+M: Brian Cain <brian.cain@oss.qualcomm.com>
+L: qemu-arm@nongnu.org
+S: Supported
+F: hw/arm/qcs6490.c
+F: include/hw/arm/*qcs6490*
+
 Raspberry Pi
 M: Peter Maydell <peter.maydell@linaro.org>
 R: Philippe Mathieu-Daudé <philmd@linaro.org>
