@@ -453,9 +453,16 @@ static void init(MachineState *machine)
                                qcs6490_memmap[QCS6490_BLUETOOTH].size);
 
     /* Power management */
-    create_unimplemented_device("qcs6490.rpmh-rsc",
+    DeviceState *rpmh_rsc = qdev_new(TYPE_RPMH_RSC);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(rpmh_rsc), &error_fatal);
+    memory_region_add_subregion(&s->sysmem,
                                qcs6490_memmap[QCS6490_RPMH_RSC].base,
-                               qcs6490_memmap[QCS6490_RPMH_RSC].size);
+                               sysbus_mmio_get_region(SYS_BUS_DEVICE(rpmh_rsc),
+                                                      0));
+    memory_region_add_subregion(&s->sysmem,
+                               qcs6490_memmap[QCS6490_RPMH_RSC].base + 0xD00,
+                               sysbus_mmio_get_region(SYS_BUS_DEVICE(rpmh_rsc),
+                                                      1));
     create_unimplemented_device("qcs6490.pm7325",
                                qcs6490_memmap[QCS6490_PM7325].base,
                                qcs6490_memmap[QCS6490_PM7325].size);
