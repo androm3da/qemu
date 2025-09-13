@@ -87,22 +87,22 @@ static const MemMapEntry qcs6490_memmap[] = {
     [QCS6490_GIC_REDIST] = { 0x17a60000, 0x00100000 }, /* GIC Redistributor */
 
     /* UARTs - QUP GENI UARTs */
-    [QCS6490_UART0]      = { 0x00980000, 0x00001000 }, /* UART0 */
-    [QCS6490_UART1]      = { 0x00984000, 0x00001000 }, /* UART1 */
-    [QCS6490_UART2]      = { 0x00988000, 0x00001000 }, /* UART2 */
-    [QCS6490_UART3]      = { 0x0098c000, 0x00001000 }, /* UART3 */
-    [QCS6490_UART4]      = { 0x00990000, 0x00001000 }, /* UART4 */
-    [QCS6490_UART5]      = { 0x00994000, 0x00001000 }, /* UART5 (debug) */
-    [QCS6490_UART6]      = { 0x00998000, 0x00001000 }, /* UART6 */
-    [QCS6490_UART7]      = { 0x0099c000, 0x00001000 }, /* UART7 (BT) */
-    [QCS6490_UART8]      = { 0x00a80000, 0x00001000 }, /* UART8 */
-    [QCS6490_UART9]      = { 0x00a84000, 0x00001000 }, /* UART9 */
-    [QCS6490_UART10]     = { 0x00a88000, 0x00001000 }, /* UART10 */
-    [QCS6490_UART11]     = { 0x00a8c000, 0x00001000 }, /* UART11 */
-    [QCS6490_UART12]     = { 0x00a90000, 0x00001000 }, /* UART12 */
-    [QCS6490_UART13]     = { 0x00a94000, 0x00001000 }, /* UART13 */
-    [QCS6490_UART14]     = { 0x00a98000, 0x00001000 }, /* UART14 */
-    [QCS6490_UART15]     = { 0x00a9c000, 0x00001000 }, /* UART15 */
+    [QCS6490_UART0]      = { 0x00980000, 0x00004000 }, /* UART0 */
+    [QCS6490_UART1]      = { 0x00984000, 0x00004000 }, /* UART1 */
+    [QCS6490_UART2]      = { 0x00988000, 0x00004000 }, /* UART2 */
+    [QCS6490_UART3]      = { 0x0098c000, 0x00004000 }, /* UART3 */
+    [QCS6490_UART4]      = { 0x00990000, 0x00004000 }, /* UART4 */
+    [QCS6490_UART5]      = { 0x00994000, 0x00004000 }, /* UART5 (debug) */
+    [QCS6490_UART6]      = { 0x00998000, 0x00004000 }, /* UART6 */
+    [QCS6490_UART7]      = { 0x0099c000, 0x00004000 }, /* UART7 (BT) */
+    [QCS6490_UART8]      = { 0x00a80000, 0x00004000 }, /* UART8 */
+    [QCS6490_UART9]      = { 0x00a84000, 0x00004000 }, /* UART9 */
+    [QCS6490_UART10]     = { 0x00a88000, 0x00004000 }, /* UART10 */
+    [QCS6490_UART11]     = { 0x00a8c000, 0x00004000 }, /* UART11 */
+    [QCS6490_UART12]     = { 0x00a90000, 0x00004000 }, /* UART12 */
+    [QCS6490_UART13]     = { 0x00a94000, 0x00004000 }, /* UART13 */
+    [QCS6490_UART14]     = { 0x00a98000, 0x00004000 }, /* UART14 */
+    [QCS6490_UART15]     = { 0x00a9c000, 0x00004000 }, /* UART15 */
 
     /* Reserved memory regions */
     [QCS6490_XBL_MEM]    = { 0x80700000, 0x00100000 }, /* XBL bootloader */

@@ -493,14 +493,23 @@ static void init(MachineState *machine)
     pm7325_register_with_spmi(PM7325(pm7325),
                               SPMI_CONTROLLER(spmi_controller), 1);
 
-    /* Other PMICs */
-    create_unimplemented_device("qcs6490.pm8350c",
-                               qcs6490_memmap[QCS6490_PM8350C].base,
-                               qcs6490_memmap[QCS6490_PM8350C].size);
-    create_unimplemented_device("qcs6490.pm7250b",
-                               qcs6490_memmap[QCS6490_PM7250B].base,
-                               sysbus_mmio_get_region(SYS_BUS_DEVICE(pm7250b),
-                                                      0));
+    /* PM8350C - Camera/Display PMIC (SPMI 2) */
+    DeviceState *pm8350c = qdev_new(TYPE_PM8350C);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(pm8350c), &error_fatal);
+    pm8350c_register_with_spmi(PM8350C(pm8350c),
+                               SPMI_CONTROLLER(spmi_controller), 2);
+
+    /* PM7250B - Battery Management PMIC (SPMI 3) */
+    DeviceState *pm7250b = qdev_new(TYPE_PM7250B);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(pm7250b), &error_fatal);
+    pm7250b_register_with_spmi(PM7250B(pm7250b),
+                               SPMI_CONTROLLER(spmi_controller), 3);
+
+    /* PMR735A - Peripheral power PMIC (SPMI 4) */
+    DeviceState *pmr735a = qdev_new(TYPE_PMR735A);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(pmr735a), &error_fatal);
+    pmr735a_register_with_spmi(PMR735A(pmr735a),
+                               SPMI_CONTROLLER(spmi_controller), 4);
 
     /* QUP and other peripherals */
     create_unimplemented_device("qcs6490.qup0",
