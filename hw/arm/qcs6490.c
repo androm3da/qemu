@@ -439,12 +439,21 @@ static void init(MachineState *machine)
                                qcs6490_memmap[QCS6490_SDHC2].base,
                                qcs6490_memmap[QCS6490_SDHC2].size);
 
-    create_unimplemented_device("qcs6490.usb3-prim",
+    /* USB3 Primary Controller - Device mode (a600000.ssusb) */
+    DeviceState *usb3_prim = qdev_new(TYPE_USB_DWC3);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb3_prim), &error_fatal);
+    memory_region_add_subregion(&s->sysmem,
                                qcs6490_memmap[QCS6490_USB3_PRIM].base,
-                               qcs6490_memmap[QCS6490_USB3_PRIM].size);
-    create_unimplemented_device("qcs6490.usb3-sec",
+                               sysbus_mmio_get_region(SYS_BUS_DEVICE(usb3_prim),
+                                                      0));
+
+    /* USB3 Secondary Controller - Host mode (8c00000.hsusb) */
+    DeviceState *usb3_sec = qdev_new(TYPE_USB_DWC3);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(usb3_sec), &error_fatal);
+    memory_region_add_subregion(&s->sysmem,
                                qcs6490_memmap[QCS6490_USB3_SEC].base,
-                               qcs6490_memmap[QCS6490_USB3_SEC].size);
+                               sysbus_mmio_get_region(SYS_BUS_DEVICE(usb3_sec),
+                                                      0));
     create_unimplemented_device("qcs6490.wifi",
                                qcs6490_memmap[QCS6490_WIFI].base,
                                qcs6490_memmap[QCS6490_WIFI].size);

@@ -130,8 +130,8 @@ static const MemMapEntry qcs6490_memmap[] = {
     [QCS6490_UFS_PHY]    = { 0x01d87000, 0x00001000 }, /* UFS PHY */
     [QCS6490_SDHC1]      = { 0x07c4000,  0x00001000 }, /* SDHC1 controller */
     [QCS6490_SDHC2]      = { 0x08804000, 0x00001000 }, /* SDHC2 controller */
-    [QCS6490_USB3_PRIM]  = { 0x0a600000, 0x00200000 }, /* USB3 Primary */
-    [QCS6490_USB3_SEC]   = { 0x0a800000, 0x00200000 }, /* USB3 Secondary */
+    [QCS6490_USB3_PRIM]  = { 0x0a600000, 0x00100000 }, /* USB3 Primary */
+    [QCS6490_USB3_SEC]   = { 0x08c00000, 0x00100000 }, /* USB3 Secondary */
     [QCS6490_PCIE0]      = { 0x01c00000, 0x00200000 }, /* PCIe 0 controller */
     [QCS6490_PCIE1]      = { 0x01c08000, 0x00002000 }, /* PCIe 1 controller */
     [QCS6490_WIFI]       = { 0x17a10000, 0x00010000 }, /* WiFi subsystem */
@@ -179,6 +179,8 @@ static const int qcs6490_irqmap[] = {
     [QCS6490_UART13] = 368,  /* GIC_SPI 368 */
     [QCS6490_UART14] = 369,  /* GIC_SPI 369 */
     [QCS6490_UART15] = 370,  /* GIC_SPI 370 */
+    [QCS6490_USB3_PRIM] = 274,  /* GIC_SPI 274 */
+    [QCS6490_USB3_SEC] = 275,   /* GIC_SPI 275 */
 };
 
 /* PCIe IRQ map - 4 consecutive IRQs for PCI INTA/B/C/D */
