@@ -267,7 +267,7 @@ qtests_aarch64 = \
   (config_all_devices.has_key('CONFIG_NPCM8XX') ? qtests_npcm8xx : []) + \
   (config_all_devices.has_key('CONFIG_PL011_C') ? ['pl011-test'] : []) + \
   (config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST') ? ['qup-geni-uart-test'] : []) + \
-  (config_all_devices.has_key('CONFIG_QCS6490') ? ['rpmh-rsc-qcs6490-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_QCS6490') ? ['rpmh-rsc-qcs6490-test', 'pm7325-test', 'pmk8350-test'] : []) + \
   qtests_cxl +                                                                                  \
   ['arm-cpu-features',
    'numa-test',
@@ -385,6 +385,8 @@ qtests = {
                              'migration/migration-util.c') + dbus_vmstate1,
   'erst-test': files('erst-test.c'),
   'rpmh-rsc-qcs6490-test': files('rpmh-rsc-qcs6490-test.c'),
+  'pm7325-test': files('pm7325-test.c'),
+  'pmk8350-test': files('pmk8350-test.c'),
   'ivshmem-test': [rt, '../../contrib/ivshmem-server/ivshmem-server.c'],
   'migration-test': migration_files + migration_tls_files,
   'pxe-test': files('boot-sector.c'),

@@ -463,15 +463,31 @@ static void init(MachineState *machine)
                                qcs6490_memmap[QCS6490_RPMH_RSC].base + 0xD00,
                                sysbus_mmio_get_region(SYS_BUS_DEVICE(rpmh_rsc),
                                                       1));
-    create_unimplemented_device("qcs6490.pm7325",
-                               qcs6490_memmap[QCS6490_PM7325].base,
-                               qcs6490_memmap[QCS6490_PM7325].size);
+
+    /* SPMI Controller - Interface for PMICs */
+    DeviceState *spmi_controller = qdev_new(TYPE_SPMI_CONTROLLER);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(spmi_controller), &error_fatal);
+    memory_region_add_subregion(&s->sysmem,
+                               qcs6490_memmap[QCS6490_SPMI_CONTROLLER].base,
+                               sysbus_mmio_get_region(
+                                   SYS_BUS_DEVICE(spmi_controller), 0));
+
+    /* PMK8350 - Master PMIC (SPMI 0) */
+    DeviceState *pmk8350 = qdev_new(TYPE_PMK8350);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(pmk8350), &error_fatal);
+    pmk8350_register_with_spmi(PMK8350(pmk8350),
+                               SPMI_CONTROLLER(spmi_controller), 0);
+
+    /* PM7325 - Primary PMIC (SPMI 1) */
+    DeviceState *pm7325 = qdev_new(TYPE_PM7325);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(pm7325), &error_fatal);
+    pm7325_register_with_spmi(PM7325(pm7325),
+                              SPMI_CONTROLLER(spmi_controller), 1);
+
+    /* Other PMICs */
     create_unimplemented_device("qcs6490.pm8350c",
                                qcs6490_memmap[QCS6490_PM8350C].base,
                                qcs6490_memmap[QCS6490_PM8350C].size);
-    create_unimplemented_device("qcs6490.pmk8350",
-                               qcs6490_memmap[QCS6490_PMK8350].base,
-                               qcs6490_memmap[QCS6490_PMK8350].size);
     create_unimplemented_device("qcs6490.pm7250b",
                                qcs6490_memmap[QCS6490_PM7250B].base,
                                sysbus_mmio_get_region(SYS_BUS_DEVICE(pm7250b),
