@@ -43,7 +43,7 @@ enum {
     QCS6490_TRUSTED_APPS_MEM,
     /* Major subsystems */
     QCS6490_TLMM,
-    QCS6490_GCC,
+    QCS6490_GCC_REG,
     QCS6490_MDSS,
     QCS6490_VENUS,
     QCS6490_GPU,
@@ -121,7 +121,7 @@ static const MemMapEntry qcs6490_memmap[] = {
 
     /* Major subsystems */
     [QCS6490_TLMM]       = { 0x0f100000, 0x00300000 }, /* TLMM GPIO */
-    [QCS6490_GCC]        = { 0x00100000, 0x001f0000 }, /* Global Clock */
+    [QCS6490_GCC_REG]    = { 0x00100000, 0x001f0000 }, /* Global Clock */
     [QCS6490_MDSS]       = { 0x0ae00000, 0x00200000 }, /* Display Subsys */
     [QCS6490_VENUS]      = { 0x0aa00000, 0x00200000 }, /* Venus video codec */
     [QCS6490_GPU]        = { 0x03d00000, 0x00100000 }, /* Adreno GPU */

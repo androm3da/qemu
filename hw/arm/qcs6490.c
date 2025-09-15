@@ -413,9 +413,14 @@ static void init(MachineState *machine)
     create_unimplemented_device("qcs6490.tlmm",
                                qcs6490_memmap[QCS6490_TLMM].base,
                                qcs6490_memmap[QCS6490_TLMM].size);
-    create_unimplemented_device("qcs6490.gcc",
-                               qcs6490_memmap[QCS6490_GCC].base,
-                               qcs6490_memmap[QCS6490_GCC].size);
+
+    /* GCC (Global Clock Controller) */
+    DeviceState *gcc_dev = qdev_new(TYPE_QCS6490_GCC_DEV);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(gcc_dev), &error_fatal);
+    memory_region_add_subregion(&s->sysmem,
+                               qcs6490_memmap[QCS6490_GCC_REG].base,
+                               sysbus_mmio_get_region(SYS_BUS_DEVICE(gcc_dev),
+                                                      0));
     create_unimplemented_device("qcs6490.mdss",
                                qcs6490_memmap[QCS6490_MDSS].base,
                                qcs6490_memmap[QCS6490_MDSS].size);

@@ -267,7 +267,7 @@ qtests_aarch64 = \
   (config_all_devices.has_key('CONFIG_NPCM8XX') ? qtests_npcm8xx : []) + \
   (config_all_devices.has_key('CONFIG_PL011_C') ? ['pl011-test'] : []) + \
   (config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST') ? ['qup-geni-uart-test'] : []) + \
-  (config_all_devices.has_key('CONFIG_QCS6490') ? ['rpmh-rsc-qcs6490-test', 'pm7325-test', 'pmk8350-test', 'pm8350c-test', 'pm7250b-test', 'pmr735a-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_QCS6490') ? ['rpmh-rsc-qcs6490-test', 'pm7325-test', 'pmk8350-test', 'pm8350c-test', 'pm7250b-test', 'pmr735a-test', 'gcc-qcs6490-test'] : []) + \
   qtests_cxl +                                                                                  \
   ['arm-cpu-features',
    'numa-test',
