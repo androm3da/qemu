@@ -112,3 +112,8 @@ config GT64120
     select PCI
     select EMPTY_SLOT
     select I8259
+
+config QCS6490_PCIE
+    bool
+    select PCI_EXPRESS
+    select MSI_NONBROKEN

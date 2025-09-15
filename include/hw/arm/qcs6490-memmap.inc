@@ -132,8 +132,8 @@ static const MemMapEntry qcs6490_memmap[] = {
     [QCS6490_SDHC2]      = { 0x08804000, 0x00001000 }, /* SDHC2 controller */
     [QCS6490_USB3_PRIM]  = { 0x0a600000, 0x00100000 }, /* USB3 Primary */
     [QCS6490_USB3_SEC]   = { 0x08c00000, 0x00100000 }, /* USB3 Secondary */
-    [QCS6490_PCIE0]      = { 0x01c00000, 0x00200000 }, /* PCIe 0 controller */
-    [QCS6490_PCIE1]      = { 0x01c08000, 0x00002000 }, /* PCIe 1 controller */
+    [QCS6490_PCIE0]      = { 0x01c08000, 0x00004000 }, /* PCIe 0 PARF regs */
+    [QCS6490_PCIE1]      = { 0x01c0a000, 0x00002000 }, /* PCIe 1 PARF regs */
     [QCS6490_WIFI]       = { 0x17a10000, 0x00010000 }, /* WiFi subsystem */
     [QCS6490_BLUETOOTH]  = { 0x0a700000, 0x00100000 }, /* Bluetooth */
 
@@ -156,7 +156,7 @@ static const MemMapEntry qcs6490_memmap[] = {
     [QCS6490_THERMAL]    = { 0x0c263000, 0x00001000 }, /* Thermal sensors */
 
     /* PCIe regions */
-    [QCS6490_PCIE_ECAM]  = { 0x01c00000, 0x00100000 }, /* PCIe ECAM */
+    [QCS6490_PCIE_ECAM]  = { 0x01d00000, 0x00100000 }, /* PCIe ECAM */
     [QCS6490_PCIE_MMIO]  = { 0x20000000, 0x10000000 }, /* PCIe MMIO */
     [QCS6490_PCIE_PIO]   = { 0x30000000, 0x00010000 }, /* PCIe PIO */
 };

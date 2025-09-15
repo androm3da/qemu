@@ -298,7 +298,7 @@ config QCS6490
     select X_QUP_GENI_UART_RUST
     select DEVICE_TREE
     select PCI_EXPRESS
-    select PCI_EXPRESS_GENERIC_BRIDGE
+    select QCS6490_PCIE
     select UFS_PCI
 
 config ZYNQ

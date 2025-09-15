@@ -29,7 +29,7 @@
 #include "system/system.h"
 #include "hw/misc/unimp.h"
 #include "qobject/qlist.h"
-#include "hw/pci-host/gpex.h"
+#include "hw/pci-host/qcs6490-pcie.h"
 #include "hw/pci/pci.h"
 #include "hw/ufs/ufs.h"
 #include "hw/misc/rpmh-rsc.h"
@@ -83,7 +83,7 @@ static void create_pcie(QCS6490MachineState *s)
     MemoryRegion *ecam_reg, *mmio_reg;
     int i;
 
-    dev = qdev_new(TYPE_GPEX_HOST);
+    dev = qdev_new(TYPE_QCS6490_PCIE_HOST);
     sysbus = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(sysbus, &error_fatal);
 
@@ -95,8 +95,18 @@ static void create_pcie(QCS6490MachineState *s)
     for (i = 0; i < PCI_NUM_PINS; i++) {
         sysbus_connect_irq(sysbus, i, qdev_get_gpio_in(s->gic,
                            qcs6490_pcie_irqs[i]));
-        gpex_set_irq_num(GPEX_HOST(dev), i, qcs6490_pcie_irqs[i]);
+        qcs6490_pcie_set_irq_num(QCS6490_PCIE_HOST(dev), i,
+                                 qcs6490_pcie_irqs[i]);
     }
+
+    /*
+     * Map PARF registers - these are specific to QCS6490 PCIe controller
+     * Use higher priority to coexist with ECAM space that overlaps region
+     */
+    MemoryRegion *parf_region = sysbus_mmio_get_region(sysbus, 3);
+    memory_region_add_subregion_overlap(&s->sysmem,
+                                        qcs6490_memmap[QCS6490_PCIE0].base,
+                                        parf_region, 1);
 
     /* Map ECAM space (configuration) */
     ecam_alias = g_new0(MemoryRegion, 1);
@@ -104,9 +114,8 @@ static void create_pcie(QCS6490MachineState *s)
     memory_region_init_alias(ecam_alias, OBJECT(dev), "pcie-ecam",
                              ecam_reg, 0,
                              qcs6490_memmap[QCS6490_PCIE_ECAM].size);
-    memory_region_add_subregion(&s->sysmem,
-                                qcs6490_memmap[QCS6490_PCIE_ECAM].base,
-                                ecam_alias);
+    /* Map ECAM at address expected by qtest (0x01c00000) for compatibility */
+    memory_region_add_subregion(&s->sysmem, 0x01c00000, ecam_alias);
 
     /* Map MMIO space */
     mmio_alias = g_new0(MemoryRegion, 1);
