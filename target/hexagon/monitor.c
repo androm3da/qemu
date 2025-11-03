@@ -16,8 +16,8 @@
 const MonitorDef monitor_defs[] = {
     { "cycle_count", offsetof(CPUHexagonState,  t_cycle_count) },
 #if !defined(CONFIG_USER_ONLY)
-    { "tlb_lock", offsetof(CPUHexagonState, tlb_lock_state) },
-    { "k0_lock", offsetof(CPUHexagonState,  k0_lock_state) },
+    { "k0lock_pending", offsetof(CPUHexagonState, k0lock_pending) },
+    { "tlblock_pending", offsetof(CPUHexagonState, tlblock_pending) },
     { "wait_next_pc", offsetof(CPUHexagonState,  wait_next_pc) },
 #endif
     { NULL },

@@ -14,7 +14,10 @@
 #include "qom/object.h"
 #include "target/hexagon/cpu.h"
 #include "target/hexagon/hex_regs.h"
+#include "target/hexagon/reg_fields.h"
+#include "target/hexagon/macros.h"
 #include "qemu/log.h"
+#include "qemu/bitops.h"
 #include "trace/trace-hw_hexagon.h"
 #include "hw/timer/qct-qtimer.h"
 #include "qapi/error.h"
@@ -179,10 +182,10 @@ static void hexagon_globalreg_init(Object *obj)
 static inline uint32_t apply_write_mask(uint32_t new_val, uint32_t cur_val,
                                         uint32_t reg_mask)
 {
-	if (reg_mask) {
-		return (new_val & ~reg_mask) | (cur_val & reg_mask);
-	}
-	return new_val;
+    if (reg_mask) {
+        return (new_val & ~reg_mask) | (cur_val & reg_mask);
+    }
+    return new_val;
 }
 
 static void read_timer(HexagonGlobalRegState *s, uint32_t *low, uint32_t *high)
@@ -274,6 +277,12 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
 
     s->g_pcycle_base = 0;
 
+    /* Initialize round-robin lock tracking */
+    s->k0lock_waiters_mask = 0;
+    s->tlblock_waiters_mask = 0;
+    s->k0lock_last_holder = 0;
+    s->tlblock_last_holder = 0;
+
     s->regs[HEX_SREG_CFGBASE] = HEXAGON_CFG_ADDR_BASE(s->config_table_addr);
     s->regs[HEX_SREG_REV] = s->dsp_rev;
 
@@ -344,6 +353,10 @@ static const VMStateDescription vmstate_hexagon_globalreg = {
         VMSTATE_BOOL(isdben_trusted, HexagonGlobalRegState),
         VMSTATE_BOOL(isdben_secure, HexagonGlobalRegState),
         VMSTATE_UINT32(qtimer_base_addr, HexagonGlobalRegState),
+        VMSTATE_UINT32(k0lock_waiters_mask, HexagonGlobalRegState),
+        VMSTATE_UINT32(tlblock_waiters_mask, HexagonGlobalRegState),
+        VMSTATE_UINT32(k0lock_last_holder, HexagonGlobalRegState),
+        VMSTATE_UINT32(tlblock_last_holder, HexagonGlobalRegState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -391,3 +404,135 @@ static void hexagon_globalreg_register_types(void)
 }
 
 type_init(hexagon_globalreg_register_types)
+
+/* Round-robin fairness helper function to find next HTID */
+static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
+                                           uint32_t last_holder)
+{
+    if (waiters_mask == 0) {
+        return 0;
+    }
+
+    /*
+     * Find the next set bit after last_holder, wrapping around.
+     * Use MAKE_64BIT_MASK shifted right to create the higher bits mask.
+     */
+    uint32_t start = (last_holder + 1) & 31;
+    uint32_t higher_mask = start ? (UINT32_MAX << start) : 0;
+    uint32_t higher_bits = waiters_mask & higher_mask;
+
+    /* Select between higher bits and wrapped lower bits */
+    return ctz32(higher_bits ? higher_bits : waiters_mask);
+}
+
+/* SYSCFG lock bit access functions */
+bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    return extract32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                     reg_field_info[SYSCFG_K0LOCK].width);
+}
+
+bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
+                                   uint32_t htid)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+
+    if (value) {
+        /* Trying to acquire lock */
+        if (!hexagon_globalreg_get_k0lock(g_reg)) {
+            /* Lock available - grant immediately */
+            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                               reg_field_info[SYSCFG_K0LOCK].width, 1);
+            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+            g_reg->k0lock_last_holder = htid;
+            /* Remove from waiters if it was waiting */
+            g_reg->k0lock_waiters_mask &= ~(1U << htid);
+            return true;
+        }
+
+        /* Lock is held - add to waiters mask */
+        g_reg->k0lock_waiters_mask |= (1U << htid);
+
+        /* If there are waiters, only allow the next in round-robin order */
+        uint32_t next_htid = find_next_htid_round_robin(
+            g_reg->k0lock_waiters_mask, g_reg->k0lock_last_holder);
+
+        if (next_htid == htid) {
+            /* This thread is next in round-robin order */
+            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                               reg_field_info[SYSCFG_K0LOCK].width, 1);
+            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+            g_reg->k0lock_waiters_mask &= ~(1U << htid);
+            g_reg->k0lock_last_holder = htid;
+            return true;
+        }
+
+        /* Not this thread's turn, must wait */
+        return false;
+    } else {
+        /* Releasing lock */
+        syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                           reg_field_info[SYSCFG_K0LOCK].width, 0);
+        g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+        /* Clear from waiters mask when releasing */
+        g_reg->k0lock_waiters_mask &= ~(1U << htid);
+        return true;
+    }
+}
+
+bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    return extract32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                     reg_field_info[SYSCFG_TLBLOCK].width);
+}
+
+bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
+                                    uint32_t htid)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+
+    if (value) {
+        /* Trying to acquire lock */
+        if (!hexagon_globalreg_get_tlblock(g_reg)) {
+            /* Lock available - grant immediately */
+            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                               reg_field_info[SYSCFG_TLBLOCK].width, 1);
+            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+            g_reg->tlblock_last_holder = htid;
+            /* Remove from waiters if it was waiting */
+            g_reg->tlblock_waiters_mask &= ~(1U << htid);
+            return true;
+        }
+
+        /* Lock is held - add to waiters mask */
+        g_reg->tlblock_waiters_mask |= (1U << htid);
+
+        /* If there are waiters, only allow the next in round-robin order */
+        uint32_t next_htid = find_next_htid_round_robin(
+            g_reg->tlblock_waiters_mask, g_reg->tlblock_last_holder);
+
+        if (next_htid == htid) {
+            /* This thread is next in round-robin order */
+            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                               reg_field_info[SYSCFG_TLBLOCK].width, 1);
+            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+            g_reg->tlblock_waiters_mask &= ~(1U << htid);
+            g_reg->tlblock_last_holder = htid;
+            return true;
+        }
+
+        /* Not this thread's turn, must wait */
+        return false;
+    } else {
+        /* Releasing lock */
+        syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                           reg_field_info[SYSCFG_TLBLOCK].width, 0);
+        g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+        /* Clear from waiters mask when releasing */
+        g_reg->tlblock_waiters_mask &= ~(1U << htid);
+        return true;
+    }
+}
+

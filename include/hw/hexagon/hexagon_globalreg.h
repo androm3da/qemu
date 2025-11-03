@@ -27,7 +27,7 @@ struct HexagonGlobalRegState {
 
     /* Properties for global register reset values */
     uint32_t boot_evb;           /* Boot Exception Vector Base (HEX_SREG_EVB) */
-    uint64_t config_table_addr;  /* Configuration table base (HEX_SREG_CFGBASE) */
+    uint64_t config_table_addr;  /* Configuration table base */
     uint32_t dsp_rev;           /* DSP revision register (HEX_SREG_REV) */
 
     /* ISDB properties */
@@ -38,6 +38,12 @@ struct HexagonGlobalRegState {
 
     /* Hardware base addresses */
     uint32_t qtimer_base_addr;  /* QTimer hardware base address */
+
+    /* Round-robin lock fairness tracking */
+    uint32_t k0lock_waiters_mask;   /* Mask of HTIDs waiting for k0lock */
+    uint32_t tlblock_waiters_mask;  /* Mask of HTIDs waiting for tlblock */
+    uint32_t k0lock_last_holder;    /* HTID of last k0lock holder */
+    uint32_t tlblock_last_holder;   /* HTID of last tlblock holder */
 };
 
 /* Public interface functions */
@@ -55,5 +61,14 @@ uint64_t hexagon_globalreg_get_pcycle_base(HexagonCPU *cpu);
 void hexagon_globalreg_set_pcycle_base(HexagonCPU *cpu, uint64_t value);
 
 uint32_t hexagon_globalreg_get_boot_evb(HexagonCPU *cpu);
+
+/* SYSCFG lock bit access functions */
+bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg);
+bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
+                                  uint32_t htid);
+bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg);
+bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
+                                   uint32_t htid);
+
 
 #endif /* HEXAGON_GLOBALREG_H */

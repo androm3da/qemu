@@ -146,11 +146,11 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
 static void clear_pending_locks(CPUHexagonState *env)
 {
     g_assert(bql_locked());
-    if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        env->k0_lock_state = HEX_LOCK_UNLOCKED;
+    if (env->k0lock_pending) {
+        env->k0lock_pending = false;
     }
-    if (env->tlb_lock_state == HEX_LOCK_WAITING) {
-        env->tlb_lock_state = HEX_LOCK_UNLOCKED;
+    if (env->tlblock_pending) {
+        env->tlblock_pending = false;
     }
 }
 
@@ -174,6 +174,8 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
     target_ulong evb = arch_get_system_reg(env, HEX_SREG_EVB);
     const int exe_mode = get_exe_mode(env);
     const bool in_wait_mode = exe_mode == HEX_EXE_MODE_WAIT;
+    const bool k0lock_was_pending = env->k0lock_pending;
+    const bool tlblock_was_pending = env->tlblock_pending;
 
     set_ipend_bit(env, int_num, 0);
     set_iad_bit(env, int_num, 1);
@@ -188,8 +190,13 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
         set_elr(env, env->wait_next_pc);
         clear_wait_mode(env);
         cs->halted = false;
-    } else if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        g_assert_not_reached();
+    } else if (k0lock_was_pending || tlblock_was_pending) {
+        /*
+         * PC should not advance so lock instruction is re-executed
+         * after interrupt
+         */
+        set_elr(env, env->gpr[HEX_REG_PC]);
+        cs->halted = false;
     } else {
         set_elr(env, env->gpr[HEX_REG_PC]);
     }

@@ -91,8 +91,6 @@ uint8_t hexagon_rev_byte(CPUHexagonState *env);
 #define HEXAGON_TB_EXEC_PER_CPU_MAX 2000
 
 #define CPU_INTERRUPT_SWI      CPU_INTERRUPT_TGT_INT_0
-#define CPU_INTERRUPT_K0_UNLOCK CPU_INTERRUPT_TGT_INT_1
-#define CPU_INTERRUPT_TLB_UNLOCK CPU_INTERRUPT_TGT_INT_2
 #endif
 
 #define CPU_RESOLVING_TYPE TYPE_HEXAGON_CPU
@@ -304,12 +302,6 @@ typedef struct {
 #define HEXAGON_CPU_IRQ_6 6
 #define HEXAGON_CPU_IRQ_7 7
 
-typedef enum {
-    HEX_LOCK_UNLOCKED       = 0,
-    HEX_LOCK_WAITING        = 1,
-    HEX_LOCK_OWNER          = 2,
-    HEX_LOCK_QUEUED        = 3
-} hex_lock_state_t;
 
 typedef struct PMUState {
     uint32_t vmstate_num_ctrs;
@@ -424,10 +416,8 @@ typedef struct CPUArchState {
     hex_exception_info einfo;
     systemstate_t systemstate;
     target_ulong imprecise_exception;
-    hex_lock_state_t tlb_lock_state; /* different threads modify */
-    hex_lock_state_t k0_lock_state; /* different threads modify */
-    int32_t k0_lock_count;
-    int32_t tlb_lock_count;
+    bool k0lock_pending;
+    bool tlblock_pending;
     uint16_t nmi_threads;
     uint32_t last_cpu;
     GList **g_dir_list;

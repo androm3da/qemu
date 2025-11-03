@@ -385,9 +385,8 @@ void hexagon_wait_thread(CPUHexagonState *env, target_ulong PC)
     g_assert(bql_locked());
 
     if (qemu_loglevel_mask(LOG_GUEST_ERROR) &&
-        (env->k0_lock_state != HEX_LOCK_UNLOCKED ||
-         env->tlb_lock_state != HEX_LOCK_UNLOCKED)) {
-        qemu_log("WARNING: executing wait() with acquired lock"
+        (env->k0lock_pending || env->tlblock_pending)) {
+        qemu_log("WARNING: executing wait() with pending hardware lock"
                  "may lead to deadlock\n");
     }
     g_assert(get_exe_mode(env) != HEX_EXE_MODE_WAIT);
