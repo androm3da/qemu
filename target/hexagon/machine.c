@@ -170,10 +170,8 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT32(env.exe_arch, HexagonCPU),
         VMSTATE_UINT32(env.timing_on, HexagonCPU),
         VMSTATE_UINT32(env.threadId, HexagonCPU),
-        VMSTATE_UINT32(env.tlb_lock_state, HexagonCPU),
-        VMSTATE_UINT32(env.k0_lock_state, HexagonCPU),
-        VMSTATE_INT32(env.k0_lock_count, HexagonCPU),
-        VMSTATE_INT32(env.tlb_lock_count, HexagonCPU),
+        VMSTATE_BOOL(env.k0lock_pending, HexagonCPU),
+        VMSTATE_BOOL(env.tlblock_pending, HexagonCPU),
         VMSTATE_UINT32(env.systemstate, HexagonCPU),
         VMSTATE_UINT32(env.VRegs_updated_tmp, HexagonCPU),
 

@@ -14,9 +14,13 @@
 #include "hex_mmu.h"
 #include "macros.h"
 #include "hw/hexagon/hexagon_tlb.h"
+#include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/boards.h"
 #include "sys_macros.h"
 #include "reg_fields.h"
 #include "trace.h"
+
+
 
 #define GET_TLB_FIELD(ENTRY, FIELD)                               \
     ((uint64_t)fEXTRACTU_BITS(ENTRY, reg_field_info[FIELD].width, \
@@ -289,9 +293,8 @@ static inline void print_thread(const char *str, CPUState *cs)
     CPUHexagonState *thread = cpu_env(cs);
     bool is_stopped = cpu_is_stopped(cs);
     int exe_mode = get_exe_mode(thread);
-    hex_lock_state_t lock_state = thread->tlb_lock_state;
     qemu_log_mask(CPU_LOG_MMU,
-           "%s: threadId = %d: %s, exe_mode = %s, tlb_lock_state = %s\n",
+           "%s: threadId = %d: %s, exe_mode = %s, k0lock_pending = %s, tlblock_pending = %s\n",
            str,
            thread->threadId,
            is_stopped ? "stopped" : "running",
@@ -300,10 +303,8 @@ static inline void print_thread(const char *str, CPUState *cs)
            exe_mode == HEX_EXE_MODE_WAIT ? "wait" :
            exe_mode == HEX_EXE_MODE_DEBUG ? "debug" :
            "unknown",
-           lock_state == HEX_LOCK_UNLOCKED ? "unlocked" :
-           lock_state == HEX_LOCK_WAITING ? "waiting" :
-           lock_state == HEX_LOCK_OWNER ? "owner" :
-           "unknown");
+           thread->k0lock_pending ? "true" : "false",
+           thread->tlblock_pending ? "true" : "false");
 }
 
 static inline void print_thread_states(const char *str)
@@ -314,9 +315,12 @@ static inline void print_thread_states(const char *str)
     }
 }
 
+
 void hex_tlb_lock(CPUHexagonState *env)
 {
+    CPUState *cs = env_cpu(env);
     HexagonCPU *cpu = env_archcpu(env);
+
     if (!cpu->tlb) {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "TLB lock attempted but TLB not initialized\n");
@@ -324,140 +328,64 @@ void hex_tlb_lock(CPUHexagonState *env)
     }
 
     qemu_log_mask(CPU_LOG_MMU, "hex_tlb_lock: %d\n", env->threadId);
-    BQL_LOCK_GUARD();
-    trace_hexagon_tlb_lock(env->threadId, env->next_PC, env->tlb_lock_count);
-    g_assert((env->tlb_lock_count == 0) || (env->tlb_lock_count == 1));
 
-    uint32_t syscfg = arch_get_system_reg(env, HEX_SREG_SYSCFG);
-    uint8_t tlb_lock = GET_SYSCFG_FIELD(SYSCFG_TLBLOCK, syscfg);
-    if (tlb_lock) {
-        if (env->tlb_lock_state == HEX_LOCK_QUEUED) {
+    BQL_LOCK_GUARD();
+
+    if (cpu->globalregs) {
+        if (hexagon_globalreg_get_tlblock(cpu->globalregs)) {
+            env->tlblock_pending = true;
+            cs->halted = true;
+            cs->exception_index = EXCP_HALTED;
+            trace_hexagon_tlb_lock(env->threadId, env->gpr[HEX_REG_PC], true);
+            cpu_loop_exit(cs);
+        } else {
+            hexagon_globalreg_set_tlblock(cpu->globalregs, true);
             env->next_PC += 4;
-            env->tlb_lock_count++;
-            env->tlb_lock_state = HEX_LOCK_OWNER;
-            SET_SYSCFG_FIELD(env, SYSCFG_TLBLOCK, 1);
-            trace_hexagon_tlb_lock_info(env->threadId,
-                                       "queued thread waiting gets tlb_lock\n");
-            return;
+            trace_hexagon_tlb_lock(env->threadId, env->gpr[HEX_REG_PC], false);
         }
-        if (env->tlb_lock_state == HEX_LOCK_OWNER) {
-            qemu_log_mask(CPU_LOG_MMU | LOG_GUEST_ERROR,
-                          "Double tlblock at PC: 0x%x, thread may hang\n",
-                          env->next_PC);
-            env->next_PC += 4;
-            CPUState *cs = env_cpu(env);
-            cpu_interrupt(cs, CPU_INTERRUPT_HALT);
-            return;
-        }
-        trace_hexagon_tlb_lock_info(env->threadId, "Waiting for tlb_lock");
-        env->tlb_lock_state = HEX_LOCK_WAITING;
-        CPUState *cs = env_cpu(env);
-        cpu_interrupt(cs, CPU_INTERRUPT_HALT);
     } else {
-        trace_hexagon_tlb_lock_info(env->threadId, "Acquired tlb_lock");
         env->next_PC += 4;
-        env->tlb_lock_count++;
-        env->tlb_lock_state = HEX_LOCK_OWNER;
-        SET_SYSCFG_FIELD(env, SYSCFG_TLBLOCK, 1);
+        trace_hexagon_tlb_lock(env->threadId, env->gpr[HEX_REG_PC], false);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_MMU)) {
         qemu_log_mask(CPU_LOG_MMU, "Threads after hex_tlb_lock:\n");
         print_thread_states("\tThread");
     }
-    trace_hexagon_tlb_lock_info(env->threadId, "After hex_tlb_lock\n");
 }
 
 void hex_tlb_unlock(CPUHexagonState *env)
 {
+    CPUState *cs;
     HexagonCPU *cpu = env_archcpu(env);
+
     if (!cpu->tlb) {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "TLB unlock attempted but TLB not initialized\n");
         return;
     }
 
-    trace_hexagon_tlb_lock_info(env->threadId, "hex_tlb_unlock\n");
-    BQL_LOCK_GUARD();
-    trace_hexagon_tlb_lock(env->threadId, env->next_PC, env->tlb_lock_count);
-    g_assert((env->tlb_lock_count == 0) || (env->tlb_lock_count == 1));
+    trace_hexagon_tlb_unlock(env->threadId, env->gpr[HEX_REG_PC]);
 
-    /* Nothing to do if the TLB isn't locked by this thread */
-    uint32_t syscfg = arch_get_system_reg(env, HEX_SREG_SYSCFG);
-    uint8_t tlb_lock = GET_SYSCFG_FIELD(SYSCFG_TLBLOCK, syscfg);
-    if ((tlb_lock == 0) ||
-        (env->tlb_lock_state != HEX_LOCK_OWNER)) {
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "thread %d attempted to tlbunlock without having the "
-                      "lock, tlb_lock state = %d\n",
-                      env->threadId, env->tlb_lock_state);
-        g_assert(env->tlb_lock_state != HEX_LOCK_WAITING);
-        return;
+    BQL_LOCK_GUARD();
+
+    if (cpu->globalregs) {
+        hexagon_globalreg_set_tlblock(cpu->globalregs, false);
     }
 
-    trace_hexagon_tlb_lock_info(env->threadId, "Unlocking tlb_lock");
-    env->tlb_lock_count--;
-    env->tlb_lock_state = HEX_LOCK_UNLOCKED;
-    SET_SYSCFG_FIELD(env, SYSCFG_TLBLOCK, 0);
-
-    /* Look for a thread to unlock */
-    unsigned int this_threadId = env->threadId;
-    CPUHexagonState *unlock_thread = NULL;
-    CPUState *cs;
     CPU_FOREACH(cs) {
         CPUHexagonState *thread = cpu_env(cs);
-
-        /*
-         * The hardware implements round-robin fairness, so we look for threads
-         * starting at env->threadId + 1 and incrementing modulo the number of
-         * threads.
-         *
-         * To implement this, we check if thread is a earlier in the modulo
-         * sequence than unlock_thread.
-         *     if unlock thread is higher than this thread
-         *         thread must be between this thread and unlock_thread
-         *     else
-         *         thread higher than this thread is ahead of unlock_thread
-         *         thread must be lower then unlock thread
-         */
-        if (thread->tlb_lock_state == HEX_LOCK_WAITING) {
-            if (!unlock_thread) {
-                unlock_thread = thread;
-            } else if (unlock_thread->threadId >
-                       this_threadId) {
-                if (this_threadId < thread->threadId &&
-                    thread->threadId <
-                        unlock_thread->threadId) {
-                    unlock_thread = thread;
-                }
-            } else {
-                if (thread->threadId > this_threadId) {
-                    unlock_thread = thread;
-                }
-                if (thread->threadId <
-                        unlock_thread->threadId) {
-                    unlock_thread = thread;
-                }
-            }
+        if (thread->tlblock_pending) {
+            thread->tlblock_pending = false;
+            cs->halted = false;
+            qemu_cpu_kick(cs);
         }
-    }
-    if (unlock_thread) {
-        cs = env_cpu(unlock_thread);
-        print_thread("\tWaiting thread found", cs);
-        trace_hexagon_tlb_lock_info(
-            unlock_thread->threadId,
-            "Will get the next tlb_lock");
-        unlock_thread->tlb_lock_state = HEX_LOCK_QUEUED;
-        SET_SYSCFG_FIELD(unlock_thread, SYSCFG_TLBLOCK, 1);
-        cpu_interrupt(cs, CPU_INTERRUPT_TLB_UNLOCK);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_MMU)) {
         qemu_log_mask(CPU_LOG_MMU, "Threads after hex_tlb_unlock:\n");
         print_thread_states("\tThread");
     }
-
-    trace_hexagon_tlb_lock_info(env->threadId, "After hex_tlb_unlock\n");
 }
 
 uint64_t hex_tlb_read(CPUHexagonState *env, uint32_t index)

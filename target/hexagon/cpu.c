@@ -718,10 +718,8 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->greg[HEX_GREG_GPMUCNT6] = INVALID_REG_VAL;
     env->greg[HEX_GREG_GPMUCNT7] = INVALID_REG_VAL;
 
-    env->k0_lock_state = HEX_LOCK_UNLOCKED;
-    env->k0_lock_count = 0;
-    env->tlb_lock_state = HEX_LOCK_UNLOCKED;
-    env->tlb_lock_count = 0;
+    env->k0lock_pending = false;
+    env->tlblock_pending = false;
     env->ss_pending = false;
 
     hexagon_cpu_soft_reset(env);
@@ -893,8 +891,8 @@ static bool hexagon_cpu_has_work(CPUState *cs)
     CPUHexagonState *env = cpu_env(cs);
 
     return hexagon_thread_is_enabled(env) &&
-        (cs->interrupt_request & (CPU_INTERRUPT_HARD | CPU_INTERRUPT_SWI
-            | CPU_INTERRUPT_K0_UNLOCK | CPU_INTERRUPT_TLB_UNLOCK));
+        !env->k0lock_pending && !env->tlblock_pending &&
+        (cs->interrupt_request & (CPU_INTERRUPT_HARD | CPU_INTERRUPT_SWI));
 }
 
 static void hexagon_cpu_set_irq(void *opaque, int irq, int level)
@@ -1113,16 +1111,6 @@ static const struct SysemuCPUOps hexagon_sysemu_ops = {
 static bool hexagon_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
     CPUHexagonState *env = cpu_env(cs);
-    if (interrupt_request & CPU_INTERRUPT_TLB_UNLOCK) {
-        cs->halted = false;
-        cpu_reset_interrupt(cs, CPU_INTERRUPT_TLB_UNLOCK);
-        return true;
-    }
-    if (interrupt_request & CPU_INTERRUPT_K0_UNLOCK) {
-        cs->halted = false;
-        cpu_reset_interrupt(cs, CPU_INTERRUPT_K0_UNLOCK);
-        return true;
-    }
     if (interrupt_request & (CPU_INTERRUPT_HARD | CPU_INTERRUPT_SWI)) {
         return hex_check_interrupts(env);
     }

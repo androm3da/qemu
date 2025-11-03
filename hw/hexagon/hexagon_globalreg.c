@@ -14,6 +14,8 @@
 #include "qom/object.h"
 #include "target/hexagon/cpu.h"
 #include "target/hexagon/hex_regs.h"
+#include "target/hexagon/reg_fields.h"
+#include "target/hexagon/macros.h"
 #include "qemu/log.h"
 #include "trace/trace-hw_hexagon.h"
 #include "hw/timer/qct-qtimer.h"
@@ -391,3 +393,32 @@ static void hexagon_globalreg_register_types(void)
 }
 
 type_init(hexagon_globalreg_register_types)
+
+/* SYSCFG lock bit access functions */
+bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    return GET_FIELD(SYSCFG_K0LOCK, syscfg);
+}
+
+void hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    fINSERT_BITS(syscfg, reg_field_info[SYSCFG_K0LOCK].width,
+                 reg_field_info[SYSCFG_K0LOCK].offset, value ? 1 : 0);
+    g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+}
+
+bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    return GET_FIELD(SYSCFG_TLBLOCK, syscfg);
+}
+
+void hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value)
+{
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    fINSERT_BITS(syscfg, reg_field_info[SYSCFG_TLBLOCK].width,
+                 reg_field_info[SYSCFG_TLBLOCK].offset, value ? 1 : 0);
+    g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+}

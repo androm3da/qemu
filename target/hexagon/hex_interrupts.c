@@ -146,11 +146,11 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
 static void clear_pending_locks(CPUHexagonState *env)
 {
     g_assert(bql_locked());
-    if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        env->k0_lock_state = HEX_LOCK_UNLOCKED;
+    if (env->k0lock_pending) {
+        env->k0lock_pending = false;
     }
-    if (env->tlb_lock_state == HEX_LOCK_WAITING) {
-        env->tlb_lock_state = HEX_LOCK_UNLOCKED;
+    if (env->tlblock_pending) {
+        env->tlblock_pending = false;
     }
 }
 
@@ -188,8 +188,13 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
         set_elr(env, env->wait_next_pc);
         clear_wait_mode(env);
         cs->halted = false;
-    } else if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        g_assert_not_reached();
+    } else if (env->k0lock_pending || env->tlblock_pending) {
+        /*
+         * PC should not advance so lock instruction is re-executed
+         * after interrupt
+         */
+        set_elr(env, env->gpr[HEX_REG_PC]);
+        cs->halted = false;
     } else {
         set_elr(env, env->gpr[HEX_REG_PC]);
     }
