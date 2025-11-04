@@ -376,6 +376,27 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
         qdev_prop_set_uint32(DEVICE(cpu), "dsp-rev", rev);
     }
 
+    /*
+     * This is tightly with the IRQ selected must match the value below
+     * or the interrupts will not be seen
+     */
+    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
+
+    object_property_set_uint(OBJECT(qtimer), "nr_frames",
+                                     2, &error_fatal);
+    object_property_set_uint(OBJECT(qtimer), "nr_views",
+                                     1, &error_fatal);
+    object_property_set_uint(OBJECT(qtimer), "cnttid",
+                                     0x111, &error_fatal);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), &error_fatal);
+
+    /* Link the qtimer interface to globalreg */
+    if (!object_property_set_link(OBJECT(glob_regs_dev), "qtimer-interface",
+                                  OBJECT(qtimer), errp)) {
+        error_report("Failed to link qtimer interface to global registers");
+        goto out;
+    }
+
     qdev_prop_set_uint32(glob_regs_dev, "dsp-rev", rev);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(glob_regs_dev), errp);
 
@@ -410,21 +431,6 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
 
     /* for linux dts you must add 32 to these values */
     pl011_create(0x10000000, qdev_get_gpio_in(dev, 15), serial_hd(0));
-
-    /*
-     * This is tightly with the IRQ selected must match the value below
-     * or the interrupts will not be seen
-     */
-    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
-
-    object_property_set_uint(OBJECT(qtimer), "nr_frames",
-                                     2, &error_fatal);
-    object_property_set_uint(OBJECT(qtimer), "nr_views",
-                                     1, &error_fatal);
-    object_property_set_uint(OBJECT(qtimer), "cnttid",
-                                     0x111, &error_fatal);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), &error_fatal);
-
 
     unsigned QTMR0_IRQ = syscfg_is_linux ? 2 : 3;
     sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);

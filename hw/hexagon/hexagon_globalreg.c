@@ -185,15 +185,6 @@ static inline uint32_t apply_write_mask(uint32_t new_val, uint32_t cur_val,
 	return new_val;
 }
 
-static void read_timer(HexagonGlobalRegState *s, uint32_t *low, uint32_t *high)
-{
-    const hwaddr low_addr  = s->qtimer_base_addr + QCT_QTIMER_CNTPCT_LO;
-    const hwaddr high_addr = s->qtimer_base_addr + QCT_QTIMER_CNTPCT_HI;
-
-    cpu_physical_memory_read(low_addr, low, sizeof(*low));
-    cpu_physical_memory_read(high_addr, high, sizeof(*high));
-}
-
 uint32_t hexagon_globalreg_read(HexagonGlobalRegState *s, uint32_t reg)
 {
     g_assert(reg < NUM_SREGS);
@@ -201,11 +192,10 @@ uint32_t hexagon_globalreg_read(HexagonGlobalRegState *s, uint32_t reg)
     g_assert(s);
 
     uint32_t value;
-    uint32_t low;
-    uint32_t high;
-    if ((reg == HEX_SREG_TIMERLO) || (reg == HEX_SREG_TIMERHI)) {
-        read_timer(s, &low, &high);
-        value = (reg == HEX_SREG_TIMERLO) ? low : high;
+    if (reg == HEX_SREG_TIMERLO) {
+        value = qtimer_interface_get_timer_lo(s->qtimer_interface);
+    } else if (reg == HEX_SREG_TIMERHI) {
+        value = qtimer_interface_get_timer_hi(s->qtimer_interface);
     } else {
         value = s->regs[reg];
     }
@@ -356,6 +346,9 @@ static const Property hexagon_globalreg_properties[] = {
                      isdben_secure, false),
     DEFINE_PROP_UINT32("qtimer-base-addr", HexagonGlobalRegState,
                        qtimer_base_addr, 0),
+    DEFINE_PROP_LINK("qtimer-interface", HexagonGlobalRegState,
+                     qtimer_interface, TYPE_QTIMER_INTERFACE,
+                     QTimerInterface *),
 };
 
 static void hexagon_globalreg_class_init(ObjectClass *klass, const void *data)

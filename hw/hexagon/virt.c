@@ -264,8 +264,8 @@ static void fdt_add_virtio_devices(const HexagonVirtMachineState *vms)
     }
 }
 
-static void create_qtimer(HexagonVirtMachineState *vms,
-                          const hexagon_machine_config *m_cfg)
+static QCTQtimerState *create_qtimer(HexagonVirtMachineState *vms,
+                                     const hexagon_machine_config *m_cfg)
 {
     Error **errp = NULL;
     QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
@@ -281,6 +281,8 @@ static void create_qtimer(HexagonVirtMachineState *vms,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
     sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
+
+    return qtimer;
 }
 
 static void create_pll(HexagonVirtMachineState *vms)
@@ -513,10 +515,22 @@ static void virt_init(MachineState *ms)
         goto out;
     }
 
+    /* Create L2VIC */
+    /* Create QTimer and link it to globalreg */
+    QCTQtimerState *qtimer = create_qtimer(vms, m_cfg);
+
     object_property_add_child(OBJECT(ms), "global-regs", OBJECT(gsregs_dev));
     qdev_prop_set_uint64(gsregs_dev, "config-table-addr", m_cfg->cfgbase);
     qdev_prop_set_uint32(gsregs_dev, "dsp-rev", v68_rev);
     qdev_prop_set_uint32(gsregs_dev, "qtimer-base-addr", m_cfg->qtmr_region);
+
+    /* Link the qtimer interface to globalreg */
+    if (!object_property_set_link(OBJECT(gsregs_dev), "qtimer-interface",
+                                  OBJECT(qtimer), errp)) {
+        error_report("Failed to link qtimer interface to global registers");
+        goto out;
+    }
+
     /* Realize the device on sysbus */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gsregs_dev), errp);
 
