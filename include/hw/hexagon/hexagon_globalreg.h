@@ -13,6 +13,7 @@
 #include "qom/object.h"
 #include "target/hexagon/cpu.h"
 #include "hw/timer/qct-qtimer.h"
+#include "hw/intc/l2vic.h"
 
 #define TYPE_HEXAGON_GLOBALREG "hexagon-globalreg"
 OBJECT_DECLARE_SIMPLE_TYPE(HexagonGlobalRegState, HEXAGON_GLOBALREG)
@@ -42,6 +43,9 @@ struct HexagonGlobalRegState {
 
     /* QTimer interface link */
     QTimerInterface *qtimer_interface;
+
+    /* L2VIC interface link */
+    L2VicInterface *l2vic_interface;
 };
 
 /* Public interface functions */

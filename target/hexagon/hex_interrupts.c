@@ -12,6 +12,7 @@
 #include "macros.h"
 #include "sys_macros.h"
 #include "system/cpus.h"
+#include "hw/intc/l2vic.h"
 
 static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num);
 
@@ -178,6 +179,7 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
     set_ipend_bit(env, int_num, 0);
     set_iad_bit(env, int_num, 1);
     set_ssr_ex_cause(env, 1, HEX_CAUSE_INT0 | int_num);
+
     cs->exception_index = HEX_EVENT_INT0 + int_num;
     env->cause_code = HEX_EVENT_INT0 + int_num;
     clear_pending_locks(env);
