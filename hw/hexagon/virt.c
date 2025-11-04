@@ -610,6 +610,13 @@ static void virt_init(MachineState *ms)
         goto out;
     }
 
+    /* Link the L2VIC interface to globalreg */
+    if (!object_property_set_link(OBJECT(gsregs_dev), "l2vic-interface",
+                                  OBJECT(vms->l2vic), errp)) {
+        error_report("Failed to link L2VIC interface to global registers");
+        goto out;
+    }
+
     /* Realize the device on sysbus */
     sysbus_realize_and_unref(SYS_BUS_DEVICE(gsregs_dev), errp);
 
@@ -623,6 +630,11 @@ static void virt_init(MachineState *ms)
         if (!object_property_set_link(OBJECT(cpus[i]), "tlb",
                                       OBJECT(tlb_dev), errp)) {
             error_report("Failed to link TLB to CPU %d", i);
+            goto out;
+        }
+        if (!object_property_set_link(OBJECT(cpus[i]), "l2vic",
+                                      OBJECT(vms->l2vic), errp)) {
+            error_report("Failed to link L2VIC interface to CPU %d", i);
             goto out;
         }
         if (!qdev_realize_and_unref(DEVICE(cpus[i]), NULL, errp)) {

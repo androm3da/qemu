@@ -13,6 +13,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/bitmap.h"
+#include "qemu/bitops.h"
 #include "hw/intc/l2vic.h"
 #include "trace.h"
 
@@ -39,7 +40,7 @@ static uint32_t bitmap32_read_word(uint32_t *bitmap, int word_offset)
 }
 
 #define TYPE_L2VIC "l2vic"
-OBJECT_DECLARE_SIMPLE_TYPE(L2VICState, L2VIC)
+OBJECT_DECLARE_TYPE(L2VICState, L2VICClass, L2VIC)
 
 #define SLICE_MAX (L2VIC_INTERRUPT_MAX / 32)
 
@@ -55,7 +56,8 @@ typedef struct L2VICState {
      * are used:
      */
     uint32_t vid_group[4];
-    uint32_t vid0;
+    /* Clear Status of Active Edge interrupt, not used: */
+    DECLARE_BITMAP32(int_clear, L2VIC_INTERRUPT_MAX) QEMU_ALIGNED(16);
     /* Enable interrupt source */
     DECLARE_BITMAP32(int_enable, L2VIC_INTERRUPT_MAX) QEMU_ALIGNED(16);
     /* Clear (set to 0) corresponding bit in int_enable */
@@ -78,6 +80,9 @@ typedef struct L2VICState {
     qemu_irq irq[8];
 } L2VICState;
 
+typedef struct L2VICClass {
+    SysBusDeviceClass parent_class;
+} L2VICClass;
 
 /*
  * Find out if this irq is associated with a group other than
@@ -139,8 +144,7 @@ static bool l2vic_update(L2VICState *s, int irq)
         clear_bit32(irq, s->int_pending);
         clear_bit32(irq, s->int_enable);
         /* ensure the irq line goes low after going high */
-        s->vid0 = irq;
-        s->vid_group[get_vid(s, irq)] = irq;
+        s->vid_group[vid] = irq;
 
         /* already low: now call pulse */
         /*     pulse: calls qemu_upper() and then qemu_lower()) */
@@ -179,14 +183,7 @@ static void l2vic_write(void *opaque, hwaddr offset, uint64_t val,
     qemu_mutex_lock(&s->active);
     trace_l2vic_reg_write((unsigned)offset, (uint32_t)val);
 
-    if (offset == L2VIC_VID_0) {
-        if ((int)val != L2VIC_CIAD_INSTRUCTION) {
-            s->vid0 = val;
-        } else {
-            /* ciad issued: clear int_status */
-            clear_bit32(s->vid0, s->int_status);
-        }
-    } else if (offset >= L2VIC_INT_ENABLEn &&
+    if (offset >= L2VIC_INT_ENABLEn &&
                offset < (L2VIC_INT_ENABLE_CLEARn)) {
         bitmap32_write_word(s->int_enable, (offset - L2VIC_INT_ENABLEn) >> 2, val);
     } else if (offset >= L2VIC_INT_ENABLE_CLEARn &&
@@ -251,8 +248,6 @@ static uint64_t l2vic_read(void *opaque, hwaddr offset, unsigned size)
         value = s->vid_group[2];
     } else if (offset == L2VIC_VID_GRP_3) {
         value = s->vid_group[3];
-    } else if (offset == L2VIC_VID_0) {
-        value = s->vid0;
     } else if (offset >= L2VIC_INT_ENABLEn &&
                offset < L2VIC_INT_ENABLE_CLEARn) {
         value = bitmap32_read_word(s->int_enable, (offset - L2VIC_INT_ENABLEn) >> 2);
@@ -339,6 +334,61 @@ static const MemoryRegionOps fastl2vic_ops = {
     .valid.unaligned = false,
 };
 
+/* L2VIC Interface Implementation */
+static uint32_t l2vic_interface_read_vid_impl(L2VicInterface *iface,
+                                               uint32_t group)
+{
+    L2VICState *s = L2VIC(iface);
+    uint32_t result = 0;
+
+    if (group == 0) {
+        /* VID register: VID1 (bits 16-31), VID0 (bits 0-15) */
+        result = deposit32(result, 0, 16, s->vid_group[0]);
+        result = deposit32(result, 16, 16, s->vid_group[1]);
+    } else if (group == 1) {
+        /* VID1 register: VID3 (bits 16-31), VID2 (bits 0-15) */
+        result = deposit32(result, 0, 16, s->vid_group[2]);
+        result = deposit32(result, 16, 16, s->vid_group[3]);
+    }
+    return result;
+}
+
+static void l2vic_interface_update_vid_impl(L2VicInterface *iface,
+                                            uint32_t group, uint32_t value)
+{
+    L2VICState *s = L2VIC(iface);
+
+    qemu_mutex_lock(&s->active);
+
+    if (group == 0) {
+        /* VID register: unpack VID0 and VID1 */
+        s->vid_group[0] = extract32(value, 0, 16);
+        s->vid_group[1] = extract32(value, 16, 16);
+    } else if (group == 1) {
+        /* VID1 register: unpack VID2 and VID3 */
+        s->vid_group[2] = extract32(value, 0, 16);
+        s->vid_group[3] = extract32(value, 16, 16);
+    }
+
+    l2vic_update_all(s);
+    qemu_mutex_unlock(&s->active);
+}
+
+static void l2vic_interface_clear_interrupt_impl(L2VicInterface *iface)
+{
+    L2VICState *s = L2VIC(iface);
+
+    qemu_mutex_lock(&s->active);
+    /* Find the first active interrupt and clear it */
+    const int size = L2VIC_INTERRUPT_MAX;
+    const int active_irq = find_first_bit((unsigned long *)s->int_status, size);
+    if (active_irq != size) {
+        clear_bit32(active_irq, s->int_status);
+    }
+    l2vic_update_all(s);
+    qemu_mutex_unlock(&s->active);
+}
+
 static void l2vic_reset_hold(Object *obj, ResetType type G_GNUC_UNUSED)
 {
     L2VICState *s = L2VIC(obj);
@@ -351,7 +401,6 @@ static void l2vic_reset_hold(Object *obj, ResetType type G_GNUC_UNUSED)
     memset(s->int_group_n2, 0, sizeof(s->int_group_n2));
     memset(s->int_group_n3, 0, sizeof(s->int_group_n3));
     s->int_soft = 0;
-    s->vid0 = 0;
 
     l2vic_update_all(s);
 }
@@ -396,7 +445,6 @@ static const VMStateDescription vmstate_l2vic = {
         (VMStateField[]){
             VMSTATE_UINT32(level, L2VICState),
             VMSTATE_UINT32_ARRAY(vid_group, L2VICState, 4),
-            VMSTATE_UINT32(vid0, L2VICState),
             VMSTATE_UINT32_ARRAY(int_enable, L2VICState, SLICE_MAX),
             VMSTATE_UINT32(int_enable_clear, L2VICState),
             VMSTATE_UINT32(int_enable_set, L2VICState),
@@ -411,6 +459,15 @@ static const VMStateDescription vmstate_l2vic = {
             VMSTATE_END_OF_LIST() }
 };
 
+static void l2vic_interface_class_init(ObjectClass *klass, const void *data)
+{
+    L2VicInterfaceClass *k = L2VIC_INTERFACE_CLASS(klass);
+
+    k->read_vid = l2vic_interface_read_vid_impl;
+    k->update_vid = l2vic_interface_update_vid_impl;
+    k->clear_interrupt = l2vic_interface_clear_interrupt_impl;
+}
+
 static void l2vic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -420,16 +477,29 @@ static void l2vic_class_init(ObjectClass *klass, const void *data)
     rc->phases.hold = l2vic_reset_hold;
 }
 
+static const TypeInfo l2vic_interface_info = {
+    .name = TYPE_L2VIC_INTERFACE,
+    .parent = TYPE_INTERFACE,
+    .class_size = sizeof(L2VicInterfaceClass),
+    .class_init = l2vic_interface_class_init,
+};
+
 static const TypeInfo l2vic_info = {
     .name = TYPE_L2VIC,
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(L2VICState),
     .instance_init = l2vic_init,
+    .class_size = sizeof(L2VICClass),
     .class_init = l2vic_class_init,
+    .interfaces = (InterfaceInfo[]) {
+        { TYPE_L2VIC_INTERFACE },
+        { }
+    },
 };
 
 static void l2vic_register_types(void)
 {
+    type_register_static(&l2vic_interface_info);
     type_register_static(&l2vic_info);
 }
 
