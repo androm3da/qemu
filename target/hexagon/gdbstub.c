@@ -188,3 +188,45 @@ int hexagon_hvx_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
 
     g_assert_not_reached();
 }
+
+static int gdb_get_gggx_reg(CPUHexagonState *env, GByteArray *mem_buf, int n)
+{
+    int total = 0;
+    int i;
+    for (i = 0; i < ARRAY_SIZE(env->GRegs[n].uw); i++) {
+        total += gdb_get_regl(mem_buf, env->GRegs[n].uw[i]);
+    }
+    return total;
+}
+
+int hexagon_gggx_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
+{
+    CPUHexagonState *env = cpu_env(cs);
+
+    if (n < NUM_GGGX_REGS) {
+        return gdb_get_gggx_reg(env, mem_buf, n);
+    }
+
+    g_assert_not_reached();
+}
+
+static int gdb_put_gggx_reg(CPUHexagonState *env, uint8_t *mem_buf, int n)
+{
+    int i;
+    for (i = 0; i < ARRAY_SIZE(env->GRegs[n].uw); i++) {
+        env->GRegs[n].uw[i] = ldl_le_p(mem_buf);
+        mem_buf += 4;
+    }
+    return GGGX_VEC_SIZE_BYTES;
+}
+
+int hexagon_gggx_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
+{
+    CPUHexagonState *env = cpu_env(cs);
+
+    if (n < NUM_GGGX_REGS) {
+        return gdb_put_gggx_reg(env, mem_buf, n);
+    }
+
+    g_assert_not_reached();
+}

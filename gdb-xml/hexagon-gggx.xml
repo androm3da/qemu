@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!--
+  Copyright(c) 2025 Qualcomm Innovation Center, Inc. All Rights Reserved.
+
+  SPDX-License-Identifier: GPL-2.0-or-later
+-->
+
+<!DOCTYPE feature SYSTEM "gdb-target.dtd">
+<feature name="org.gnu.gdb.hexagon.gggx">
+
+  <vector id="gud" type="uint64" count="8"/>
+  <vector id="gd" type="int64" count="8"/>
+  <vector id="guw" type="uint32" count="16"/>
+  <vector id="gw" type="int32" count="16"/>
+  <vector id="guh" type="uint16" count="32"/>
+  <vector id="gh" type="int16" count="32"/>
+  <vector id="gub" type="uint8" count="64"/>
+  <vector id="gb" type="int8" count="64"/>
+  <union id="gggx_vec">
+    <field name="ud" type="gud"/>
+    <field name="d" type="gd"/>
+    <field name="uw" type="guw"/>
+    <field name="w" type="gw"/>
+    <field name="uh" type="guh"/>
+    <field name="h" type="gh"/>
+    <field name="ub" type="gub"/>
+    <field name="b" type="gb"/>
+  </union>
+
+  <reg name="ggg0"  bitsize="512" offset="256"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="200"/>
+  <reg name="ggg1"  bitsize="512" offset="320"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="201"/>
+  <reg name="ggg2"  bitsize="512" offset="384"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="202"/>
+  <reg name="ggg3"  bitsize="512" offset="448"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="203"/>
+  <reg name="ggg4"  bitsize="512" offset="512"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="204"/>
+  <reg name="ggg5"  bitsize="512" offset="576"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="205"/>
+  <reg name="ggg6"  bitsize="512" offset="640"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="206"/>
+  <reg name="ggg7"  bitsize="512" offset="704"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="207"/>
+  <reg name="ggg8"  bitsize="512" offset="768"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="208"/>
+  <reg name="ggg9"  bitsize="512" offset="832"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="209"/>
+  <reg name="ggg10" bitsize="512" offset="896"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="210"/>
+  <reg name="ggg11" bitsize="512" offset="960"  encoding="vector" format="hex" group="GGGX Vector Registers" dwarf_regnum="211"/>
+
+</feature>

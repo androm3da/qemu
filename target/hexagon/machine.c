@@ -89,6 +89,35 @@ static const VMStateInfo vmstate_info_mmqreg = {
 #define VMSTATE_MMQREG_ARRAY(_f, _s, _n) \
     VMSTATE_SUB_ARRAY(_f, _s, 0, _n, 0, vmstate_info_mmqreg, MMQReg)
 
+static int get_gggxvector(QEMUFile *f, void *pv, size_t size,
+                          const VMStateField *field)
+{
+    GGGXVector *v = pv;
+    for (int i = 0; i < GGGX_VEC_SIZE_BYTES / 8; i++) {
+        v->ud[i] = qemu_get_be64(f);
+    }
+    return 0;
+}
+
+static int put_gggxvector(QEMUFile *f, void *pv, size_t size,
+                          const VMStateField *field, JSONWriter *vmdesc)
+{
+    GGGXVector *v = pv;
+    for (int i = 0; i < GGGX_VEC_SIZE_BYTES / 8; i++) {
+        qemu_put_be64(f, v->ud[i]);
+    }
+    return 0;
+}
+
+static const VMStateInfo vmstate_info_gggxvector = {
+    .name = "gggxvector",
+    .get  = get_gggxvector,
+    .put  = put_gggxvector,
+};
+
+#define VMSTATE_GGGXVECTOR_ARRAY(_f, _s, _n) \
+    VMSTATE_SUB_ARRAY(_f, _s, 0, _n, 0, vmstate_info_gggxvector, GGGXVector)
+
 const VMStateDescription vmstate_pmustate = {
     .name = "pmu_state",
     .version_id = 0,
@@ -198,6 +227,8 @@ const VMStateDescription vmstate_hexagon_cpu = {
 
         VMSTATE_MMQREG_ARRAY(env.QRegs, HexagonCPU, NUM_QREGS),
         VMSTATE_MMQREG_ARRAY(env.future_QRegs, HexagonCPU, NUM_QREGS),
+
+        VMSTATE_GGGXVECTOR_ARRAY(env.GRegs, HexagonCPU, NUM_GGGX_REGS),
 
         VMSTATE_STRUCT(env.pmu, HexagonCPU, 0, vmstate_pmustate, PMUState),
         VMSTATE_STRUCT(env.einfo, HexagonCPU, 0, vmstate_hex_exception_info,

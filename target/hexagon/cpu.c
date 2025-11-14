@@ -671,6 +671,7 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
         env->VRegs[i].ud_ext[3] = V_EXTENDED_DWORDVAL;
     }
     memset(env->QRegs, 0, sizeof(MMQReg) * NUM_QREGS);
+    memset(env->GRegs, 0, sizeof(GGGXVector) * NUM_GGGX_REGS);
     env->memop_pc.set = false;
 #ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(cs);
@@ -793,6 +794,10 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
                              hexagon_hvx_gdb_write_register,
                              gdb_find_static_feature("hexagon-hvx.xml"), 0);
+
+    gdb_register_coprocessor(cs, hexagon_gggx_gdb_read_register,
+                             hexagon_gggx_gdb_write_register,
+                             gdb_find_static_feature("hexagon-gggx.xml"), 0);
 
 #ifndef CONFIG_USER_ONLY
     gdb_register_coprocessor(cs, hexagon_sys_gdb_read_register,

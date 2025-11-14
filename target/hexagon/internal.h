@@ -28,6 +28,8 @@ int hexagon_sys_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n);
 #endif
 int hexagon_hvx_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n);
 int hexagon_hvx_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n);
+int hexagon_gggx_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n);
+int hexagon_gggx_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n);
 
 /*
  * Change COUNT_HEX_HELPERS to 1 to count how many times each helper

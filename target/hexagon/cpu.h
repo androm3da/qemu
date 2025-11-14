@@ -35,6 +35,7 @@ uint8_t hexagon_rev_byte(CPUHexagonState *env);
 #include "exec/target_page.h"
 #include "exec/cputlb.h"
 #include "mmvec/mmvec.h"
+#include "gggx/gggx.h"
 #include "dma/dma.h"
 #include "hw/registerfields.h"
 #include "hw/hexagon/hexagon.h"
@@ -386,6 +387,9 @@ typedef struct CPUArchState {
 
     MMQReg QRegs[NUM_QREGS] QEMU_ALIGNED(16);
     MMQReg future_QRegs[NUM_QREGS] QEMU_ALIGNED(16);
+
+    /* GGGX coprocessor registers */
+    GGGXVector GRegs[NUM_GGGX_REGS] QEMU_ALIGNED(16);
 
     /* Temporaries used within instructions */
     MMVectorPair VuuV QEMU_ALIGNED(16);
