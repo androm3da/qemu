@@ -419,6 +419,7 @@ int dma_adapter_descriptor_start(dma_t *dma, uint32_t id, uint32_t desc_va, uint
 
 int dma_adapter_descriptor_end(dma_t *dma, uint32_t id, uint32_t desc_va, uint32_t *desc_info, int pause, int exception) {
 	//PRINTF(dma, "DMA %d: ADAPTER  dma_adapter_descriptor_end : desc_va = 0x%x id=%d", dma->num, desc_va, id);
+	trace_hexagon_dma_desc_end(dma->num, id, pause, exception);
 	int callback_state = DMA_DESC_STATE_DONE;
 	callback_state = (pause) ? DMA_DESC_STATE_PAUSE : callback_state; 
 	callback_state = (exception) ? DMA_DESC_STATE_EXCEPT : callback_state; 
@@ -454,6 +455,7 @@ uint32_t dma_adapter_xlate_desc_va(dma_t *dma, uint32_t va, uint64_t* pa, dma_me
 	uint32_t ret = sys_xlate_dma(thread, (uint32_t)va, TYPE_DMA_FETCH,  access_type_load,  0, 0, &xlate_task, &e_info, 0, 0, 0, 0);
 
 	(*pa) = xlate_task.pa;
+	trace_hexagon_dma_va_to_pa(dma->num, va, *pa, (ret == 0));
 	dma_access_rights_t * perm = &dma_memaccess_info->perm;
 	perm->val = 0;
 	perm->u = xlate_task.pte_u;
@@ -532,6 +534,7 @@ uint32_t dma_adapter_xlate_va(dma_t *dma, uint64_t va, uint64_t* pa, dma_memacce
 	// Retrieve a PA.
 
 	(*pa) = xlate_task.pa;
+	trace_hexagon_dma_va_to_pa(dma->num, (uint32_t)va, *pa, (ret == 0));
 
 	dma_access_rights_t * perm = &dma_memaccess_info->perm;
 	perm->val = 0;
@@ -612,6 +615,9 @@ int dma_adapter_register_perm_exception(dma_t *dma, uint32_t va,  dma_access_rig
 
 	thread_t * thread = dma_adapter_retrieve_thread(dma);
 	dma_adapter_engine_info_t * dma_info = dma_retrieve_dma_adapter(dma);
+	int perms = (access_rights.r << 0) | (access_rights.w << 1) |
+		    (access_rights.x << 2) | (access_rights.u << 3);
+	trace_hexagon_dma_check_perms(dma->num, va, perms, 0);
 	hex_exception_info e_info;
 
 	e_info.valid = 1;
@@ -1069,6 +1075,11 @@ void arch_dma_tick_until_stop(processor_t *proc, int dmanum) {
 static int dma_adapter_report_exception(dma_t *dma) {
 	thread_t* thread = dma_adapter_retrieve_thread(dma);
 	dma_adapter_engine_info_t * dma_info = dma_retrieve_dma_adapter(dma);
+	const char *exc_type = (dma->error_state_reason == 1) ? "TLB_MISS" :
+			       (dma->error_state_reason == 2) ? "PERM_ERROR" :
+			       "UNKNOWN";
+	trace_hexagon_dma_exception(dma->num, exc_type, dma_info->einfo.badva0,
+				    "DMA operation failed");
 	
 	warn("DMA %d: ADAPTER  report_exception PC=%x Syndrome=%d for badva=%x", dma->num, thread->Regs[REG_PC], dma->error_state_reason, dma_info->einfo.badva0);	
 	PRINTF(dma, "DMA %d: Tick %8lli: ADAPTER  report_exception for badva=%x",dma->num, thread->processor_ptr->monotonic_pcycles, dma_info->einfo.badva0 );
@@ -1099,6 +1110,7 @@ size4u_t dma_adapter_cmd_start(thread_t *thread, size4u_t new_dma, size4u_t dumm
                                dma_insn_checker_ptr *insn_checker) {
 	// Obtain a current DMA instance from a thread ID.
 	dma_t *dma = dma_instance(thread);
+	trace_hexagon_dma_cmd_start(dma->num, new_dma);
 	dma_cmd_report_t report = {.excpt = 0, .insn_checker = NULL};
 	dma->pc = thread->Regs[REG_PC];
 
@@ -1132,6 +1144,7 @@ size4u_t dma_adapter_cmd_start(thread_t *thread, size4u_t new_dma, size4u_t dumm
 size4u_t dma_adapter_cmd_link(thread_t *thread, size4u_t tail, size4u_t new_dma, dma_insn_checker_ptr *insn_checker) {
 	// Obtain a current DMA instance from a thread ID.
 	dma_t *dma = dma_instance(thread);
+	trace_hexagon_dma_cmd_link(dma->num, tail, new_dma);
 	dma_cmd_report_t report = {.excpt = 0, .insn_checker = NULL};
 	dma->pc = thread->Regs[REG_PC];
 	 
@@ -1167,6 +1180,7 @@ size4u_t dma_adapter_cmd_poll(thread_t *thread, size4u_t dummy1,
                               dma_insn_checker_ptr *insn_checker) {
 	// Obtain a current DMA instance from a thread ID.
 	dma_t *dma = dma_instance(thread);
+	trace_hexagon_dma_cmd_poll(dma->num);
 	dma_cmd_report_t report = {.excpt = 0, .insn_checker = NULL};
 	size4u_t dst=0;   // Destination to get DM0 value returned back.
 
@@ -1198,6 +1212,7 @@ size4u_t dma_adapter_cmd_wait(thread_t *thread, size4u_t dummy1,
                               dma_insn_checker_ptr *insn_checker) {
 	// Obtain a current DMA instance from a thread ID.
 	dma_t *dma = dma_instance(thread);
+	trace_hexagon_dma_cmd_wait(dma->num);
 	dma_cmd_report_t report = {.excpt = 0, .insn_checker = NULL};
 	size4u_t dst=0;
 
@@ -1415,7 +1430,8 @@ size4u_t dma_adapter_cmd_syncht(thread_t *thread, size4u_t dummy1, size4u_t dumm
 size4u_t dma_adapter_cmd_tlbsynch(thread_t *thread, size4u_t dummy1, size4u_t dummy2,
                                 dma_insn_checker_ptr *insn_checker) {
 	// Obtain a current DMA instance from a thread ID.
-    dma_t *dma = dma_instance(thread);
+	dma_t *dma = dma_instance(thread);
+	trace_hexagon_dma_tlb_operation(dma->num, "tlbsynch");
 	dma_cmd_report_t report = {.excpt = 0, .insn_checker = NULL};
 	CALL_DMA_CMD(dma_cmd_tlbsynch, dma, dummy1, dummy2, &report);
 

@@ -7,6 +7,22 @@ hexagon_coproc_op(int opcode) "opcode : 0x%x"
 hexagon_dma_op(const char *opcode) "opcode : %s"
 hexagon_dma_memread(uint32_t dma_num, uint32_t va, uint64_t pa, int width) "DMA %d: memread va=0x%x pa=0x%" PRIx64 " width=%d"
 hexagon_dma_memwrite(uint32_t dma_num, uint32_t va, uint64_t pa, int width) "DMA %d: memwrite va=0x%x pa=0x%" PRIx64 " width=%d"
+# DMA Command Operations
+hexagon_dma_cmd_start(uint32_t dma_num, uint32_t new_dma_id) "DMA %d: start command new_dma_id=0x%x"
+hexagon_dma_cmd_link(uint32_t dma_num, uint32_t tail_id, uint32_t new_dma_id) "DMA %d: link command tail=0x%x new_dma=0x%x"
+hexagon_dma_cmd_poll(uint32_t dma_num) "DMA %d: poll command"
+hexagon_dma_cmd_wait(uint32_t dma_num) "DMA %d: wait command"
+# DMA Address Translation
+hexagon_dma_va_to_pa(uint32_t dma_num, uint32_t va, uint64_t pa, int success) "DMA %d: va_to_pa va=0x%x pa=0x%" PRIx64 " success=%d"
+hexagon_dma_check_perms(uint32_t dma_num, uint32_t va, int perms, int result) "DMA %d: check_perms va=0x%x perms=0x%x result=%d"
+# DMA Exception Handling
+hexagon_dma_exception(uint32_t dma_num, const char *type, uint32_t va, const char *reason) "DMA %d: exception type=%s va=0x%x reason=%s"
+# DMA Descriptor Management
+hexagon_dma_desc_fetch(uint32_t dma_num, uint32_t desc_va, uint32_t desc_id) "DMA %d: desc_fetch va=0x%x id=0x%x"
+hexagon_dma_desc_update(uint32_t dma_num, uint32_t desc_va, uint32_t desc_id, int state) "DMA %d: desc_update va=0x%x id=0x%x state=%d"
+hexagon_dma_desc_end(uint32_t dma_num, uint32_t desc_id, int pause, int exception) "DMA %d: desc_end id=0x%x pause=%d exception=%d"
+# DMA TLB Operations
+hexagon_dma_tlb_operation(uint32_t dma_num, const char *op_type) "DMA %d: tlb_op type=%s"
 # op-helper.c
 hexagon_k0_lock(int htid, unsigned int pc, int k0lock) "tid: %d: pc: 0x%x, k0_lock_count %d"
 hexagon_k0_lock_info(int htid, const char *info) "tid: %d: %s"
