@@ -708,6 +708,7 @@ int dma_test_gen_mode(dma_t *dma) {
 int dma_adapter_memread(dma_t *dma, uint32_t va, uint64_t pa, uint8_t *dst, int width) {
 	mem_access_info_t macc_task;
 	thread_t * thread = dma_adapter_retrieve_thread(dma);
+	trace_hexagon_dma_memread(dma->num, va, pa, width);
 	macc_task.vaddr = va;
 	macc_task.paddr = pa;
 	macc_task.width = 1;
@@ -735,6 +736,7 @@ int dma_adapter_memread(dma_t *dma, uint32_t va, uint64_t pa, uint8_t *dst, int 
 int dma_adapter_memwrite(dma_t *dma, uint32_t va, uint64_t pa, uint8_t *src, int width) {
 	mem_access_info_t macc_task;
 	thread_t * thread = dma_adapter_retrieve_thread(dma);
+	trace_hexagon_dma_memwrite(dma->num, va, pa, width);
 	macc_task.vaddr = va;
 	macc_task.paddr = pa;
 	macc_task.width = 1;

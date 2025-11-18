@@ -5,6 +5,8 @@ hexagon_ssr_xa(int htid, int oldctx, int newctx) "HTID: %d: OLD: ssr_XA: 0x%x, N
 hexagon_coproc_file(const char *info) ": %s"
 hexagon_coproc_op(int opcode) "opcode : 0x%x"
 hexagon_dma_op(const char *opcode) "opcode : %s"
+hexagon_dma_memread(uint32_t dma_num, uint32_t va, uint64_t pa, int width) "DMA %d: memread va=0x%x pa=0x%" PRIx64 " width=%d"
+hexagon_dma_memwrite(uint32_t dma_num, uint32_t va, uint64_t pa, int width) "DMA %d: memwrite va=0x%x pa=0x%" PRIx64 " width=%d"
 # op-helper.c
 hexagon_k0_lock(int htid, unsigned int pc, int k0lock) "tid: %d: pc: 0x%x, k0_lock_count %d"
 hexagon_k0_lock_info(int htid, const char *info) "tid: %d: %s"
