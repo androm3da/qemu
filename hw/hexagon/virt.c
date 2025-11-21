@@ -264,25 +264,23 @@ static void fdt_add_virtio_devices(const HexagonVirtMachineState *vms)
     }
 }
 
-static QCTQtimerState *create_qtimer(HexagonVirtMachineState *vms,
-                                     const hexagon_machine_config *m_cfg)
+static void create_qtimer(HexagonVirtMachineState *vms,
+        const hexagon_machine_config *m_cfg)
 {
     Error **errp = NULL;
-    QCTQtimerState *qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
+    vms->qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
 
-    object_property_set_uint(OBJECT(qtimer), "nr_frames", 2, errp);
-    object_property_set_uint(OBJECT(qtimer), "nr_views", 1, errp);
-    object_property_set_uint(OBJECT(qtimer), "cnttid", 0x111, errp);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), errp);
+    object_property_set_uint(OBJECT(vms->qtimer), "nr_frames", 2, errp);
+    object_property_set_uint(OBJECT(vms->qtimer), "nr_views", 1, errp);
+    object_property_set_uint(OBJECT(vms->qtimer), "cnttid", 0x111, errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(vms->qtimer), errp);
 
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 0,
+    sysbus_mmio_map(SYS_BUS_DEVICE(vms->qtimer), 1, m_cfg->qtmr_region);
+    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 0,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
-    sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), 1,
+    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 1,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
-
-    return qtimer;
 }
 
 static void create_pll(HexagonVirtMachineState *vms)
@@ -466,7 +464,7 @@ static void virt_init(MachineState *ms)
         cpu_model = HEXAGON_CPU_TYPE_NAME("v73");
     }
 
-    DeviceState *gsregs_dev = qdev_new(TYPE_HEXAGON_GLOBALREG);
+    vms->gsregs = qdev_new(TYPE_HEXAGON_GLOBALREG);
     HexagonCPU **cpus = g_malloc_n(ms->smp.cpus, sizeof(HexagonCPU *));
     for (int i = 0; i < ms->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(ms->cpu_type));
@@ -476,10 +474,10 @@ static void virt_init(MachineState *ms)
         if (i == 0) {
             if (ms->kernel_filename) {
                 uint64_t entry = setup_boot(vms);
-                qdev_prop_set_uint32(gsregs_dev, "boot-evb", entry);
+                qdev_prop_set_uint32(vms->gsregs, "boot-evb", entry);
             } else if (ms->firmware) {
                 uint64_t entry = load_bios(vms);
-                qdev_prop_set_uint32(gsregs_dev, "boot-evb", entry);
+                qdev_prop_set_uint32(vms->gsregs, "boot-evb", entry);
             }
         }
         qdev_prop_set_bit(DEVICE(cpu), "start-powered-off", (i != 0));
@@ -515,36 +513,32 @@ static void virt_init(MachineState *ms)
         goto out;
     }
 
-    /* Create L2VIC */
-    /* Create QTimer and link it to globalreg */
-    QCTQtimerState *qtimer = create_qtimer(vms, m_cfg);
-
-    object_property_add_child(OBJECT(ms), "global-regs", OBJECT(gsregs_dev));
-    qdev_prop_set_uint64(gsregs_dev, "config-table-addr", m_cfg->cfgbase);
-    qdev_prop_set_uint32(gsregs_dev, "dsp-rev", v68_rev);
-    qdev_prop_set_uint32(gsregs_dev, "qtimer-base-addr", m_cfg->qtmr_region);
+    object_property_add_child(OBJECT(ms), "global-regs", OBJECT(vms->gsregs));
+    qdev_prop_set_uint64(vms->gsregs, "config-table-addr", m_cfg->cfgbase);
+    qdev_prop_set_uint32(vms->gsregs, "dsp-rev", v68_rev);
+    qdev_prop_set_uint32(vms->gsregs, "qtimer-base-addr", m_cfg->qtmr_region);
 
     /* Link the qtimer interface to globalreg */
-    if (!object_property_set_link(OBJECT(gsregs_dev), "qtimer-interface",
-                                  OBJECT(qtimer), errp)) {
+    if (!object_property_set_link(OBJECT(vms->gsregs), "qtimer-interface",
+                                  OBJECT(vms->qtimer), errp)) {
         error_report("Failed to link qtimer interface to global registers");
         goto out;
     }
 
     /* Link the L2VIC interface to globalreg */
-    if (!object_property_set_link(OBJECT(gsregs_dev), "l2vic-interface",
+    if (!object_property_set_link(OBJECT(vms->gsregs), "l2vic-interface",
                                   OBJECT(vms->l2vic), errp)) {
         error_report("Failed to link L2VIC interface to global registers");
         goto out;
     }
 
     /* Realize the device on sysbus */
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(gsregs_dev), errp);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(vms->gsregs), errp);
 
     /* Link the global system registers object to all CPUs */
     for (int i = 0; i < ms->smp.cpus; i++) {
         if (!object_property_set_link(OBJECT(cpus[i]), "global-regs",
-                                      OBJECT(gsregs_dev), errp)) {
+                                      OBJECT(vms->gsregs), errp)) {
             error_report("Failed to link global system registers to CPU %d", i);
             goto out;
         }
