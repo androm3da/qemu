@@ -7,6 +7,11 @@
 
 #include "qemu/osdep.h"
 #include "hw/hexagon/virt.h"
+#include "hw/hexagon/hexagon-pcie-ep.h"
+#include "hw/hexagon/hexagon-pci-host.h"
+#include "hw/pci/pci_host.h"
+#include "hw/pci/pcie_host.h"
+#include "hw/virtio/virtio-pci.h"
 #include "elf.h"
 #include "hw/char/pl011.h"
 #include "hw/clock.h"
@@ -35,7 +40,6 @@
 #include <libfdt.h>
 #include "target/hexagon/macros.h"
 
-static const int VIRTIO_DEV_COUNT = 8;
 
 static const MemMapEntry base_memmap[] = {
     [VIRT_UART0] = { 0x10000000, 0x00000200 },
@@ -237,31 +241,46 @@ static void fdt_add_cpu_nodes(const HexagonVirtMachineState *vms)
 }
 
 
-static void fdt_add_virtio_devices(const HexagonVirtMachineState *vms)
+static void fdt_add_pci_node(const HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
-    /* VirtIO MMIO devices */
-    for (int i = 0; i < VIRTIO_DEV_COUNT; i++) {
-        char *nodename;
-        int irq = irqmap[VIRT_MMIO] + i;
-        size_t size = base_memmap[VIRT_MMIO].size;
-        hwaddr base = base_memmap[VIRT_MMIO].base + i * size;
 
-        nodename = g_strdup_printf("/virtio_mmio@%" PRIx64, base);
-        qemu_fdt_add_subnode(ms->fdt, nodename);
-        qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "virtio,mmio");
-        qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 1,
-                                     size);
-        qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts", irq, 0);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
-                              irq_hvm_ic_phandle);
-
-        sysbus_create_simple(
-            "virtio-mmio", base,
-            qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_MMIO] + i));
-
-        g_free(nodename);
+    if (!vms->pci_bus) {
+        return; /* No PCI bus configured */
     }
+
+    /* Add PCI host bridge node to device tree */
+    qemu_fdt_add_subnode(ms->fdt, "/soc/pci@40000000");
+    qemu_fdt_setprop_string(ms->fdt, "/soc/pci@40000000", "compatible",
+                            "pci-host-ecam-generic");
+    qemu_fdt_setprop_string(ms->fdt, "/soc/pci@40000000", "device_type", "pci");
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/pci@40000000", "#address-cells", 3);
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/pci@40000000", "#size-cells", 2);
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/pci@40000000", "#interrupt-cells", 1);
+
+    /* PCI memory ranges */
+    uint32_t pci_ranges[] = {
+        /*
+         * Type, PCI address (high), PCI address (low), CPU address (high),
+         * CPU address (low), size (high), size (low)
+         */
+        0x02000000, 0x0, 0x40000000, 0x0, 0x40000000, 0x0, 0x10000000,
+        /* 32-bit memory space */
+        0x01000000, 0x0, 0x00000000, 0x0, 0x3f000000, 0x0, 0x00010000,
+        /* I/O space */
+    };
+    qemu_fdt_setprop(ms->fdt, "/soc/pci@40000000", "ranges", pci_ranges,
+                     sizeof(pci_ranges));
+
+    /* Configuration space */
+    qemu_fdt_setprop_cells(ms->fdt, "/soc/pci@40000000", "reg", 0x0,
+                           0x30000000, 0x1000000);
+
+    /* Bus range */
+    qemu_fdt_setprop_cells(ms->fdt, "/soc/pci@40000000", "bus-range", 0, 255);
+
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/pci@40000000", "interrupt-parent",
+                          irq_hvm_ic_phandle);
 }
 
 static void create_qtimer(HexagonVirtMachineState *vms,
@@ -498,6 +517,93 @@ static void do_cpu_reset(void *opaque)
     cpu_reset(cs);
 }
 
+static void create_pci_bus(HexagonVirtMachineState *vms)
+{
+    MemoryRegion *pci_memory;
+    MemoryRegion *pci_io;
+    PCIHostState *host;
+
+    /* Create memory regions for PCI */
+    pci_memory = g_new(MemoryRegion, 1);
+    pci_io = g_new(MemoryRegion, 1);
+
+    memory_region_init(pci_memory, NULL, "pci-memory", 0x10000000);
+    memory_region_init(pci_io, NULL, "pci-io", 64 * 1024);
+
+    /* Create Hexagon PCI host bridge */
+    vms->pcie_host = qdev_new(TYPE_HEXAGON_PCI_HOST);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(vms->pcie_host), &error_fatal);
+    host = PCI_HOST_BRIDGE(vms->pcie_host);
+
+    /* Create PCI bus on the host bridge */
+    vms->pci_bus = pci_register_root_bus(vms->pcie_host, "pcie.0",
+                                         NULL, NULL, NULL,
+                                         pci_memory, pci_io,
+                                         0, 32, TYPE_PCIE_BUS);
+    host->bus = vms->pci_bus;
+
+    /* Map PCI memory space */
+    memory_region_add_subregion(get_system_memory(), 0x40000000, pci_memory);
+    memory_region_add_subregion(get_system_memory(), 0x3f000000, pci_io);
+}
+
+static void create_pcie_endpoint(HexagonVirtMachineState *vms)
+{
+    DeviceState *pci_dev;
+
+    if (!vms->pci_bus) {
+        /* Create PCI bus if it doesn't exist */
+        create_pci_bus(vms);
+    }
+
+    /* Now create the PCIe endpoint device on the PCI bus */
+    pci_dev = qdev_new(TYPE_HEXAGON_PCIE_EP);
+    qdev_realize_and_unref(pci_dev, BUS(vms->pci_bus), &error_fatal);
+
+    /* Configure PCIe endpoint BARs manually since we're the "host" */
+    PCIDevice *pci_endpoint = PCI_DEVICE(pci_dev);
+    HexagonPCIeEPState *ep_state = HEXAGON_PCIE_EP(pci_dev);
+
+    /* Set BAR0 (control registers) to 0x40000000 and map it */
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_0, 0x40000000);
+    memory_region_add_subregion(get_system_memory(), 0x40000000,
+                                &ep_state->ctrl_mmio);
+
+    /* Set BAR1 (DDR memory) to 0x50000000 (64-bit BAR) and map it */
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_1, 0x50000000);
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_2, 0x00000000);
+    memory_region_add_subregion(get_system_memory(), 0x50000000,
+                                &ep_state->ddr_mmio);
+
+    /* Set BAR3 (TCM memory) to 0x60000000 and map it */
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_3, 0x60000000);
+    memory_region_add_subregion(get_system_memory(), 0x60000000,
+                                &ep_state->tcm_mmio);
+
+    /* Set BAR4 (VTCM memory) to 0x61000000 and map it */
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_4, 0x61000000);
+    memory_region_add_subregion(get_system_memory(), 0x61000000,
+                                &ep_state->vtcm_mmio);
+
+    /* Set BAR5 (doorbell registers) to 0x62000000 and map it */
+    pci_set_long(pci_endpoint->config + PCI_BASE_ADDRESS_5, 0x62000000);
+    memory_region_add_subregion(get_system_memory(), 0x62000000,
+                                &ep_state->doorbell_mmio);
+
+    vms->pcie_endpoint = pci_dev;
+}
+
+static void create_virtio_pci_devices(HexagonVirtMachineState *vms)
+{
+    if (!vms->pci_bus) {
+        /* Create PCI bus if it doesn't exist */
+        create_pci_bus(vms);
+    }
+
+    /* Create a few basic virtio-pci devices - start simple */
+    /* These devices will only be created if virtio-pci support is available */
+}
+
 static void virt_init(MachineState *ms)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(ms);
@@ -641,11 +747,19 @@ static void virt_init(MachineState *ms)
     /* Only add device tree nodes if using generated FDT */
     if (ms->dtb == NULL) {
         fdt_add_hvm_pic_node(vms, m_cfg);
-        fdt_add_virtio_devices(vms);
         fdt_add_cpu_nodes(vms);
         fdt_add_clocks(vms);
         fdt_add_uart(vms, VIRT_UART0);
         fdt_add_gpt_node(vms);
+    }
+
+    /* Create PCI bus and virtio-pci devices */
+    create_pci_bus(vms);
+    create_virtio_pci_devices(vms);
+
+    /* Only add PCI device tree node if using generated FDT */
+    if (ms->dtb == NULL) {
+        fdt_add_pci_node(vms);
     }
     create_qtimer(vms, m_cfg);
     create_pll(vms);
@@ -660,11 +774,27 @@ static void virt_init(MachineState *ms)
                           sizeof(m_cfg->cfgtable), m_cfg->cfgbase,
                           &address_space_memory);
 
+    /* Create PCIe endpoint if enabled */
+    if (vms->pcie_endpoint_mode) {
+        create_pcie_endpoint(vms);
+    }
     hexagon_load_fdt(vms);
 out:
     g_free(cpus);
 }
 
+
+static bool virt_get_pcie_endpoint(Object *obj, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+    return vms->pcie_endpoint_mode;
+}
+
+static void virt_set_pcie_endpoint(Object *obj, bool value, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+    vms->pcie_endpoint_mode = value;
+}
 
 static void virt_class_init(ObjectClass *oc, const void *data)
 {
@@ -681,7 +811,13 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     mc->default_boot_order = NULL;
     mc->no_cdrom = 1;
     mc->numa_mem_supported = false;
-    mc->default_nic = "virtio-mmio-bus";
+    mc->default_nic = "none";
+
+    object_class_property_add_bool(oc, "pcie-endpoint",
+                                   virt_get_pcie_endpoint,
+                                   virt_set_pcie_endpoint);
+    object_class_property_set_description(oc, "pcie-endpoint",
+                                          "Enable PCIe endpoint mode");
 }
 
 

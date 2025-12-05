@@ -10,6 +10,7 @@
 
 #include "hw/boards.h"
 #include "hw/clock.h"
+#include "hw/pci/pci.h"
 #include "target/hexagon/cpu.h"
 
 typedef struct HexagonBootInfo {
@@ -35,6 +36,11 @@ struct HexagonVirtMachineState {
     DeviceState *l2vic;
     Clock *apb_pclk;
     HexagonBootInfo bootinfo;
+    /* PCIe endpoint mode */
+    bool pcie_endpoint_mode;
+    DeviceState *pcie_host;
+    PCIBus *pci_bus;
+    DeviceState *pcie_endpoint;
 };
 
 void hexagon_load_fdt(const struct HexagonVirtMachineState *vms);

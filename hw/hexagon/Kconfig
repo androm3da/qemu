@@ -12,7 +12,16 @@ config HEX_VIRT
     default y
     depends on HEX_DSP && FDT
     select DEVICE_TREE
-    select VIRTIO_MMIO
+    select VIRTIO_PCI
     select PL011
     select VIRTIO_BLK
     select VIRTIO_SCSI
+    select VIRTIO_NET
+    select VIRTIO_SERIAL
+    select VIRTIO_BALLOON
+    select VIRTIO_RNG
+    select VIRTIO_9P
+    select VIRTIO_GPU
+    select PCI
+    select PCI_EXPRESS
+    select MSI_NONBROKEN
