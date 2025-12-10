@@ -39,7 +39,6 @@ static uint32_t bitmap32_read_word(uint32_t *bitmap, int word_offset)
     return bitmap[word_offset];
 }
 
-#define TYPE_L2VIC "l2vic"
 OBJECT_DECLARE_TYPE(L2VICState, L2VICClass, L2VIC)
 
 #define SLICE_MAX (L2VIC_INTERRUPT_MAX / 32)

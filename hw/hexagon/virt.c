@@ -124,6 +124,7 @@ static void fdt_add_hvm_pic_node(HexagonVirtMachineState *vms,
                                  const hexagon_machine_config *m_cfg)
 {
     MachineState *ms = MACHINE(vms);
+
     irq_hvm_ic_phandle = qemu_fdt_alloc_phandle(ms->fdt);
 
     qemu_fdt_setprop_cell(ms->fdt, "/soc", "interrupt-parent",
@@ -141,6 +142,8 @@ static void fdt_add_hvm_pic_node(HexagonVirtMachineState *vms,
     qemu_fdt_setprop_cell(ms->fdt, "/soc/interrupt-controller", "phandle",
                           irq_hvm_ic_phandle);
 
+    sysbus_mmio_map(SYS_BUS_DEVICE(vms->l2vic), 1,
+                    m_cfg->l2vic_base);
     sysbus_mmio_map(SYS_BUS_DEVICE(vms->l2vic), 1,
                     m_cfg->cfgtable.fastl2vic_base << 16);
 }
@@ -269,18 +272,12 @@ static void create_qtimer(HexagonVirtMachineState *vms,
 {
     Error **errp = NULL;
     vms->qtimer = QCT_QTIMER(qdev_new(TYPE_QCT_QTIMER));
-
     object_property_set_uint(OBJECT(vms->qtimer), "nr_frames", 2, errp);
     object_property_set_uint(OBJECT(vms->qtimer), "nr_views", 1, errp);
     object_property_set_uint(OBJECT(vms->qtimer), "cnttid", 0x111, errp);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(vms->qtimer), errp);
 
-
     sysbus_mmio_map(SYS_BUS_DEVICE(vms->qtimer), 1, m_cfg->qtmr_region);
-    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 0,
-                       qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
-    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 1,
-                       qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
 }
 
 static void create_pll(HexagonVirtMachineState *vms)
@@ -550,6 +547,10 @@ static void virt_init(MachineState *ms)
     }
 
     vms->gsregs = qdev_new(TYPE_HEXAGON_GLOBALREG);
+    create_qtimer(vms, m_cfg);
+    vms->l2vic = qdev_new(TYPE_L2VIC);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(vms->l2vic), errp);
+
     HexagonCPU **cpus = g_malloc_n(ms->smp.cpus, sizeof(HexagonCPU *));
     for (int i = 0; i < ms->smp.cpus; i++) {
         HexagonCPU *cpu = HEXAGON_CPU(object_new(ms->cpu_type));
@@ -644,20 +645,15 @@ static void virt_init(MachineState *ms)
         }
     }
 
-    /*
-     * L2VIC: This must be done after qdev_realize_and_unref
-     * If interrupts stop working this might be in the wrong spot.
-     */
-    vms->l2vic = sysbus_create_varargs(
-        "l2vic", m_cfg->l2vic_base,
-        qdev_get_gpio_in(DEVICE(cpus[0]), 0),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 1),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 2),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 3),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 4),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 5),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 6),
-        qdev_get_gpio_in(DEVICE(cpus[0]), 7), NULL);
+
+    for (int i = 0; i < 8; i++) {
+        sysbus_connect_irq(SYS_BUS_DEVICE(vms->l2vic), i,
+            qdev_get_gpio_in(DEVICE(cpus[0]), i));
+    }
+    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 0,
+                       qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
+    sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 1,
+                       qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
 
     /* Only add device tree nodes if using generated FDT */
     if (ms->dtb == NULL) {
@@ -668,7 +664,6 @@ static void virt_init(MachineState *ms)
         fdt_add_uart(vms, VIRT_UART0);
         fdt_add_gpt_node(vms);
     }
-    create_qtimer(vms, m_cfg);
     create_pll(vms);
     fdt_add_pll_node(vms);
 

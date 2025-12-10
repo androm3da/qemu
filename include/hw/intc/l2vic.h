@@ -38,6 +38,7 @@
  * Group 3 interrupts go to IRQ5 via VID 3 (SSR: 0xC5)
  */
 
+#define TYPE_L2VIC "l2vic"
 /*
  * L2VIC Interface for CPU/GlobalReg interaction
  */
