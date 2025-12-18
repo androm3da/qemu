@@ -408,6 +408,7 @@ static void hexagon_globalreg_register_types(void)
 
 type_init(hexagon_globalreg_register_types)
 
+#if 1
 /* Round-robin fairness helper function to find next HTID */
 static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
                                            uint32_t last_holder)
@@ -431,6 +432,34 @@ static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
         ? ctz32(higher_bits)
         : ctz32(eligible);
 }
+#else
+// Wrapper for the intrinsic to find the highest set bit index
+static inline uint32_t clz_to_index(uint32_t mask) {
+    // __builtin_clz returns number of leading zeros.
+    // Index 31 is the MSB, Index 0 is the LSB.
+    return 31 - __builtin_clz(mask);
+}
+
+static uint32_t find_next_htid_round_robin(uint32_t waiters_mask, uint32_t last_holder)
+{
+    // 1. Remove the current thread from eligibility
+    uint32_t eligible = waiters_mask & ~(1U << last_holder);
+
+    if (eligible == 0) return HTID_NONE;
+
+    // 2. Create a mask for bits strictly BELOW the current position
+    // If last_holder is 5, we want bits 4, 3, 2, 1, 0.
+    // A simple way to get this is (1U << last_holder) - 1
+    uint32_t lower_bits = eligible & ((1U << last_holder) - 1);
+
+    // 3. Search logic
+    // If there are waiters below us, pick the highest one (nearest to our left).
+    // Otherwise, wrap around and pick the highest bit in the entire eligible mask.
+    return (lower_bits != 0)
+        ? clz_to_index(lower_bits)
+        : clz_to_index(eligible);
+}
+#endif
 
 /* Common lock algorithm */
 static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
