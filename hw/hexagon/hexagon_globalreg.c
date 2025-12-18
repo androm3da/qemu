@@ -412,20 +412,24 @@ type_init(hexagon_globalreg_register_types)
 static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
                                            uint32_t last_holder)
 {
-    if (waiters_mask == 0) {
-        return HTID_NONE;
-    }
+/**
+ * Returns the index of the next ready thread (excluding the current one).
+ * @param waiters_mask  Bitmask of threads ready to run (1 = ready).
+ * @param current_pos The index of the thread currently running (0-31).
+ * @return The index of the next task, or HTID_NONE if no other threads are ready.
+ */
+    // Remove the current thread from eligibility
+    uint32_t eligible = waiters_mask & ~(1U << last_holder);
 
-    /*
-     * Find the next set bit after last_holder, wrapping around.
-     * Use MAKE_64BIT_MASK shifted right to create the higher bits mask.
-     */
-    uint32_t start = (last_holder + 1) & 31;
-    uint32_t higher_mask = start ? (UINT32_MAX << start) : 0;
-    uint32_t higher_bits = waiters_mask & higher_mask;
+    if (eligible == 0) return HTID_NONE;
 
-    /* Select between higher bits and wrapped lower bits */
-    return ctz32(higher_bits ? higher_bits : waiters_mask);
+    // Create a mask for bits strictly ABOVE the current position
+    // We use a shift to create a mask like 11110000 (if last_holder is 3)
+    uint32_t higher_bits = eligible & (~0U << (last_holder + 1));
+
+    return (higher_bits != 0)
+        ? ctz32(higher_bits)
+        : ctz32(eligible);
 }
 
 /* Common lock algorithm */
@@ -442,13 +446,12 @@ static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
             /* Same thread trying to acquire lock it already holds */
             return false;
         }
-
         if (!is_locked_fn(ctx)) {
             /* Lock available - check if we need to enforce round-robin fairness */
             if (lock_state->waiters_mask != 0) {
                 /* There are other waiters - use round-robin */
                 uint32_t next_htid = find_next_htid_round_robin(
-                    lock_state->waiters_mask, lock_state->last_holder);
+                        lock_state->waiters_mask, lock_state->last_holder);
 
                 if (next_htid != htid) {
                     /* Not this thread's turn, add to waiters and wait */
@@ -460,7 +463,7 @@ static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
             /* Grant the lock */
             set_lock_fn(ctx, true);
             lock_state->last_holder = htid;
-            /* Remove from waiters if it was waiting */
+            /* Remove from waiters */
             lock_state->waiters_mask &= ~(1U << htid);
             return true;
         }
@@ -480,7 +483,7 @@ static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
 }
 
 /* SYSCFG lock bit access functions */
-bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
+static bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
 {
     uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
     return extract32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
@@ -510,7 +513,7 @@ bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
                             k0lock_is_locked, k0lock_set_hardware, g_reg);
 }
 
-bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
+static bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
 {
     uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
     return extract32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,

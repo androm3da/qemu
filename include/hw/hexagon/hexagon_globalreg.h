@@ -67,10 +67,8 @@ void hexagon_globalreg_set_pcycle_base(HexagonCPU *cpu, uint64_t value);
 uint32_t hexagon_globalreg_get_boot_evb(HexagonCPU *cpu);
 
 /* SYSCFG lock bit access functions */
-bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg);
 bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
                                   uint32_t htid);
-bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg);
 bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
                                    uint32_t htid);
 
