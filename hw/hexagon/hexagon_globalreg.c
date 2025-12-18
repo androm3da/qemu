@@ -422,15 +422,20 @@ static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
     // Remove the current thread from eligibility
     uint32_t eligible = waiters_mask & ~(1U << last_holder);
 
-    if (eligible == 0) return HTID_NONE;
+    if (eligible == 0) {
+        trace_hexagon_lock_round_robin(waiters_mask, last_holder, eligible,
+                                       0, HTID_NONE);
+        return HTID_NONE;
+    }
 
     // Create a mask for bits strictly ABOVE the current position
     // We use a shift to create a mask like 11110000 (if last_holder is 3)
     uint32_t higher_bits = eligible & (~0U << (last_holder + 1));
 
-    return (higher_bits != 0)
-        ? ctz32(higher_bits)
-        : ctz32(eligible);
+    uint32_t result = (higher_bits != 0) ? ctz32(higher_bits) : ctz32(eligible);
+    trace_hexagon_lock_round_robin(waiters_mask, last_holder, eligible,
+                                   higher_bits, result);
+    return result;
 }
 #else
 // Wrapper for the intrinsic to find the highest set bit index
@@ -465,26 +470,42 @@ static uint32_t find_next_htid_round_robin(uint32_t waiters_mask, uint32_t last_
 static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
                              uint32_t htid, bool (*is_locked_fn)(void *ctx),
                              void (*set_lock_fn)(void *ctx, bool locked),
-                             void *ctx)
+                             void *ctx, const char *lock_type)
 {
+    bool currently_locked = is_locked_fn(ctx);
+    trace_hexagon_lock_set_entry(lock_type, value ? "ACQUIRE" : "RELEASE", htid,
+                                 currently_locked, lock_state->waiters_mask,
+                                 lock_state->last_holder);
+
     if (value) {
         /* Trying to acquire lock */
 
         /* Check for recursive lock acquisition (deadlock prevention) */
-        if (is_locked_fn(ctx) && lock_state->last_holder == htid) {
+        if (currently_locked && lock_state->last_holder == htid) {
             /* Same thread trying to acquire lock it already holds */
+            trace_hexagon_lock_set_deadlock(lock_type, htid);
             return false;
         }
-        if (!is_locked_fn(ctx)) {
+        if (!currently_locked) {
             /* Lock available - check if we need to enforce round-robin fairness */
-            if (lock_state->waiters_mask != 0) {
-                /* There are other waiters - use round-robin */
+            if (lock_state->waiters_mask != 0 &&
+                lock_state->last_holder != HTID_NONE) {
+                /*
+                 * There are other waiters and a valid previous holder -
+                 * use round-robin
+                 */
                 uint32_t next_htid = find_next_htid_round_robin(
                         lock_state->waiters_mask, lock_state->last_holder);
 
-                if (next_htid != htid) {
+                bool is_turn = (next_htid == htid);
+                trace_hexagon_lock_set_fairness_check(lock_type, htid,
+                                                       next_htid, is_turn);
+
+                if (!is_turn) {
                     /* Not this thread's turn, add to waiters and wait */
                     lock_state->waiters_mask |= (1U << htid);
+                    trace_hexagon_lock_set_blocked(lock_type, htid,
+                                                   lock_state->waiters_mask);
                     return false;
                 }
             }
@@ -494,11 +515,15 @@ static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
             lock_state->last_holder = htid;
             /* Remove from waiters */
             lock_state->waiters_mask &= ~(1U << htid);
+            trace_hexagon_lock_set_granted(lock_type, htid,
+                                            lock_state->waiters_mask);
             return true;
         }
 
         /* Lock is held - cannot acquire, add to waiters */
         lock_state->waiters_mask |= (1U << htid);
+        trace_hexagon_lock_set_blocked(lock_type, htid,
+                                       lock_state->waiters_mask);
         return false;
     } else {
         /* Releasing lock */
@@ -506,7 +531,14 @@ static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
 
         /* Clear from waiters mask when releasing */
         lock_state->waiters_mask &= ~(1U << htid);
-        lock_state->last_holder = HTID_NONE;
+
+        /* Only clear last_holder if there are no more waiters */
+        if (lock_state->waiters_mask == 0) {
+            lock_state->last_holder = HTID_NONE;
+        }
+
+        trace_hexagon_lock_set_released(lock_type, htid,
+                                        lock_state->waiters_mask);
         return true;
     }
 }
@@ -539,7 +571,8 @@ bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
                                    uint32_t htid)
 {
     return hexagon_lock_set(&g_reg->k0lock_state, value, htid,
-                            k0lock_is_locked, k0lock_set_hardware, g_reg);
+                            k0lock_is_locked, k0lock_set_hardware,
+                            g_reg, "k0lock");
 }
 
 static bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
@@ -569,7 +602,8 @@ bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
                                     uint32_t htid)
 {
     return hexagon_lock_set(&g_reg->tlblock_state, value, htid,
-                            tlblock_is_locked, tlblock_set_hardware, g_reg);
+                            tlblock_is_locked, tlblock_set_hardware,
+                            g_reg, "tlblock");
 }
 
 /* Lock waiters mask management */

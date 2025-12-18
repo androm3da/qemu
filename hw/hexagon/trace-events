@@ -1,3 +1,12 @@
 # Hexagon global register access
 hexagon_globalreg_read(const char *reg_name, uint32_t value) "reg=%s value=0x%x"
 hexagon_globalreg_write(const char *reg_name, uint32_t value) "reg=%s value=0x%x"
+
+# Hexagon lock tracing
+hexagon_lock_set_entry(const char *lock_type, const char *action, uint32_t htid, bool currently_locked, uint32_t waiters_mask, uint32_t last_holder) "lock=%s %s by htid=%u currently_locked=%d waiters_mask=0x%x last_holder=%u"
+hexagon_lock_set_deadlock(const char *lock_type, uint32_t htid) "lock=%s DEADLOCK detected for htid=%u (trying to acquire lock it already holds)"
+hexagon_lock_set_fairness_check(const char *lock_type, uint32_t htid, uint32_t next_htid, bool is_turn) "lock=%s htid=%u next_htid=%u is_turn=%d"
+hexagon_lock_set_granted(const char *lock_type, uint32_t htid, uint32_t new_waiters_mask) "lock=%s GRANTED to htid=%u new_waiters_mask=0x%x"
+hexagon_lock_set_blocked(const char *lock_type, uint32_t htid, uint32_t new_waiters_mask) "lock=%s BLOCKED htid=%u new_waiters_mask=0x%x"
+hexagon_lock_set_released(const char *lock_type, uint32_t htid, uint32_t new_waiters_mask) "lock=%s RELEASED by htid=%u new_waiters_mask=0x%x"
+hexagon_lock_round_robin(uint32_t waiters_mask, uint32_t last_holder, uint32_t eligible, uint32_t higher_bits, uint32_t result) "waiters_mask=0x%x last_holder=%u eligible=0x%x higher_bits=0x%x result=%u"
