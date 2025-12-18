@@ -16,6 +16,12 @@
 #define TYPE_HEXAGON_GLOBALREG "hexagon-globalreg"
 OBJECT_DECLARE_SIMPLE_TYPE(HexagonGlobalRegState, HEXAGON_GLOBALREG)
 
+/* Common lock state structure */
+typedef struct {
+    uint32_t waiters_mask;   /* Mask of HTIDs waiting for this lock */
+    uint32_t last_holder;    /* HTID of last lock holder (current if held, previous if free) */
+} HexagonLockState;
+
 struct HexagonGlobalRegState {
     SysBusDevice parent_obj;
 
@@ -39,11 +45,9 @@ struct HexagonGlobalRegState {
     /* Hardware base addresses */
     uint32_t qtimer_base_addr;  /* QTimer hardware base address */
 
-    /* Round-robin lock fairness tracking */
-    uint32_t k0lock_waiters_mask;   /* Mask of HTIDs waiting for k0lock */
-    uint32_t tlblock_waiters_mask;  /* Mask of HTIDs waiting for tlblock */
-    uint32_t k0lock_last_holder;    /* HTID of last k0lock holder */
-    uint32_t tlblock_last_holder;   /* HTID of last tlblock holder */
+    /* Lock state tracking */
+    HexagonLockState k0lock_state;   /* k0lock state */
+    HexagonLockState tlblock_state;  /* tlblock state */
 };
 
 /* Public interface functions */
@@ -69,6 +73,12 @@ bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
 bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg);
 bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
                                    uint32_t htid);
+
+/* Lock waiters mask management */
+void hexagon_globalreg_clear_k0lock_waiter(HexagonGlobalRegState *g_reg,
+                                           uint32_t htid);
+void hexagon_globalreg_clear_tlblock_waiter(HexagonGlobalRegState *g_reg,
+                                            uint32_t htid);
 
 
 #endif /* HEXAGON_GLOBALREG_H */

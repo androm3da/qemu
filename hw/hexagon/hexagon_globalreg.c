@@ -270,6 +270,8 @@ void hexagon_globalreg_set_pcycle_base(HexagonCPU *cpu, uint64_t value)
     s->g_pcycle_base = value;
 }
 
+#define HTID_NONE (-1)
+
 static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
 {
     g_assert(s);
@@ -277,11 +279,12 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
 
     s->g_pcycle_base = 0;
 
-    /* Initialize round-robin lock tracking */
-    s->k0lock_waiters_mask = 0;
-    s->tlblock_waiters_mask = 0;
-    s->k0lock_last_holder = 0;
-    s->tlblock_last_holder = 0;
+    /* Initialize lock state */
+    s->k0lock_state.waiters_mask = 0;
+    s->k0lock_state.last_holder = HTID_NONE;
+
+    s->tlblock_state.waiters_mask = 0;
+    s->tlblock_state.last_holder = HTID_NONE;
 
     s->regs[HEX_SREG_CFGBASE] = HEXAGON_CFG_ADDR_BASE(s->config_table_addr);
     s->regs[HEX_SREG_REV] = s->dsp_rev;
@@ -353,10 +356,10 @@ static const VMStateDescription vmstate_hexagon_globalreg = {
         VMSTATE_BOOL(isdben_trusted, HexagonGlobalRegState),
         VMSTATE_BOOL(isdben_secure, HexagonGlobalRegState),
         VMSTATE_UINT32(qtimer_base_addr, HexagonGlobalRegState),
-        VMSTATE_UINT32(k0lock_waiters_mask, HexagonGlobalRegState),
-        VMSTATE_UINT32(tlblock_waiters_mask, HexagonGlobalRegState),
-        VMSTATE_UINT32(k0lock_last_holder, HexagonGlobalRegState),
-        VMSTATE_UINT32(tlblock_last_holder, HexagonGlobalRegState),
+        VMSTATE_UINT32(k0lock_state.waiters_mask, HexagonGlobalRegState),
+        VMSTATE_UINT32(k0lock_state.last_holder, HexagonGlobalRegState),
+        VMSTATE_UINT32(tlblock_state.waiters_mask, HexagonGlobalRegState),
+        VMSTATE_UINT32(tlblock_state.last_holder, HexagonGlobalRegState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -410,7 +413,7 @@ static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
                                            uint32_t last_holder)
 {
     if (waiters_mask == 0) {
-        return 0;
+        return HTID_NONE;
     }
 
     /*
@@ -425,6 +428,57 @@ static uint32_t find_next_htid_round_robin(uint32_t waiters_mask,
     return ctz32(higher_bits ? higher_bits : waiters_mask);
 }
 
+/* Common lock algorithm */
+static bool hexagon_lock_set(HexagonLockState *lock_state, bool value,
+                             uint32_t htid, bool (*is_locked_fn)(void *ctx),
+                             void (*set_lock_fn)(void *ctx, bool locked),
+                             void *ctx)
+{
+    if (value) {
+        /* Trying to acquire lock */
+
+        /* Check for recursive lock acquisition (deadlock prevention) */
+        if (is_locked_fn(ctx) && lock_state->last_holder == htid) {
+            /* Same thread trying to acquire lock it already holds */
+            return false;
+        }
+
+        if (!is_locked_fn(ctx)) {
+            /* Lock available - check if we need to enforce round-robin fairness */
+            if (lock_state->waiters_mask != 0) {
+                /* There are other waiters - use round-robin */
+                uint32_t next_htid = find_next_htid_round_robin(
+                    lock_state->waiters_mask, lock_state->last_holder);
+
+                if (next_htid != htid) {
+                    /* Not this thread's turn, add to waiters and wait */
+                    lock_state->waiters_mask |= (1U << htid);
+                    return false;
+                }
+            }
+
+            /* Grant the lock */
+            set_lock_fn(ctx, true);
+            lock_state->last_holder = htid;
+            /* Remove from waiters if it was waiting */
+            lock_state->waiters_mask &= ~(1U << htid);
+            return true;
+        }
+
+        /* Lock is held - cannot acquire, add to waiters */
+        lock_state->waiters_mask |= (1U << htid);
+        return false;
+    } else {
+        /* Releasing lock */
+        set_lock_fn(ctx, false);
+
+        /* Clear from waiters mask when releasing */
+        lock_state->waiters_mask &= ~(1U << htid);
+        lock_state->last_holder = HTID_NONE;
+        return true;
+    }
+}
+
 /* SYSCFG lock bit access functions */
 bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
 {
@@ -433,52 +487,27 @@ bool hexagon_globalreg_get_k0lock(HexagonGlobalRegState *g_reg)
                      reg_field_info[SYSCFG_K0LOCK].width);
 }
 
+/* Helper functions for k0lock */
+static bool k0lock_is_locked(void *ctx)
+{
+    HexagonGlobalRegState *g_reg = (HexagonGlobalRegState *)ctx;
+    return hexagon_globalreg_get_k0lock(g_reg);
+}
+
+static void k0lock_set_hardware(void *ctx, bool locked)
+{
+    HexagonGlobalRegState *g_reg = (HexagonGlobalRegState *)ctx;
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                       reg_field_info[SYSCFG_K0LOCK].width, locked ? 1 : 0);
+    g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+}
+
 bool hexagon_globalreg_set_k0lock(HexagonGlobalRegState *g_reg, bool value,
                                    uint32_t htid)
 {
-    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
-
-    if (value) {
-        /* Trying to acquire lock */
-        if (!hexagon_globalreg_get_k0lock(g_reg)) {
-            /* Lock available - grant immediately */
-            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
-                               reg_field_info[SYSCFG_K0LOCK].width, 1);
-            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-            g_reg->k0lock_last_holder = htid;
-            /* Remove from waiters if it was waiting */
-            g_reg->k0lock_waiters_mask &= ~(1U << htid);
-            return true;
-        }
-
-        /* Lock is held - add to waiters mask */
-        g_reg->k0lock_waiters_mask |= (1U << htid);
-
-        /* If there are waiters, only allow the next in round-robin order */
-        uint32_t next_htid = find_next_htid_round_robin(
-            g_reg->k0lock_waiters_mask, g_reg->k0lock_last_holder);
-
-        if (next_htid == htid) {
-            /* This thread is next in round-robin order */
-            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
-                               reg_field_info[SYSCFG_K0LOCK].width, 1);
-            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-            g_reg->k0lock_waiters_mask &= ~(1U << htid);
-            g_reg->k0lock_last_holder = htid;
-            return true;
-        }
-
-        /* Not this thread's turn, must wait */
-        return false;
-    } else {
-        /* Releasing lock */
-        syscfg = deposit32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
-                           reg_field_info[SYSCFG_K0LOCK].width, 0);
-        g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-        /* Clear from waiters mask when releasing */
-        g_reg->k0lock_waiters_mask &= ~(1U << htid);
-        return true;
-    }
+    return hexagon_lock_set(&g_reg->k0lock_state, value, htid,
+                            k0lock_is_locked, k0lock_set_hardware, g_reg);
 }
 
 bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
@@ -488,51 +517,39 @@ bool hexagon_globalreg_get_tlblock(HexagonGlobalRegState *g_reg)
                      reg_field_info[SYSCFG_TLBLOCK].width);
 }
 
+/* Helper functions for tlblock */
+static bool tlblock_is_locked(void *ctx)
+{
+    HexagonGlobalRegState *g_reg = (HexagonGlobalRegState *)ctx;
+    return hexagon_globalreg_get_tlblock(g_reg);
+}
+
+static void tlblock_set_hardware(void *ctx, bool locked)
+{
+    HexagonGlobalRegState *g_reg = (HexagonGlobalRegState *)ctx;
+    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                       reg_field_info[SYSCFG_TLBLOCK].width, locked ? 1 : 0);
+    g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
+}
+
 bool hexagon_globalreg_set_tlblock(HexagonGlobalRegState *g_reg, bool value,
                                     uint32_t htid)
 {
-    uint32_t syscfg = g_reg->regs[HEX_SREG_SYSCFG];
+    return hexagon_lock_set(&g_reg->tlblock_state, value, htid,
+                            tlblock_is_locked, tlblock_set_hardware, g_reg);
+}
 
-    if (value) {
-        /* Trying to acquire lock */
-        if (!hexagon_globalreg_get_tlblock(g_reg)) {
-            /* Lock available - grant immediately */
-            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
-                               reg_field_info[SYSCFG_TLBLOCK].width, 1);
-            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-            g_reg->tlblock_last_holder = htid;
-            /* Remove from waiters if it was waiting */
-            g_reg->tlblock_waiters_mask &= ~(1U << htid);
-            return true;
-        }
+/* Lock waiters mask management */
+void hexagon_globalreg_clear_k0lock_waiter(HexagonGlobalRegState *g_reg,
+                                           uint32_t htid)
+{
+    g_reg->k0lock_state.waiters_mask &= ~(1U << htid);
+}
 
-        /* Lock is held - add to waiters mask */
-        g_reg->tlblock_waiters_mask |= (1U << htid);
-
-        /* If there are waiters, only allow the next in round-robin order */
-        uint32_t next_htid = find_next_htid_round_robin(
-            g_reg->tlblock_waiters_mask, g_reg->tlblock_last_holder);
-
-        if (next_htid == htid) {
-            /* This thread is next in round-robin order */
-            syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
-                               reg_field_info[SYSCFG_TLBLOCK].width, 1);
-            g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-            g_reg->tlblock_waiters_mask &= ~(1U << htid);
-            g_reg->tlblock_last_holder = htid;
-            return true;
-        }
-
-        /* Not this thread's turn, must wait */
-        return false;
-    } else {
-        /* Releasing lock */
-        syscfg = deposit32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
-                           reg_field_info[SYSCFG_TLBLOCK].width, 0);
-        g_reg->regs[HEX_SREG_SYSCFG] = syscfg;
-        /* Clear from waiters mask when releasing */
-        g_reg->tlblock_waiters_mask &= ~(1U << htid);
-        return true;
-    }
+void hexagon_globalreg_clear_tlblock_waiter(HexagonGlobalRegState *g_reg,
+                                            uint32_t htid)
+{
+    g_reg->tlblock_state.waiters_mask &= ~(1U << htid);
 }
 

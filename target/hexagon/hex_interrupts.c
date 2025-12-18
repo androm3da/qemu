@@ -12,6 +12,7 @@
 #include "macros.h"
 #include "sys_macros.h"
 #include "system/cpus.h"
+#include "hw/hexagon/hexagon_globalreg.h"
 
 static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num);
 
@@ -145,12 +146,20 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
 
 static void clear_pending_locks(CPUHexagonState *env)
 {
+    HexagonCPU *cpu = env_archcpu(env);
+
     g_assert(bql_locked());
     if (env->k0lock_pending) {
         env->k0lock_pending = false;
+        if (cpu->globalregs) {
+            hexagon_globalreg_clear_k0lock_waiter(cpu->globalregs, env->threadId);
+        }
     }
     if (env->tlblock_pending) {
         env->tlblock_pending = false;
+        if (cpu->globalregs) {
+            hexagon_globalreg_clear_tlblock_waiter(cpu->globalregs, env->threadId);
+        }
     }
 }
 
