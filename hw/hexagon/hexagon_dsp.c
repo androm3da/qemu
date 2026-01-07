@@ -46,8 +46,10 @@
 #include "system/reset.h"
 #include "system/qtest.h"
 #include "semihosting/semihost.h"
+#include "hw/hexagon/sm8850_cdsp0.h"
 
 #include "machine_configs.h.inc"
+#include "machine_cfg_sm8850_cdsp0.h.inc"
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
 #include "coproc.h"
@@ -853,6 +855,24 @@ static void sim_coproc_init(ObjectClass *oc, const void *data)
     mc->default_cpus = 6;
 }
 
+static void SM8850_cdsp0_config_init(MachineState *machine)
+{
+    hexagon_common_init(machine, v73_rev, &SM8850_cdsp0);
+    sm8850_cdsp0_create_unimplemented_devices();
+}
+
+static void SM8850_cdsp0_init(ObjectClass *oc, const void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    mc->desc = "SM8850 CDSP0";
+    mc->init = SM8850_cdsp0_config_init;
+    init_mc(mc);
+    mc->default_cpu_type = TYPE_HEXAGON_CPU_V81;
+    mc->default_cpus = 12;
+    mc->max_cpus = 12;
+}
+
 static const TypeInfo hexagon_machine_types[] = {
     {
         .name = MACHINE_TYPE_NAME("V66G_1024"),
@@ -926,6 +946,10 @@ static const TypeInfo hexagon_machine_types[] = {
         .name = MACHINE_TYPE_NAME("SA8775P_CDSP0"),
         .parent = TYPE_MACHINE,
         .class_init = SA8775P_cdsp0_init,
+    }, {
+        .name = MACHINE_TYPE_NAME("sm8850_cdsp0"),
+        .parent = TYPE_MACHINE,
+        .class_init = SM8850_cdsp0_init,
     }, {
         .name = MACHINE_TYPE_NAME("SA8797P_NSP0"),
         .parent = TYPE_MACHINE,
