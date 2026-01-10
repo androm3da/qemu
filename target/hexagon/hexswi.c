@@ -95,6 +95,7 @@ static void do_preload(CPUHexagonState *env, target_ulong swi_info, bool load)
     hexagon_touch_memory(env, addr, count, retaddr);
 }
 
+#ifndef _WIN32
 static void common_semi_ftell_cb(CPUState *cs, uint64_t ret, int err)
 {
     if (err) {
@@ -230,6 +231,7 @@ static void coredump(CPUHexagonState *env)
     printf("\nRegister Dump:\n");
     hexagon_dump(env, stdout, 0);
 }
+#endif /* _WIN32 */
 
 static void sim_handle_trap0(CPUHexagonState *env)
 {
@@ -294,6 +296,7 @@ static void sim_handle_trap0(CPUHexagonState *env)
         return;
     }
 
+#ifndef _WIN32
     switch (what_swi) {
 
     case HEX_SYS_OPEN:
@@ -697,6 +700,12 @@ static void sim_handle_trap0(CPUHexagonState *env)
                       (uint32_t)what_swi);
         semi_cb(cs, -1, ENOSYS);
     }
+#else
+    qemu_log_mask(LOG_UNIMP,
+                  "SWI call %" PRIx32 " is unimplemented in QEMU\n",
+                  (uint32_t)what_swi);
+#endif /* _WIN32 */
+
 }
 
 static void set_addresses(CPUHexagonState *env, target_ulong pc_offset,
