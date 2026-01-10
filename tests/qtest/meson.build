@@ -295,6 +295,7 @@ qtests_hexagon = [
   'wdog-test',
   'rpmh-rsc-sa8775p-test',
   'qcom-ipcc-test',
+  'qcom-gcc-mpm-test',
 ]
 
 qos_test_ss = ss.source_set()

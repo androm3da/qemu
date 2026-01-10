@@ -35,6 +35,7 @@
 #include "system/qtest.h"
 #include "semihosting/semihost.h"
 #include "hw/misc/qcom-ipcc.h"
+#include "hw/misc/qcom-gcc-mpm.h"
 #include "qom/object.h"
 
 #include "machine_configs.h.inc"
@@ -650,6 +651,11 @@ static void SA8775P_cdsp0_config_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(rpmh_rsc), 0, 0x260A4000);
     /* Map TCS registers */
     sysbus_mmio_map(SYS_BUS_DEVICE(rpmh_rsc), 1, 0x260A4D00);
+
+    /* Create and map the GCC-MPM device */
+    DeviceState *gcc_mpm = qdev_new(TYPE_QCOM_GCC_MPM);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(gcc_mpm), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(gcc_mpm), 0, 0x0c210000);
 
     hwaddr cmd_db_header_addr = 0x0C3F0000;
     hwaddr cmd_db_bin_addr = 0x80860000;
