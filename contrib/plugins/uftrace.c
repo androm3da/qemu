@@ -109,6 +109,7 @@ typedef enum {
 typedef struct {
     struct qemu_plugin_register *reg_fp;
     struct qemu_plugin_register *reg_ssr;
+    struct qemu_plugin_register *reg_framekey;
 } HexagonCPU;
 
 typedef struct {
@@ -465,6 +466,21 @@ static uint64_t cpu_read_memory64(Cpu *cpu, uint64_t addr)
     return *((uint64_t *) buf->data);
 }
 
+static uint32_t cpu_read_memory32(Cpu *cpu, uint64_t addr)
+{
+    if (!addr) {
+        return 0;
+    }
+    GByteArray *buf = cpu->buf;
+    g_byte_array_set_size(buf, 0);
+    bool read = qemu_plugin_read_memory_vaddr(addr, buf, 4);
+    if (!read) {
+        return 0;
+    }
+    g_assert(buf->len == 4);
+    return *((uint32_t *) buf->data);
+}
+
 static void cpu_unwind_stack(Cpu *cpu, uint64_t frame_pointer, uint64_t pc)
 {
     g_assert(callstack_empty(cpu->cs));
@@ -752,6 +768,21 @@ static uint64_t hexagon_get_frame_pointer(Cpu *cpu_)
     return cpu_read_register32(cpu_, cpu->reg_fp);
 }
 
+static uint64_t hexagon_get_next_frame_pointer(Cpu *cpu_, uint64_t fp)
+{
+    return cpu_read_memory32(cpu_, fp);
+}
+
+static uint64_t hexagon_get_next_return_address(Cpu *cpu_,
+                                                uint64_t frame_pointer)
+{
+    HexagonCPU *cpu = cpu_->arch;
+    uint64_t framekey = cpu_read_register32(cpu_, cpu->reg_framekey);
+    uint64_t scrambled_lr = cpu_read_memory32(cpu_, frame_pointer + 4);
+    uint64_t lr = scrambled_lr ^ framekey;
+    return lr;
+}
+
 static void hexagon_init(Cpu *cpu_)
 {
     HexagonCPU *cpu = g_new0(HexagonCPU, 1);
@@ -764,6 +795,8 @@ static void hexagon_init(Cpu *cpu_)
     }
     cpu->reg_ssr = plugin_find_register("ssr");
     g_assert(cpu->reg_ssr);
+    cpu->reg_framekey = plugin_find_register("framekey");
+    g_assert(cpu->reg_framekey);
 }
 
 static void hexagon_end(Cpu *cpu)
@@ -781,6 +814,8 @@ static CpuOps hexagon_ops = {
     .init = hexagon_init,
     .end = hexagon_end,
     .get_frame_pointer = hexagon_get_frame_pointer,
+    .get_next_frame_pointer = hexagon_get_next_frame_pointer,
+    .get_next_return_address = hexagon_get_next_return_address,
     .get_privilege_level = hexagon_get_privilege_level,
     .num_privilege_levels = hexagon_num_privilege_levels,
     .get_privilege_level_name = hexagon_get_privilege_level_name,
