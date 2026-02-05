@@ -112,7 +112,10 @@ typedef struct DisasContext {
     /* HLX register write tracking */
     int lreg_log[NUM_LREGS];
     int lreg_log_idx;
+    int lreg_tmp_log[NUM_LREGS];
+    int lreg_tmp_log_idx;
     DECLARE_BITMAP(lregs_updated, NUM_LREGS);
+    DECLARE_BITMAP(lregs_updated_tmp, NUM_LREGS);
     DECLARE_BITMAP(lregs_read, NUM_LREGS);
 } DisasContext;
 
@@ -143,6 +146,15 @@ static inline void ctx_log_lreg_read_pair(DisasContext *ctx, int rnum)
 {
     ctx_log_lreg_read(ctx, rnum ^ 0);
     ctx_log_lreg_read(ctx, rnum ^ 1);
+}
+
+static inline void ctx_log_lreg_tmp_write(DisasContext *ctx, int rnum)
+{
+    if (!test_bit(rnum, ctx->lregs_updated_tmp)) {
+        ctx->lreg_tmp_log[ctx->lreg_tmp_log_idx] = rnum;
+        ctx->lreg_tmp_log_idx++;
+        set_bit(rnum, ctx->lregs_updated_tmp);
+    }
 }
 
 #ifndef CONFIG_USER_ONLY

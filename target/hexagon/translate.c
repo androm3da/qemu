@@ -33,6 +33,7 @@
 #include "genptr.h"
 #include "printinsn.h"
 #include "exec/target_page.h"
+#include "hlx/hlx.h"
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
@@ -643,6 +644,11 @@ static void clear_pkt_ctx(DisasContext *ctx)
     bitmap_zero(ctx->qregs_multi_write, NUM_QREGS);
     bitmap_zero(ctx->qregs_uncond, NUM_QREGS);
     ctx->qreg_log_idx = 0;
+    ctx->lreg_log_idx = 0;
+    ctx->lreg_tmp_log_idx = 0;
+    bitmap_zero(ctx->lregs_updated, NUM_LREGS);
+    bitmap_zero(ctx->lregs_updated_tmp, NUM_LREGS);
+    bitmap_zero(ctx->lregs_read, NUM_LREGS);
     for (i = 0; i < STORES_MAX; i++) {
         ctx->store_width[i] = 0;
     }
@@ -1164,6 +1170,36 @@ static void gen_commit_hvx(DisasContext *ctx)
 }
 
 #define PCYCLES_PER_PACKET 1
+static void gen_commit_hlx(DisasContext *ctx)
+{
+    int i;
+
+    for (i = 0; i < ctx->lreg_log_idx; i++) {
+        int rnum = ctx->lreg_log[i];
+        intptr_t dstoff = offsetof(CPUHexagonState, LRegs[rnum]);
+        intptr_t srcoff = offsetof(CPUHexagonState, future_LRegs[rnum]);
+        size_t size = sizeof(HLXVector);
+
+        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+    }
+
+    /*
+     * Commit .tmp LReg writes only for registers not also written by a
+     * regular instruction.  The .tmp value is for intra-packet forwarding;
+     * if another instruction writes the same register, its result wins.
+     */
+    for (i = 0; i < ctx->lreg_tmp_log_idx; i++) {
+        int rnum = ctx->lreg_tmp_log[i];
+        if (test_bit(rnum, ctx->lregs_updated)) {
+            continue;
+        }
+        intptr_t dstoff = offsetof(CPUHexagonState, LRegs[rnum]);
+        intptr_t srcoff = offsetof(CPUHexagonState, tmp_LRegs[rnum]);
+        size_t size = sizeof(HLXVector);
+
+        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+    }
+}
 
 static void update_exec_counters(DisasContext *ctx)
 {
@@ -1304,6 +1340,9 @@ static void gen_commit_packet(DisasContext *ctx)
     if (ctx->pkt.pkt_has_hvx) {
         gen_commit_hvx(ctx);
     }
+    if (ctx->pkt.pkt_has_hlx) {
+        gen_commit_hlx(ctx);
+    }
     update_exec_counters(ctx);
 
     if (ctx->pkt.vhist_insn != NULL) {
@@ -1352,9 +1391,24 @@ static void decode_and_translate_packet(CPUHexagonState *env, DisasContext *ctx)
             return;
         }
         gen_start_packet(ctx);
-        for (i = 0; i < ctx->pkt.num_insns; i++) {
-            ctx->insn = &ctx->pkt.insn[i];
-            gen_insn(ctx);
+        if (ctx->pkt.pkt_has_hlx) {
+            for (i = 0; i < ctx->pkt.num_insns; i++) {
+                if (GET_ATTRIB(ctx->pkt.insn[i].opcode, A_HLX_TMP)) {
+                    ctx->insn = &ctx->pkt.insn[i];
+                    gen_insn(ctx);
+                }
+            }
+            for (i = 0; i < ctx->pkt.num_insns; i++) {
+                if (!GET_ATTRIB(ctx->pkt.insn[i].opcode, A_HLX_TMP)) {
+                    ctx->insn = &ctx->pkt.insn[i];
+                    gen_insn(ctx);
+                }
+            }
+        } else {
+            for (i = 0; i < ctx->pkt.num_insns; i++) {
+                ctx->insn = &ctx->pkt.insn[i];
+                gen_insn(ctx);
+            }
         }
         gen_commit_packet(ctx);
         ctx->base.pc_next += ctx->pkt.encod_pkt_size_in_bytes;

@@ -37,6 +37,7 @@
 #include "mmvec/mmvec.h"
 #include "mmvec/macros.h"
 #include "op_helper.h"
+#include "hlx/hlx.h"
 #include "cpu_helper.h"
 #include "tcg/tcg-gvec-desc.h"
 #include "translate.h"

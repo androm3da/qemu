@@ -42,4 +42,35 @@ static inline HLXVector hlx_zero_vector(void)
     return ret;
 }
 
+/*
+ * HLX word-pair marshaling.
+ *
+ * On hardware, word-pair element i has its low halfword at lo.h[i] and
+ * high halfword at hi.h[i], where lo and hi are separate L-registers
+ * stored contiguously (lo at offset 0, hi at offset 2048).
+ *
+ * The HLXVectorPair type stores elements as l[i] = {h[0]=lo, h[1]=hi}
+ * in an interleaved layout.  These functions convert between the
+ * "two contiguous registers" physical layout and the interleaved
+ * semantic layout used by instruction helpers.
+ */
+static inline void hlx_interleave_pair(HLXVectorPair *pair,
+                                       const HLXVector *lo,
+                                       const HLXVector *hi)
+{
+    for (int i = 0; i < HLX_VEC_SIZE_BYTES / 2; i++) {
+        pair->l[i].h[0] = lo->h[i];
+        pair->l[i].h[1] = hi->h[i];
+    }
+}
+
+static inline void hlx_deinterleave_pair(HLXVector *lo, HLXVector *hi,
+                                         const HLXVectorPair *pair)
+{
+    for (int i = 0; i < HLX_VEC_SIZE_BYTES / 2; i++) {
+        lo->h[i] = pair->l[i].h[0];
+        hi->h[i] = pair->l[i].h[1];
+    }
+}
+
 #endif
