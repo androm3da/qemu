@@ -471,6 +471,10 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->cause_code = HEX_EVENT_NONE;
     env->gpr[HEX_REG_PC] = cpu->boot_addr;
 #endif
+
+    memset(env->LRegs, 0, sizeof(env->LRegs));
+    memset(env->future_LRegs, 0, sizeof(env->future_LRegs));
+    memset(env->tmp_LRegs, 0, sizeof(env->tmp_LRegs));
 }
 
 static void hexagon_cpu_disas_set_info(const CPUState *cs,

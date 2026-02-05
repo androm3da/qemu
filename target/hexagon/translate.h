@@ -101,9 +101,49 @@ typedef struct DisasContext {
     bool hvx_coproc_enabled;
     bool hvx_check_emitted;
     uint32_t num_cycles;
+    TCGv gpreg_written;
+    /*
+     * This value will be a TCGv treated as a mask of the registers
+     * written multiple times in this packet.
+     */
+    TCGv mult_reg_written;
+    int rev;
+    bool hlx_coproc_enabled;
+    /* HLX register write tracking */
+    int lreg_log[NUM_LREGS];
+    int lreg_log_idx;
+    DECLARE_BITMAP(lregs_updated, NUM_LREGS);
+    DECLARE_BITMAP(lregs_read, NUM_LREGS);
 } DisasContext;
 
 bool is_gather_store_insn(DisasContext *ctx);
+
+/* HLX register tracking functions */
+static inline void ctx_log_lreg_write(DisasContext *ctx, int rnum)
+{
+    if (!test_bit(rnum, ctx->lregs_updated)) {
+        ctx->lreg_log[ctx->lreg_log_idx] = rnum;
+        ctx->lreg_log_idx++;
+        set_bit(rnum, ctx->lregs_updated);
+    }
+}
+
+static inline void ctx_log_lreg_write_pair(DisasContext *ctx, int rnum)
+{
+    ctx_log_lreg_write(ctx, rnum ^ 0);
+    ctx_log_lreg_write(ctx, rnum ^ 1);
+}
+
+static inline void ctx_log_lreg_read(DisasContext *ctx, int rnum)
+{
+    set_bit(rnum, ctx->lregs_read);
+}
+
+static inline void ctx_log_lreg_read_pair(DisasContext *ctx, int rnum)
+{
+    ctx_log_lreg_read(ctx, rnum ^ 0);
+    ctx_log_lreg_read(ctx, rnum ^ 1);
+}
 
 #ifndef CONFIG_USER_ONLY
 static inline void ctx_log_greg_write(DisasContext *ctx, int rnum)
