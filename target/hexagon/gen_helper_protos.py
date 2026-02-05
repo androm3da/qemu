@@ -62,7 +62,9 @@ def main():
         for tag in hex_common.get_user_tags():
             if hex_common.tag_ignore(tag):
                 continue
-
+            ## Skip the floating point instructions
+            if "A_FPOP" in hex_common.attribdict[tag]:
+                continue
             if hex_common.skip_qemu_helper(tag):
                 continue
             if hex_common.is_idef_parser_enabled(tag):

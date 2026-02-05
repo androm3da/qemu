@@ -173,6 +173,9 @@ def main():
                         f"(DisasContext *ctx)\n")
                 f.write("{\n}\n\n")
                 continue
+            ## Skip the floating point instructions
+            if "A_FPOP" in hex_common.attribdict[tag]:
+                continue
 
             gen_def_tcg_func(f, tag, tagregs, tagimms)
 

@@ -76,10 +76,13 @@ def uniquify(seq):
     return [x for x in seq if x not in seen and not seen_add(x)]
 
 
-regre = re.compile(r"((?<!DUP)[MNORCPQXSGVZA])([stuvwxyzdefg]+)([.]?[LlHh]?)(\d+S?)")
+regre = re.compile(
+    r"((?<!DUP)[MNORCPQXSGVZALK])([stuvwxyzdefg]+)"
+    r"([.]?[LlHh]?)(\d+S?)[.]?(qf16|qf32|)"
+)
 immre = re.compile(r"[#]([rRsSuUm])(\d+)(?:[:](\d+))?")
 reg_or_immre = re.compile(
-    r"(((?<!DUP)[MNRCOPQXSGVZA])([stuvwxyzdefg]+)"
+    r"(((?<!DUP)[MNRCOPQXSGVZALK])([stuvwxyzdefg]+)"
     r"([.]?[LlHh]?)(\d+S?))|([#]([rRsSuUm])(\d+)[:]?(\d+)?)"
 )
 relimmre = re.compile(r"[#]([rR])(\d+)(?:[:](\d+))?")
@@ -408,6 +411,8 @@ class Scalar:
         return True
     def is_hvx_reg(self):
         return False
+    def is_hlx_reg(self):
+        return False
     def helper_arg_name(self):
         return self.reg_tcg()
 
@@ -432,6 +437,8 @@ class Hvx:
         return False
     def is_hvx_reg(self):
         return True
+    def is_hlx_reg(self):
+        return False
     def hvx_off(self):
         return f"{self.reg_tcg()}_off"
     def hvx_base(self):
@@ -1203,6 +1210,258 @@ class QRegReadWrite(Register, Hvx, ReadWrite):
                                insn_has_hvx_helper);
         """))
 
+#
+# HLX (Hexagon eLement-wise eXtensions) register classes
+# HLX has 16 registers (L0-L15) of 2048 bytes each
+#
+class Hlx:
+    def is_scalar_reg(self):
+        return False
+    def is_hvx_reg(self):
+        return False
+    def is_hlx_reg(self):
+        return True
+    def hlx_off(self):
+        return f"{self.reg_tcg()}_off"
+    def helper_proto_type(self):
+        return "ptr"
+    def helper_arg_type(self):
+        return "void *"
+    def helper_arg_name(self):
+        return f"{self.reg_tcg()}_void"
+
+class LRegDest(Hlx, Register, Single, Dest):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        if "A_HLX_TMP" in attribdict[tag]:
+            storage = "tmp_LRegs"
+        else:
+            storage = "future_LRegs"
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                offsetof(CPUHexagonState, {storage}[{self.reg_num}]);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def gen_write(self, f, tag):
+        pass
+    def helper_hlx_desc(self, f):
+        desc = f"*(HLXVector *)({self.helper_arg_name()})"
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is {desc} */
+        """))
+    def analyze_write(self, f, tag, regno):
+        if "A_HLX_TMP" in attribdict[tag]:
+            f.write(code_fmt(f"""\
+                ctx_log_lreg_tmp_write(ctx, {self.reg_num});
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                ctx_log_lreg_write(ctx, {self.reg_num});
+            """))
+
+class LRegSource(Hlx, Register, Single, OldSource):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                test_bit({self.reg_num}, ctx->lregs_updated_tmp)
+                ? offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}])
+                : offsetof(CPUHexagonState, LRegs[{self.reg_num}]);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def helper_hlx_desc(self, f):
+        desc = f"*(HLXVector *)({self.helper_arg_name()})"
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is {desc} */
+        """))
+    def analyze_read(self, f, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_read(ctx, {self.reg_num});
+        """))
+
+class LRegNewSource(Hlx, Register, Single, NewSource):
+    def decl_tcg(self, f, tag, regno):
+        if skip_qemu_helper(tag):
+            self.decl_reg_num(f, regno)
+            f.write(code_fmt(f"""\
+                const intptr_t {self.hlx_off()} =
+                    offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
+            """))
+        else:
+            # For helpers, create offset and pointer without reg_num variable
+            # to avoid name collision with TCGv_ptr
+            f.write(code_fmt(f"""\
+                const intptr_t {self.hlx_off()} =
+                    offsetof(CPUHexagonState, future_LRegs[insn->regno[{regno}]]);
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def helper_hlx_desc(self, f):
+        desc = f"*(HLXVector *)({self.helper_arg_name()})"
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is {desc} */
+        """))
+
+class LRegReadWrite(Hlx, Register, Single, ReadWrite):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
+            tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
+                             test_bit({self.reg_num}, ctx->lregs_updated_tmp)
+                             ? offsetof(CPUHexagonState,
+                                        tmp_LRegs[{self.reg_num}])
+                             : offsetof(CPUHexagonState,
+                                        LRegs[{self.reg_num}]),
+                             sizeof(HLXVector), sizeof(HLXVector));
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def gen_write(self, f, tag):
+        pass
+    def helper_hlx_desc(self, f):
+        desc = f"*(HLXVector *)({self.helper_arg_name()})"
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is {desc} */
+        """))
+    def analyze_read(self, f, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_read(ctx, {self.reg_num});
+        """))
+    def analyze_write(self, f, tag, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_write(ctx, {self.reg_num});
+        """))
+
+class LRegTmp(Hlx, Register, Single, ReadWrite):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}]);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def gen_write(self, f, tag):
+        pass
+    def helper_hlx_desc(self, f):
+        desc = f"*(HLXVector *)({self.helper_arg_name()})"
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is {desc} */
+        """))
+    def analyze_read(self, f, regno):
+        pass
+    def analyze_write(self, f, tag, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_tmp_write(ctx, {self.reg_num});
+        """))
+
+class LRegPairDest(Hlx, Register, Pair, Dest):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def gen_write(self, f, tag):
+        pass
+    def helper_hlx_desc(self, f):
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is *(HLXVectorPair *)({self.helper_arg_name()}) */
+        """))
+    def analyze_write(self, f, tag, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_write_pair(ctx, {self.reg_num});
+        """))
+
+class LRegPairSource(Hlx, Register, Pair, OldSource):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                test_bit({self.reg_num}, ctx->lregs_updated_tmp)
+                ? offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}])
+                : offsetof(CPUHexagonState, LRegs[{self.reg_num}]);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def helper_hlx_desc(self, f):
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is *(HLXVectorPair *)({self.helper_arg_name()}) */
+        """))
+    def analyze_read(self, f, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_read_pair(ctx, {self.reg_num});
+        """))
+
+class LRegPairReadWrite(Hlx, Register, Pair, ReadWrite):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            const intptr_t {self.hlx_off()} =
+                offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
+            tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
+                             test_bit({self.reg_num}, ctx->lregs_updated_tmp)
+                             ? offsetof(CPUHexagonState,
+                                        tmp_LRegs[{self.reg_num}])
+                             : offsetof(CPUHexagonState,
+                                        LRegs[{self.reg_num}]),
+                             sizeof(HLXVector) * 2, sizeof(HLXVector) * 2);
+        """))
+        if not skip_qemu_helper(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
+            """))
+    def gen_write(self, f, tag):
+        pass
+    def helper_hlx_desc(self, f):
+        f.write(code_fmt(f"""\
+            /* {self.reg_tcg()} is *(HLXVectorPair *)({self.helper_arg_name()}) */
+        """))
+    def analyze_read(self, f, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_read_pair(ctx, {self.reg_num});
+        """))
+    def analyze_write(self, f, tag, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_lreg_write_pair(ctx, {self.reg_num});
+        """))
+
+class GprSource(Register, Single, OldSource):
+    def decl_tcg(self, f, tag, regno):
+        self.decl_reg_num(f, regno)
+        f.write(code_fmt(f"""\
+            TCGv {self.reg_tcg()} = hex_gpr[{self.reg_num}];
+        """))
+    def analyze_read(self, f, regno):
+        f.write(code_fmt(f"""\
+            ctx_log_reg_read(ctx, {self.reg_num});
+        """))
+
 class GuestRegister(Register):
     def gen_check_impl(self, f, regno):
         if self.is_written():
@@ -1385,6 +1644,20 @@ def init_registers():
         QRegSource("Q", "v"),
         QRegReadWrite("Q", "x"),
 
+        # HLX regs
+        LRegDest("L", "d"),
+        LRegSource("L", "s"),
+        LRegSource("L", "u"),
+        LRegSource("L", "v"),
+        LRegSource("L", "w"),
+        LRegReadWrite("L", "x"),
+        LRegTmp("L", "y"),
+        LRegPairDest("L", "dd"),
+        LRegPairSource("L", "uu"),
+        LRegPairSource("L", "vv"),
+        LRegPairSource("L", "ss"),
+        LRegPairReadWrite("L", "xx"),
+
         # system regs
         GuestDest("G", "d"),
         GuestSource("G", "s"),
@@ -1405,12 +1678,13 @@ def init_registers():
         PredNewSource("P", "u"),
         PredNewSource("P", "v"),
         VRegNewSource("O", "s"),
+        LRegNewSource("K", "u"),
     }
     for reg in new_regs:
         new_registers[f"{reg.regtype}{reg.regid}"] = reg
 
 def is_new_reg(tag, regid):
-    if regid[0] in "NO":
+    if regid[0] in "NOK":
         return True
     return regid[0] == "P" and \
            f"{regid}N" in semdict[tag] and \
@@ -1457,19 +1731,22 @@ def helper_args(tag, regs, imms):
     if is_predicated(tag):
         for regtype, regid in regs:
             reg = get_register(tag, regtype, regid)
-            if reg.is_writeonly() and not reg.is_hvx_reg():
+            is_vector = reg.is_hvx_reg() or reg.is_hlx_reg()
+            if reg.is_writeonly() and not is_vector:
                 args.append(reg.helper_arg())
 
     ## Pass the HVX destination registers
     for regtype, regid in regs:
         reg = get_register(tag, regtype, regid)
-        if reg.is_written() and reg.is_hvx_reg():
+        if reg.is_written() and (reg.is_hvx_reg() or reg.is_hlx_reg()):
             args.append(reg.helper_arg())
 
     ## Pass the source registers
     for regtype, regid in regs:
         reg = get_register(tag, regtype, regid)
-        if reg.is_read() and not (reg.is_hvx_reg() and reg.is_readwrite()):
+        is_vector_readwrite = ((reg.is_hvx_reg() or reg.is_hlx_reg()) and
+                               reg.is_readwrite())
+        if reg.is_read() and not is_vector_readwrite:
             args.append(reg.helper_arg())
 
     ## Pass the immediates
