@@ -69,6 +69,24 @@ DEF_ATTRIB(RLS_SAME_THREAD, "Store release with the same thread", "", "")
 /* V6 Vector attributes */
 DEF_ATTRIB(CVI, "Executes on the HVX extension", "", "")
 
+/* HLX attributes */
+DEF_ATTRIB(HLX, "Executes on the HLX extension", "", "")
+DEF_ATTRIB(HLX_MEM, "HLX memory instruction", "", "")
+DEF_ATTRIB(HLX_MPY, "HLX multiply instruction", "", "")
+DEF_ATTRIB(HLX_SHIFT, "HLX shift instruction", "", "")
+DEF_ATTRIB(HLX_COMMON_ALU, "HLX common ALU instruction", "", "")
+DEF_ATTRIB(HLX_PAIRED_ALU, "HLX paired ALU instruction", "", "")
+DEF_ATTRIB(HLX_ANY_RESOURCE, "HLX can use any resource", "", "")
+DEF_ATTRIB(HLX_SLOT23, "HLX can execute in slot 2 or 3", "", "")
+DEF_ATTRIB(HLX_NEW, "HLX new-value instruction", "", "")
+DEF_ATTRIB(HLX_TMP, "HLX temporary register instruction", "", "")
+DEF_ATTRIB(HLX_CU_SCALAR, "HLX scalar CU instruction", "", "")
+DEF_ATTRIB(HLX_SCALAR32, "HLX 32-bit scalar operand", "", "")
+DEF_ATTRIB(HLX_SCALAR64, "HLX 64-bit scalar operand", "", "")
+DEF_ATTRIB(HLX_LXX_MPY, "HLX Lxx multiply operation", "", "")
+DEF_ATTRIB(HLX_LXX_ADD, "HLX Lxx add operation", "", "")
+DEF_ATTRIB(NOTE_HLX_MEM, "HLX memory access notes", "", "")
+
 DEF_ATTRIB(CVI_NEW, "New value memory instruction executes on HVX", "", "")
 DEF_ATTRIB(CVI_VM, "Memory instruction executes on HVX", "", "")
 DEF_ATTRIB(CVI_VP, "Permute instruction executes on HVX", "", "")
@@ -209,6 +227,38 @@ DEF_ATTRIB(HVX_IEEE_FP_OUT_16, "HVX IEEE FP 16-bit output", "", "")
 DEF_ATTRIB(HVX_IEEE_FP_OUT_32, "HVX IEEE FP 32-bit output", "", "")
 DEF_ATTRIB(CVI_VX_NO_TMP_LD, "HVX multiply without tmp load", "", "")
 DEF_ATTRIB(HVX_FLT, "This a floating point HVX instruction.", "", "")
+DEF_ATTRIB(HVX_IEEE_BF,
+           "HVX IEEE BF extension instruction: 16-bit bfloat input", "", "")
+DEF_ATTRIB(HVX_IEEE_FP_OUT_BF,
+           "HVX IEEE FP extension instruction: 16-bit bfloat output", "", "")
+DEF_ATTRIB(HVX_IEEE_FP_BINARY_LATE,
+           "HVX IEEE FP extension instruction: Both inputs can arrive late", "", "")
+
+/* HMX attributes */
+DEF_ATTRIB(HMX, "HMX coprocessor instruction", "", "")
+DEF_ATTRIB(HMX_CVT, "HMX convert instruction", "", "")
+DEF_ATTRIB(HMX_FLT, "HMX floating-point instruction", "", "")
+DEF_ATTRIB(HMX_CU_SCALAR, "HMX scalar operand", "", "")
+DEF_ATTRIB(HMX_BLOCK_ALIGN, "HMX block-aligned access", "", "")
+DEF_ATTRIB(HMX_128B_ALIGN, "HMX 128-byte aligned access", "", "")
+DEF_ATTRIB(XUDUFWD,
+           "XU tc1/tc2/tc3 producer instruction eligible for early forward to slot01",
+           "", "")
+DEF_ATTRIB(RESTRICT_JUMP, "This instruction is a restricted jump instruction",
+           "", "")
+DEF_ATTRIB(EA_REG_PLUS_IMMSCALED,
+           "Effective Address calculated by register plus scaled immediate", "", "")
+DEF_ATTRIB(IMPLICIT_READS_VFRAMELIMIT,
+           "This instruction reads the Vector FRAMELIMIT register",
+           "UREG.VFRAMELIMIT", "")
+DEF_ATTRIB(IMPLICIT_READS_VSP, "This instruction reads the VSP register",
+           "UREG.VSP", "")
+DEF_ATTRIB(IMPLICIT_WRITES_VSP, "This instruction writes the VSP register",
+           "", "UREG.VSP")
+DEF_ATTRIB(EA_REG_PLUS_VSP,
+           "Effective Address calculated by VSP register and input register", "", "")
+DEF_ATTRIB(VDEALLOCFRAME, "This instruction is a vdeallocframe", "", "")
+DEF_ATTRIB(NO_IDEF_PARSER, "Skip idef-parser for this instruction", "", "")
 
 /* Keep this as the last attribute: */
 DEF_ATTRIB(ZZ_LASTATTRIB, "Last attribute in the file", "", "")
