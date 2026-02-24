@@ -1,0 +1,94 @@
+name: Hexagon QEMU CI
+
+on:
+  push:
+    branches: [ master, hex-next, hex-next-test, hex-next-express, hex-next-express-test ]
+  pull_request:
+    branches: [ master, hex-next ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }}${{ matrix.name_suffix || '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target_list: hexagon-linux-user
+          - os: ubuntu-22.04
+            target_list: hexagon-linux-user
+            debug_build: true
+            name_suffix: "-debug"
+          - os: ubuntu-22.04
+            target_list: hexagon-linux-user
+            use_clang: true
+            name_suffix: "-clang"
+
+    steps:
+    - name: Checkout QEMU
+      uses: actions/checkout@v4
+
+    # Ubuntu setup
+    - name: Install Ubuntu dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt update
+        sudo apt install --fix-missing -y \
+          build-essential \
+          ninja-build \
+          pkg-config \
+          libglib2.0-dev \
+          libfdt-dev \
+          libpixman-1-dev \
+          libslirp-dev \
+          python3-venv \
+          python3-pip \
+          clang
+
+    # Configure and build
+    - name: Configure QEMU (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        mkdir build
+        cd build
+        EXTRA_ARGS=""
+        if [ "${{ matrix.debug_build }}" = "true" ]; then
+          EXTRA_ARGS="$EXTRA_ARGS --enable-debug --enable-debug-tcg --enable-ubsan"
+        fi
+        if [ "${{ matrix.use_clang }}" = "true" ]; then
+          export CC=clang
+          export CXX=clang++
+        fi
+        ../configure \
+          --target-list=${{ matrix.target_list }} \
+          --enable-slirp \
+          --enable-fdt \
+          --enable-plugins \
+          --disable-docs \
+          $EXTRA_ARGS
+
+    - name: Build QEMU (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        cd build
+        ninja
+
+    - name: Test hexagon-linux-user (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        cd build
+        make V=1 -j$(nproc) check-tcg SPEED=thorough
+
+    # Upload test logs
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs-${{ matrix.os }}${{ matrix.name_suffix || '' }}
+        path: |
+          build/tests/results/
+          build/meson-logs/
+          build/**/*.log
+        retention-days: 7
