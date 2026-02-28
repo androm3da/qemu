@@ -982,6 +982,7 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
     uint32_t hex_flags = dcbase->tb->flags;
 
     ctx->mem_idx = MMU_USER_IDX;
+    ctx->hvx_vec_len = cpu_env(cs)->hvx_vec_len;
     ctx->num_packets = 0;
     ctx->num_insns = 0;
     ctx->num_hvx_insns = 0;
