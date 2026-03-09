@@ -19,7 +19,6 @@
  * HLX intrinsics conflicts with the inline asm HLX instructions.
  */
 
-#define HLX_NO_VTCM
 #include "hlx_test.h"
 
 /* Single-register buffers */

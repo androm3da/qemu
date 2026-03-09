@@ -5,13 +5,12 @@
  */
 
 /*
- * Shared helpers for HLX (Hexagon eLement-wise eXtensions) tests
+ * Shared helpers for HLX (Hexagon eLement-wise eXtensions) user-mode tests
  *
  * All HLX tests compile with:
- *   hexagon-clang -mv85 -mhlx -G0 -O2 -static
+ *   hexagon-unknown-linux-musl-clang -mv85 -mhlx -O2 -static
  * and run with:
- *   qemu-system-hexagon -M V85QA_1 -display none -kernel <test>
- *   hexagon-sim -mv85qa_1 <test>
+ *   qemu-hexagon -cpu v85 <test>
  */
 
 #ifndef HLX_TEST_H
@@ -19,28 +18,20 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#ifndef HLX_NO_VTCM
-#include <hexagon_standalone.h>
 #include <hexagon_types.h>
 #include <hlx_hexagon_protos.h>
-#endif
 
 static int err;
 
-/* Enable HLX via CCR.XE3 (bit 28) */
-static inline void enable_hlx(void)
-{
-    uint32_t tmp;
-    asm volatile(
-        "%0 = ccr\n"
-        "%0 = setbit(%0, #28)\n"
-        "ccr = %0\n"
-        "isync\n"
-        : "=&r"(tmp)
-    );
-}
+/*
+ * HLX is enabled by QEMU's user-mode init (CCR.XE3 = 1).
+ * No privileged CCR write needed — keep this as a no-op for
+ * source compatibility with the system-mode tests.
+ */
+static inline void enable_hlx(void) { }
 
 /* Verify halfword (uint16_t) array against expected values */
 static void check_h(const char *name, const uint16_t *out,
@@ -152,71 +143,42 @@ static inline uint32_t sat_uw(int64_t val)
 
 /*
  * HLX register size: 2048 bytes = 1024 halfwords = 512 words
- * All buffers must be in VTCM and 2048-byte aligned for
- * L-register loads/stores.
+ * All buffers must be 2048-byte aligned for L-register loads/stores.
  */
 #define HLX_HALF_ELEMS  1024
 #define HLX_WORD_ELEMS  512
 #define HLX_VEC_BYTES   2048
 #define HLX_ALIGN       __attribute__((aligned(2048)))
 
-#ifndef HLX_NO_VTCM
 /*
- * VTCM (Vectorized Tightly Coupled Memory) discovery and allocation.
+ * User-mode memory allocation for HLX buffers.
  *
- * HLX memory operations require buffers to reside in VTCM. The VTCM base
- * address is read from the hardware config table at offset 0x38.
- *
- * We must set up explicit TLB entries with uncached attributes (cache_attr=7)
- * so that CPU writes to VTCM are not trapped in L1/L2 cache. Without this,
- * the HLX coprocessor (which reads directly from physical VTCM) would see
- * stale/zero data.
+ * In system-mode, HLX memory operations use VTCM (Vectorized Tightly
+ * Coupled Memory) with explicit TLB mappings.  In user-mode, regular
+ * aligned heap memory works — QEMU handles the memory access uniformly.
  */
-static void *vtcm_base_ptr;
-static size_t vtcm_offset;
 
-/* Read VTCM base address from hardware config table and map it uncached */
-static inline void init_vtcm(void)
-{
-    uint32_t base;
-    asm volatile(
-        "r1 = cfgbase\n"
-        "r1 = asl(r1, #5)\n"
-        "r2 = #0x38\n"
-        "r1 = memw_phys(r2, r1)\n"
-        "%0 = asl(r1, #16)\n"
-        : "=r"(base) : : "r1", "r2"
-    );
-    vtcm_base_ptr = (void *)(uintptr_t)base;
-    vtcm_offset = 0;
+/* No-op in user-mode — no VTCM discovery or TLB setup needed */
+static inline void init_vtcm(void) { }
 
-    /* Map 2MB of VTCM with uncached attributes (two 1MB pages) */
-    uint64_t pa = (uint64_t)base;
-    add_translation_fixed(1, vtcm_base_ptr, (void *)pa, 6, 0);
-    add_translation_fixed(2, (char *)vtcm_base_ptr + 1024 * 1024,
-                          (void *)(pa + 1024 * 1024), 6, 0);
-}
-
-/*
- * Flush data cache for a buffer to ensure CPU writes reach physical VTCM.
- * Uses dccleaninva (clean + invalidate) per cache line (32 bytes).
- */
+/* No-op in user-mode — coherent memory, no cache flush needed */
 static inline void vtcm_flush(const void *ptr, size_t bytes)
 {
-    const char *p = (const char *)ptr;
-    const char *end = p + bytes;
-    for (; p < end; p += 32) {
-        asm volatile("dccleaninva(%0)" : : "r"(p));
-    }
+    (void)ptr;
+    (void)bytes;
 }
 
-/* Allocate a 2KB-aligned buffer from VTCM */
+/* Allocate a 2KB-aligned buffer from the heap */
 static inline void *vtcm_alloc(size_t bytes)
 {
-    vtcm_offset = (vtcm_offset + (HLX_VEC_BYTES - 1))
-                  & ~(size_t)(HLX_VEC_BYTES - 1);
-    void *ptr = (char *)vtcm_base_ptr + vtcm_offset;
-    vtcm_offset += bytes;
+    size_t aligned_bytes = (bytes + (HLX_VEC_BYTES - 1))
+                           & ~(size_t)(HLX_VEC_BYTES - 1);
+    void *ptr = aligned_alloc(HLX_VEC_BYTES, aligned_bytes);
+    if (!ptr) {
+        fprintf(stderr, "aligned_alloc failed for %zu bytes\n", aligned_bytes);
+        exit(1);
+    }
+    memset(ptr, 0, aligned_bytes);
     return ptr;
 }
 
@@ -224,11 +186,10 @@ static inline void *vtcm_alloc(size_t bytes)
  * Set up the Vector Stack Pointer (VSP) for L-register spills.
  *
  * The compiler uses VSP when it needs to spill HLX_Vector values.
- * VSP must point to VTCM memory (with at least HLX_VEC_BYTES of space
- * per spill slot, aligned to HLX_VEC_BYTES).
+ * VSP must point to memory with at least HLX_VEC_BYTES of space
+ * per spill slot, aligned to HLX_VEC_BYTES.
  *
- * Call this after init_vtcm() and before any HLX intrinsic usage.
- * Reserves HLX_VSP_SIZE bytes of VTCM for the spill area.
+ * Reserves HLX_VSP_SIZE bytes for the spill area.
  */
 #define HLX_VSP_SIZE  (16 * HLX_VEC_BYTES) /* 32 KB for spill slots */
 
@@ -239,7 +200,5 @@ static inline void init_hlx_vsp(void)
     uint32_t vsp_top = (uint32_t)(uintptr_t)vsp_area + HLX_VSP_SIZE;
     asm volatile("vsp = %0\n" : : "r"(vsp_top));
 }
-
-#endif /* !HLX_NO_VTCM */
 
 #endif /* HLX_TEST_H */
