@@ -132,7 +132,7 @@ static void test_lut4_sh_neg(void)
 
     int idx = ((uint16_t)LUT_SRC >> 14) & 0x3;
     uint32_t e = (uint32_t)entries[idx];
-    uint32_t exp_val = (uint32_t)(((int32_t)(e - (1u << 16))) << 15);
+    uint32_t exp_val = (uint32_t)((uint32_t)((int32_t)(e - (1u << 16))) << 15);
     for (int j = 0; j < HLX_HALF_ELEMS; j++) {
         expected_w[j] = exp_val;
     }

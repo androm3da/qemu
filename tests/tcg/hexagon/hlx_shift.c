@@ -81,7 +81,7 @@ static inline int16_t ref_lshift16(int16_t val, int16_t shamt)
         if (n > 32) {
             n = 32;
         }
-        return (int16_t)(uint16_t)((int64_t)val << n);
+        return (int16_t)(uint16_t)((uint64_t)(int64_t)val << n);
     }
     int n = shamt > 32 ? 32 : shamt;
     return (int16_t)(uint16_t)((int64_t)val >> n);
@@ -112,7 +112,7 @@ static inline int64_t ref_lshift32_64(int32_t val, int16_t shamt)
         if (n > 32) {
             n = 32;
         }
-        return (int64_t)val << n;
+        return (int64_t)((uint64_t)(int64_t)val << n);
     }
     int n = shamt > 32 ? 32 : shamt;
     return (int64_t)val >> n;
@@ -130,7 +130,7 @@ static inline int64_t ref_lshift32_rnd_64(int32_t val, int16_t shamt)
         if (n > 32) {
             n = 32;
         }
-        return (int64_t)val << n;
+        return (int64_t)((uint64_t)(int64_t)val << n);
     }
     int nm1 = shamt - 1;
     if (nm1 > 32) {
