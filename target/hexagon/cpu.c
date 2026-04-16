@@ -442,7 +442,7 @@ static void hexagon_cpu_disas_set_info(const CPUState *cs,
     const HexagonCPU *cpu = HEXAGON_CPU(cs);
     info->print_insn = print_insn_hexagon;
     info->endian = BFD_ENDIAN_LITTLE;
-    info->target_info = HEXAGON_CPU_GET_CLASS(cpu)->hex_def;
+    info->target_info = &cpu->cfg;
 }
 
 static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
