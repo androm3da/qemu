@@ -185,15 +185,13 @@ typedef struct HexagonCPUClass {
     const HexagonCPUDef *hex_def;
 } HexagonCPUClass;
 
+#include "cpu_bits.h"
+
 struct ArchCPU {
     CPUState parent_obj;
 
     CPUHexagonState env;
-
-    bool lldb_compat;
-    target_ulong lldb_stack_adjust;
-    bool short_circuit;
-    bool ieee_fp_extension;
+    HexagonCPUConfig cfg;
 #ifndef CONFIG_USER_ONLY
     HexagonTLBState *tlb;
     uint32_t boot_addr;
@@ -201,8 +199,6 @@ struct ArchCPU {
     uint32_t htid;
 #endif
 };
-
-#include "cpu_bits.h"
 
 FIELD(TB_FLAGS, IS_TIGHT_LOOP, 0, 1)
 FIELD(TB_FLAGS, MMU_INDEX, 1, 3)
