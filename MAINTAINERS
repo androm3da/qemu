@@ -249,6 +249,8 @@ Hexagon TCG CPUs
 M: Brian Cain <brian.cain@oss.qualcomm.com>
 R: Pierrick Bouvier <pierrick.bouvier@oss.qualcomm.com>
 S: Supported
+F: hw/hexagon/
+F: include/hw/hexagon/
 F: target/hexagon/
 F: hw/intc/hex-l2vic.c
 F: include/hw/intc/hex-l2vic.h

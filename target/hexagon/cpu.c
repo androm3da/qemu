@@ -41,6 +41,7 @@
 #include "hexswi.h"
 #include "exec/cpu-interrupt.h"
 #include "exec/page-protection.h"
+#include "hw/hexagon/hexagon_hlx.h"
 #include "exec/target_page.h"
 #include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/hexagon/hexagon_hvx_context.h"
@@ -71,6 +72,8 @@ static const Property hexagon_cpu_properties[] = {
     DEFINE_PROP_LINK("global-regs", HexagonCPU, globalregs,
         TYPE_HEXAGON_GLOBALREG, HexagonGlobalRegState *),
     DEFINE_PROP_UINT32("htid", HexagonCPU, htid, 0),
+    DEFINE_PROP_LINK("hlx", HexagonCPU, hlx,
+                     TYPE_HEXAGON_HLX, HexagonHLXState *),
 #endif
     DEFINE_PROP_BOOL("lldb-compat", HexagonCPU, cfg.lldb_compat, false),
     DEFINE_PROP_UNSIGNED("lldb-stack-adjust", HexagonCPU, cfg.lldb_stack_adjust,
