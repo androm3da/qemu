@@ -8,6 +8,7 @@
 #include "migration/vmstate.h"
 #include "cpu.h"
 #include "cpu_helper.h"
+#include "macros.h"
 #include "hlx/hlx.h"
 #include "hw/hexagon/hexagon_hlx.h"
 
@@ -15,14 +16,20 @@ static int hexagon_cpu_post_load(void *opaque, int version_id)
 {
     HexagonCPU *cpu = opaque;
     CPUHexagonState *env = &cpu->env;
+    uint32_t ccr;
+    bool xe3;
+    uint32_t xa3;
 
     hexagon_hvx_select_context(env, env->t_sreg[HEX_SREG_SSR]);
-    if (cpu->hlx) {
-        env->LRegs_live = hexagon_hlx_context_lregs(cpu->hlx, 0);
-    } else {
+    if (!cpu->hlx) {
         env->LRegs_live = NULL;
+        return 0;
     }
 
+    ccr = env->t_sreg[HEX_SREG_CCR];
+    xe3 = GET_FIELD(CCR_XE3, ccr);
+    xa3 = GET_FIELD(CCR_XA3, ccr);
+    env->LRegs_live = xe3 ? hexagon_hlx_context_lregs(cpu->hlx, xa3) : NULL;
     return 0;
 }
 

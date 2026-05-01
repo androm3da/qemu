@@ -287,7 +287,11 @@ static const uint32_t sreg_immut_masks[NUM_SREGS] = {
     [HEX_SREG_STID] = 0xff00ff00,
     [HEX_SREG_ELR] = 0x00000003,
     [HEX_SREG_SSR] = 0x00008000,
-    [HEX_SREG_CCR] = 0x00e0ff24,  /* Removed bit 28 (XE3/HLX enable) from immutable */
+    /*
+     * CCR.XA3 (bit 21) selects the active HLX context; allow guest writes.
+     * CCR.XE3 (bit 28) enables HLX and is likewise writable.
+     */
+    [HEX_SREG_CCR] = 0x00e0ff24 & ~(1u << 21), /* CCR_XA3 offset */
     [HEX_SREG_HTID] = IMMUTABLE,
     [HEX_SREG_GEVB] = 0x000000ff,
 };

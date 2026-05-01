@@ -474,10 +474,6 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
         hexagon_hlx_reset_all(cpu->hlx);
     }
 
-    /* LRegs_live is NULL when the machine has no HLX context pool. */
-    if (cpu->hlx) {
-        env->LRegs_live = hexagon_hlx_context_lregs(cpu->hlx, 0);
-    }
     hexagon_cpu_soft_reset(env);
     hexagon_hvx_select_context(env, env->t_sreg[HEX_SREG_SSR]);
     env->cause_code = HEX_EVENT_NONE;
