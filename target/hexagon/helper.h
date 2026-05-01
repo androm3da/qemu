@@ -154,3 +154,6 @@ DEF_HELPER_1(resched, void, env)
 DEF_HELPER_3(modify_ssr, void, env, i32, i32)
 DEF_HELPER_1(pending_interrupt, void, env)
 #endif
+DEF_HELPER_2(hlx_copy_live_to_future, void, env, i32)
+DEF_HELPER_2(hlx_commit_reg,          void, env, i32)
+DEF_HELPER_2(hlx_commit_tmp_reg,      void, env, i32)

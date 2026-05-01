@@ -459,6 +459,8 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->cfi_active = 0;
     env->cfi_active_log = 0;
     env->cfi_updated = 0;
+    memset(env->lregs_fallback, 0, sizeof(env->lregs_fallback));
+    env->LRegs_live = env->lregs_fallback;
 #ifndef CONFIG_USER_ONLY
     memset(env->t_sreg, 0, sizeof(uint32_t) * NUM_SREGS);
     memset(env->greg, 0, sizeof(uint32_t) * NUM_GREGS);
@@ -469,13 +471,22 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
 
     env->t_sreg[HEX_SREG_HTID] = cpu->htid;
     env->threadId = cpu->htid;
+    if (cs->cpu_index == 0 && cpu->hlx) {
+        hexagon_hlx_reset_all(cpu->hlx);
+    }
+
+    if (cpu->hlx) {
+        HLXVector *ctx0 = hexagon_hlx_context_lregs(cpu->hlx, 0);
+        if (ctx0) {
+            env->LRegs_live = ctx0;
+        }
+    }
     hexagon_cpu_soft_reset(env);
     hexagon_hvx_select_context(env, env->t_sreg[HEX_SREG_SSR]);
     env->cause_code = HEX_EVENT_NONE;
     env->gpr[HEX_REG_PC] = cpu->boot_addr;
 #endif
 
-    memset(env->LRegs, 0, sizeof(env->LRegs));
     memset(env->future_LRegs, 0, sizeof(env->future_LRegs));
     memset(env->tmp_LRegs, 0, sizeof(env->tmp_LRegs));
 }

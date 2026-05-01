@@ -649,6 +649,7 @@ static void clear_pkt_ctx(DisasContext *ctx)
     bitmap_zero(ctx->lregs_updated, NUM_LREGS);
     bitmap_zero(ctx->lregs_updated_tmp, NUM_LREGS);
     bitmap_zero(ctx->lregs_read, NUM_LREGS);
+    ctx->hlx_base_loaded = false;
     for (i = 0; i < STORES_MAX; i++) {
         ctx->store_width[i] = 0;
     }
@@ -1176,11 +1177,7 @@ static void gen_commit_hlx(DisasContext *ctx)
 
     for (i = 0; i < ctx->lreg_log_idx; i++) {
         int rnum = ctx->lreg_log[i];
-        intptr_t dstoff = offsetof(CPUHexagonState, LRegs[rnum]);
-        intptr_t srcoff = offsetof(CPUHexagonState, future_LRegs[rnum]);
-        size_t size = sizeof(HLXVector);
-
-        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+        gen_helper_hlx_commit_reg(tcg_env, tcg_constant_i32(rnum));
     }
 
     /*
@@ -1193,11 +1190,7 @@ static void gen_commit_hlx(DisasContext *ctx)
         if (test_bit(rnum, ctx->lregs_updated)) {
             continue;
         }
-        intptr_t dstoff = offsetof(CPUHexagonState, LRegs[rnum]);
-        intptr_t srcoff = offsetof(CPUHexagonState, tmp_LRegs[rnum]);
-        size_t size = sizeof(HLXVector);
-
-        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+        gen_helper_hlx_commit_tmp_reg(tcg_env, tcg_constant_i32(rnum));
     }
 }
 

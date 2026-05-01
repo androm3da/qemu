@@ -1267,16 +1267,18 @@ class LRegSource(Hlx, Register, Single, OldSource):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
         f.write(code_fmt(f"""\
-            const intptr_t {self.hlx_off()} =
-                test_bit({self.reg_num}, ctx->lregs_updated_tmp)
-                ? offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}])
-                : offsetof(CPUHexagonState, LRegs[{self.reg_num}]);
+            TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+            if (test_bit({self.reg_num}, ctx->lregs_updated_tmp)) {{
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env,
+                                 offsetof(CPUHexagonState,
+                                          tmp_LRegs[{self.reg_num}]));
+            }} else {{
+                TCGv_ptr _hlx_base = ctx_get_hlx_base(ctx);
+                tcg_gen_addi_ptr({self.reg_tcg()}, _hlx_base,
+                                 (intptr_t){self.reg_num} *
+                                 sizeof(HLXVector));
+            }}
         """))
-        if not skip_qemu_helper(tag):
-            f.write(code_fmt(f"""\
-                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
-                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
-            """))
     def helper_hlx_desc(self, f):
         desc = f"*(HLXVector *)({self.helper_arg_name()})"
         f.write(code_fmt(f"""\
@@ -1316,13 +1318,15 @@ class LRegReadWrite(Hlx, Register, Single, ReadWrite):
         f.write(code_fmt(f"""\
             const intptr_t {self.hlx_off()} =
                 offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
-            tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
-                             test_bit({self.reg_num}, ctx->lregs_updated_tmp)
-                             ? offsetof(CPUHexagonState,
-                                        tmp_LRegs[{self.reg_num}])
-                             : offsetof(CPUHexagonState,
-                                        LRegs[{self.reg_num}]),
-                             sizeof(HLXVector), sizeof(HLXVector));
+            if (test_bit({self.reg_num}, ctx->lregs_updated_tmp)) {{
+                tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
+                                 offsetof(CPUHexagonState,
+                                          tmp_LRegs[{self.reg_num}]),
+                                 sizeof(HLXVector), sizeof(HLXVector));
+            }} else {{
+                gen_helper_hlx_copy_live_to_future(tcg_env,
+                    tcg_constant_i32({self.reg_num}));
+            }}
         """))
         if not skip_qemu_helper(tag):
             f.write(code_fmt(f"""\
@@ -1398,16 +1402,18 @@ class LRegPairSource(Hlx, Register, Pair, OldSource):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
         f.write(code_fmt(f"""\
-            const intptr_t {self.hlx_off()} =
-                test_bit({self.reg_num}, ctx->lregs_updated_tmp)
-                ? offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}])
-                : offsetof(CPUHexagonState, LRegs[{self.reg_num}]);
+            TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+            if (test_bit({self.reg_num}, ctx->lregs_updated_tmp)) {{
+                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env,
+                                 offsetof(CPUHexagonState,
+                                          tmp_LRegs[{self.reg_num}]));
+            }} else {{
+                TCGv_ptr _hlx_base = ctx_get_hlx_base(ctx);
+                tcg_gen_addi_ptr({self.reg_tcg()}, _hlx_base,
+                                 (intptr_t){self.reg_num} *
+                                 sizeof(HLXVector));
+            }}
         """))
-        if not skip_qemu_helper(tag):
-            f.write(code_fmt(f"""\
-                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
-                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
-            """))
     def helper_hlx_desc(self, f):
         f.write(code_fmt(f"""\
             /* {self.reg_tcg()} is *(HLXVectorPair *)({self.helper_arg_name()}) */
@@ -1423,13 +1429,17 @@ class LRegPairReadWrite(Hlx, Register, Pair, ReadWrite):
         f.write(code_fmt(f"""\
             const intptr_t {self.hlx_off()} =
                 offsetof(CPUHexagonState, future_LRegs[{self.reg_num}]);
-            tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
-                             test_bit({self.reg_num}, ctx->lregs_updated_tmp)
-                             ? offsetof(CPUHexagonState,
-                                        tmp_LRegs[{self.reg_num}])
-                             : offsetof(CPUHexagonState,
-                                        LRegs[{self.reg_num}]),
-                             sizeof(HLXVector) * 2, sizeof(HLXVector) * 2);
+            if (test_bit({self.reg_num}, ctx->lregs_updated_tmp)) {{
+                tcg_gen_gvec_mov(MO_64, {self.hlx_off()},
+                                 offsetof(CPUHexagonState,
+                                          tmp_LRegs[{self.reg_num}]),
+                                 sizeof(HLXVector) * 2, sizeof(HLXVector) * 2);
+            }} else {{
+                gen_helper_hlx_copy_live_to_future(tcg_env,
+                    tcg_constant_i32({self.reg_num}));
+                gen_helper_hlx_copy_live_to_future(tcg_env,
+                    tcg_constant_i32({self.reg_num} + 1));
+            }}
         """))
         if not skip_qemu_helper(tag):
             f.write(code_fmt(f"""\

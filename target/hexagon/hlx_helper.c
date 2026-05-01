@@ -103,3 +103,27 @@ void HELPER(hlx_store_vec)(CPUHexagonState *env, target_ulong ea,
     (void)above;
     (void)below;
 }
+
+/* Copy env->LRegs_live[rnum] into env->future_LRegs[rnum]. */
+void HELPER(hlx_copy_live_to_future)(CPUHexagonState *env, uint32_t rnum)
+{
+    g_assert(env->LRegs_live != NULL);
+    memcpy(&env->future_LRegs[rnum], &env->LRegs_live[rnum],
+           sizeof(HLXVector));
+}
+
+/* Commit env->future_LRegs[rnum] into env->LRegs_live[rnum]. */
+void HELPER(hlx_commit_reg)(CPUHexagonState *env, uint32_t rnum)
+{
+    g_assert(env->LRegs_live != NULL);
+    memcpy(&env->LRegs_live[rnum], &env->future_LRegs[rnum],
+           sizeof(HLXVector));
+}
+
+/* Commit env->tmp_LRegs[rnum] into env->LRegs_live[rnum]. */
+void HELPER(hlx_commit_tmp_reg)(CPUHexagonState *env, uint32_t rnum)
+{
+    g_assert(env->LRegs_live != NULL);
+    memcpy(&env->LRegs_live[rnum], &env->tmp_LRegs[rnum],
+           sizeof(HLXVector));
+}

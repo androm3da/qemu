@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include "cpu_helper.h"
 #include "hlx/hlx.h"
+#include "hw/hexagon/hexagon_hlx.h"
 
 static int hexagon_cpu_post_load(void *opaque, int version_id)
 {
@@ -16,6 +17,13 @@ static int hexagon_cpu_post_load(void *opaque, int version_id)
     CPUHexagonState *env = &cpu->env;
 
     hexagon_hvx_select_context(env, env->t_sreg[HEX_SREG_SSR]);
+    env->LRegs_live = env->lregs_fallback;
+    if (cpu->hlx) {
+        HLXVector *ctx0 = hexagon_hlx_context_lregs(cpu->hlx, 0);
+        if (ctx0) {
+            env->LRegs_live = ctx0;
+        }
+    }
 
     return 0;
 }
@@ -67,7 +75,6 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT64(env.t_cycle_count, HexagonCPU),
         VMSTATE_UINT32(env.imprecise_exception, HexagonCPU),
         VMSTATE_UINT32_V(env.cfi_active, HexagonCPU, 3),
-        VMSTATE_HLXVECTOR_ARRAY(env.LRegs, HexagonCPU, NUM_LREGS),
         VMSTATE_HLXVECTOR_ARRAY(env.future_LRegs, HexagonCPU, NUM_LREGS),
 
         VMSTATE_END_OF_LIST()

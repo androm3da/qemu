@@ -109,6 +109,8 @@ typedef struct DisasContext {
     TCGv mult_reg_written;
     int rev;
     bool hlx_coproc_enabled;
+    TCGv_ptr hlx_base;
+    bool     hlx_base_loaded;
     /* HLX register write tracking */
     int lreg_log[NUM_LREGS];
     int lreg_log_idx;
@@ -122,6 +124,17 @@ typedef struct DisasContext {
 bool is_gather_store_insn(DisasContext *ctx);
 
 /* HLX register tracking functions */
+static inline TCGv_ptr ctx_get_hlx_base(DisasContext *ctx)
+{
+    if (!ctx->hlx_base_loaded) {
+        ctx->hlx_base = tcg_temp_new_ptr();
+        tcg_gen_ld_ptr(ctx->hlx_base, tcg_env,
+                       offsetof(CPUHexagonState, LRegs_live));
+        ctx->hlx_base_loaded = true;
+    }
+    return ctx->hlx_base;
+}
+
 static inline void ctx_log_lreg_write(DisasContext *ctx, int rnum)
 {
     if (!test_bit(rnum, ctx->lregs_updated)) {
