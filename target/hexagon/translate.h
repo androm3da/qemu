@@ -89,6 +89,7 @@ typedef struct DisasContext {
     TCGCond branch_cond;
     target_ulong branch_dest;
     bool is_tight_loop;
+    bool hlx_check_emitted;
     bool short_circuit;
     bool ieee_fp_extension;
     bool read_after_write;

@@ -189,18 +189,6 @@ typedef struct CPUArchState {
      */
     HLXVector *LRegs_live;
 
-    /*
-     * Temporary inline backing for LRegs_live on machines whose cfgtable
-     * declares no HLX context pool (contexts_bitmap == 0).  Exists because
-     * QEMU does not yet implement the architectural CCR.XE3 == 0 trap
-     * (NO_COPROC3_ENABLE exception), so HLX commit helpers can be reached
-     * on threads where HLX should have trapped at packet entry.  This field
-     * will be removed in the next commit that introduces the missing
-     * exception; see the macros.def NO_HLX_EXCEPTION macro and the HVX/HMX
-     * analogs (HEX_CAUSE_NO_COPROC_ENABLE, HEX_CAUSE_NO_COPROC2_ENABLE).
-     */
-    HLXVector lregs_fallback[NUM_LREGS] QEMU_ALIGNED(16);  /* TEMPORARY */
-
     /* Per-packet intra-packet scratch; NOT per-context. */
     HLXVector future_LRegs[NUM_LREGS] QEMU_ALIGNED(16);
     HLXVector tmp_LRegs[NUM_LREGS] QEMU_ALIGNED(16);

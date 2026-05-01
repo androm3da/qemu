@@ -17,12 +17,10 @@ static int hexagon_cpu_post_load(void *opaque, int version_id)
     CPUHexagonState *env = &cpu->env;
 
     hexagon_hvx_select_context(env, env->t_sreg[HEX_SREG_SSR]);
-    env->LRegs_live = env->lregs_fallback;
     if (cpu->hlx) {
-        HLXVector *ctx0 = hexagon_hlx_context_lregs(cpu->hlx, 0);
-        if (ctx0) {
-            env->LRegs_live = ctx0;
-        }
+        env->LRegs_live = hexagon_hlx_context_lregs(cpu->hlx, 0);
+    } else {
+        env->LRegs_live = NULL;
     }
 
     return 0;
