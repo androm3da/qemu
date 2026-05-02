@@ -1275,8 +1275,8 @@ class LRegSource(Hlx, Register, Single, OldSource):
             }} else {{
                 TCGv_ptr _hlx_base = ctx_get_hlx_base(ctx);
                 tcg_gen_addi_ptr({self.reg_tcg()}, _hlx_base,
-                                 (intptr_t){self.reg_num} *
-                                 sizeof(HLXVector));
+                                 offsetof(HexagonHLXContext,
+                                          LRegs[{self.reg_num}]));
             }}
         """))
     def helper_hlx_desc(self, f):
@@ -1410,8 +1410,8 @@ class LRegPairSource(Hlx, Register, Pair, OldSource):
             }} else {{
                 TCGv_ptr _hlx_base = ctx_get_hlx_base(ctx);
                 tcg_gen_addi_ptr({self.reg_tcg()}, _hlx_base,
-                                 (intptr_t){self.reg_num} *
-                                 sizeof(HLXVector));
+                                 offsetof(HexagonHLXContext,
+                                          LRegs[{self.reg_num}]));
             }}
         """))
     def helper_hlx_desc(self, f):

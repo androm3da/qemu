@@ -130,7 +130,7 @@ static inline TCGv_ptr ctx_get_hlx_base(DisasContext *ctx)
     if (!ctx->hlx_base_loaded) {
         ctx->hlx_base = tcg_temp_new_ptr();
         tcg_gen_ld_ptr(ctx->hlx_base, tcg_env,
-                       offsetof(CPUHexagonState, LRegs_live));
+                       offsetof(CPUHexagonState, hlx_ctx));
         ctx->hlx_base_loaded = true;
     }
     return ctx->hlx_base;

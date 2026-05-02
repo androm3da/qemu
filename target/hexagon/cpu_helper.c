@@ -481,13 +481,19 @@ void hexagon_modify_ccr(CPUHexagonState *env, uint32_t new, uint32_t old)
     pool = cpu->hlx;
 
     if (!new_XE3) {
-        env->LRegs_live = NULL;
+        /* XE3 went 1->0 or stayed 0: no live context. */
+        env->hlx_ctx = NULL;
         return;
     }
 
     if (!old_XE3 || old_XA3 != new_XA3) {
-        env->LRegs_live = pool ?
-            hexagon_hlx_context_lregs(pool, new_XA3) : NULL;
+        env->hlx_ctx = pool ? hexagon_hlx_get_context(pool, new_XA3) : NULL;
+        /*
+         * NULL if XA3 selects an absent context -- treated as disabled.
+         * Any subsequent HLX op will hit the CCR.XE3 trap path in
+         * gen_start_packet, which already handles the HLX-disabled
+         * case via HEX_CAUSE_NO_COPROC3_ENABLE.
+         */
     }
 }
 

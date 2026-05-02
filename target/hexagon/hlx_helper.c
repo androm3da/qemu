@@ -15,6 +15,7 @@
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "hlx/hlx.h"
+#include "hw/hexagon/hexagon_hlx.h"
 #include "accel/tcg/probe.h"
 
 /*
@@ -104,26 +105,23 @@ void HELPER(hlx_store_vec)(CPUHexagonState *env, target_ulong ea,
     (void)below;
 }
 
-/* Copy env->LRegs_live[rnum] into env->future_LRegs[rnum]. */
 void HELPER(hlx_copy_live_to_future)(CPUHexagonState *env, uint32_t rnum)
 {
-    g_assert(env->LRegs_live != NULL);
-    memcpy(&env->future_LRegs[rnum], &env->LRegs_live[rnum],
+    g_assert(env->hlx_ctx != NULL);
+    memcpy(&env->future_LRegs[rnum], &env->hlx_ctx->LRegs[rnum],
            sizeof(HLXVector));
 }
 
-/* Commit env->future_LRegs[rnum] into env->LRegs_live[rnum]. */
 void HELPER(hlx_commit_reg)(CPUHexagonState *env, uint32_t rnum)
 {
-    g_assert(env->LRegs_live != NULL);
-    memcpy(&env->LRegs_live[rnum], &env->future_LRegs[rnum],
+    g_assert(env->hlx_ctx != NULL);
+    memcpy(&env->hlx_ctx->LRegs[rnum], &env->future_LRegs[rnum],
            sizeof(HLXVector));
 }
 
-/* Commit env->tmp_LRegs[rnum] into env->LRegs_live[rnum]. */
 void HELPER(hlx_commit_tmp_reg)(CPUHexagonState *env, uint32_t rnum)
 {
-    g_assert(env->LRegs_live != NULL);
-    memcpy(&env->LRegs_live[rnum], &env->tmp_LRegs[rnum],
+    g_assert(env->hlx_ctx != NULL);
+    memcpy(&env->hlx_ctx->LRegs[rnum], &env->tmp_LRegs[rnum],
            sizeof(HLXVector));
 }

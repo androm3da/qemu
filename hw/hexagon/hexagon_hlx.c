@@ -27,13 +27,13 @@ static int hlx_xa3_to_pool_idx(uint32_t contexts_bitmap, uint32_t xa3)
     return ctpop32(contexts_bitmap & below_mask);
 }
 
-HLXVector *hexagon_hlx_context_lregs(HexagonHLXState *s, uint32_t xa3)
+HexagonHLXContext *hexagon_hlx_get_context(HexagonHLXState *s, uint32_t xa3)
 {
     int idx = hlx_xa3_to_pool_idx(s->contexts_bitmap, xa3);
     if (idx < 0 || idx >= s->num_contexts) {
         return NULL;
     }
-    return s->contexts[idx].LRegs;
+    return &s->contexts[idx];
 }
 
 void hexagon_hlx_reset_all(HexagonHLXState *s)

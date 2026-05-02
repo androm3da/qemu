@@ -20,10 +20,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(HexagonHLXState, HEXAGON_HLX)
 #define HLX_SIZE_CFG_INDEX 64
 
 /*
- * One HLX context = NUM_LREGS register-sized banks.  We store it as
- * HLXVector[NUM_LREGS] so indexing is identical to the legacy inline
- * array semantics today and all codegen arithmetic
- * (offsetof-equivalent) stays the same.
+ * Per-context state.  Today only the L-register file; may grow additional
+ * fields later -- access through ctx->LRegs[n], never cast
+ * HexagonHLXContext * to HLXVector *.
  *
  * Future step 4 (Dual-VXU) will relocate this struct under a VXU
  * object; per-context sizes and NUM_LREGS remain fixed.
@@ -66,7 +65,7 @@ struct HexagonHLXState {
  * (i.e. the guest selected a non-existent context: treated as disabled).
  * Safe to call with out-of-range XA3.
  */
-HLXVector *hexagon_hlx_context_lregs(HexagonHLXState *s, uint32_t xa3);
+HexagonHLXContext *hexagon_hlx_get_context(HexagonHLXState *s, uint32_t xa3);
 
 /*
  * Zero the register file of every context.  Called from

@@ -18,6 +18,8 @@
 #ifndef HEXAGON_CPU_H
 #define HEXAGON_CPU_H
 
+/* Forward declaration; full definition in hw/hexagon/hexagon_hlx.h */
+typedef struct HexagonHLXContext HexagonHLXContext;
 #include "fpu/softfloat-types.h"
 
 #ifndef CONFIG_USER_ONLY
@@ -187,7 +189,7 @@ typedef struct CPUArchState {
      * in HLX_CONTEXTS. Updated by hexagon_modify_ccr() on CCR writes
      * and reconstructed by hexagon_cpu_post_load() after migration.
      */
-    HLXVector *LRegs_live;
+    HexagonHLXContext *hlx_ctx;
 
     /* Per-packet intra-packet scratch; NOT per-context. */
     HLXVector future_LRegs[NUM_LREGS] QEMU_ALIGNED(16);
