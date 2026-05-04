@@ -391,6 +391,50 @@ HLX_INLINE_TAGS = {
                       "size": "2 * sizeof(HLXVector)"},
     "LX_orn_w":      {"op": "gvec3",     "table": "hlx_orc_op",  "vece": "MO_64",
                       "size": "2 * sizeof(HLXVector)"},
+    # Phase D.1 — min/max: single L-reg (MO_16 signed/unsigned halfword)
+    #
+    # NOTE: LX_min_w, LX_max_w, LX_min_uw, LX_max_uw are NOT inlined.
+    # The HLX word-pair physical layout interleaves elements (lo L-reg holds
+    # the low halfwords of each word, hi L-reg holds the high halfwords).
+    # A MO_32 gvec min/max on the lo register alone would treat adjacent
+    # lo-halfwords as a single 32-bit entity and compare them as 32-bit
+    # values, which is semantically wrong for the interleaved layout.
+    "LX_min_h":      {"op": "gvec3_arr", "table": "hlx_smin_op", "vece": "MO_16"},
+    "LX_max_h":      {"op": "gvec3_arr", "table": "hlx_smax_op", "vece": "MO_16"},
+    "LX_min_uh":     {"op": "gvec3_arr", "table": "hlx_umin_op", "vece": "MO_16"},
+    "LX_max_uh":     {"op": "gvec3_arr", "table": "hlx_umax_op", "vece": "MO_16"},
+    # Phase D.1 — min/max: paired halfword (pair L-regs, MO_16 elements)
+    # These are safe: MO_16 halfwords are independent across both L-regs.
+    "LX_min_hp":     {"op": "gvec3_arr", "table": "hlx_smin_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_max_hp":     {"op": "gvec3_arr", "table": "hlx_smax_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_min_uhp":    {"op": "gvec3_arr", "table": "hlx_umin_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_max_uhp":    {"op": "gvec3_arr", "table": "hlx_umax_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    # Phase D.1 — abs: single L-reg (MO_16 unsigned abs of signed halfword)
+    # LX_abs_uh: Ld.uh = abs(Lu.h)  — single dest, single src
+    "LX_abs_uh":     {"op": "gvec2_arr", "table": "hlx_abs_op",  "vece": "MO_16"},
+    # Phase D.1 — abs: paired halfword (pair L-regs, MO_16 elements)
+    # LX_abs_uhp: Ldd.uh = abs(Luu.h) — pair dest, pair src
+    "LX_abs_uhp":    {"op": "gvec2_arr", "table": "hlx_abs_op",  "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    # Phase D.2 — compare GT: single L-reg (MO_16)
+    # LX_cmp_gt_h and LX_cmp_gt_uh: single dest, two single sources.
+    # Produces all-1s (0xFFFF per lane) if a > b, else all-0s.
+    # Implementation: use LT descriptor with args swapped (b < a ≡ a > b).
+    # NOTE: LX_cmp_gt_w and LX_cmp_gt_uw are NOT inlined — word-pair
+    # interleaved layout makes MO_32 gvec cmp semantically wrong.
+    "LX_cmp_gt_h":   {"op": "cmp_gt",    "table": "hlx_cmp_slt_h_op",
+                      "vece": "MO_16"},
+    "LX_cmp_gt_uh":  {"op": "cmp_gt",    "table": "hlx_cmp_ult_h_op",
+                      "vece": "MO_16"},
+    # Phase D.2 — compare GT: paired halfword (pair L-regs, MO_16 elements)
+    "LX_cmp_gt_hp":  {"op": "cmp_gt",    "table": "hlx_cmp_slt_h_op",
+                      "vece": "MO_16",   "size": "2 * sizeof(HLXVector)"},
+    "LX_cmp_gt_uhp": {"op": "cmp_gt",    "table": "hlx_cmp_ult_h_op",
+                      "vece": "MO_16",   "size": "2 * sizeof(HLXVector)"},
 }
 
 def is_hlx_inline_tag(tag):
@@ -585,6 +629,75 @@ def gen_hlx_inline(f, tag, regs):
                                  {u}_base, {u}_off,
                                  {single}, {single});
         """))
+    elif op == "gvec2":
+        # Two-operand op: dest and one source.  table is a const GVecGen2.
+        d, a = reg(0), reg(1)
+        table = desc["table"]
+        if pair_dst:
+            f.write(code_fmt(f"""\
+                /* low half of pair */
+                tcg_gen_gvec_2_var({d}_base, {d}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table});
+                /* high half of pair */
+                tcg_gen_gvec_2_var({d}_base, {d}_off + sizeof(HLXVector),
+                                   {a}_base, {a}_off + sizeof(HLXVector),
+                                   {oprsz}, {maxsz}, &{table});
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                tcg_gen_gvec_2_var({d}_base, {d}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table});
+            """))
+    elif op == "gvec2_arr":
+        # Like gvec2, but table is a GVecGen2[4] indexed by vece.
+        d, a = reg(0), reg(1)
+        table = desc["table"]
+        if pair_dst:
+            f.write(code_fmt(f"""\
+                /* low half of pair */
+                tcg_gen_gvec_2_var({d}_base, {d}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table}[{vece}]);
+                /* high half of pair */
+                tcg_gen_gvec_2_var({d}_base, {d}_off + sizeof(HLXVector),
+                                   {a}_base, {a}_off + sizeof(HLXVector),
+                                   {oprsz}, {maxsz}, &{table}[{vece}]);
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                tcg_gen_gvec_2_var({d}_base, {d}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table}[{vece}]);
+            """))
+    elif op == "cmp_gt":
+        # Compare greater-than: d = (a > b) ? ~0 : 0 per element.
+        # Implemented as LT with args swapped: (b < a) ≡ (a > b).
+        # table is the LT descriptor (hlx_cmp_slt_h_op or hlx_cmp_ult_h_op).
+        d, a, b = reg(0), reg(1), reg(2)
+        table = desc["table"]
+        if pair_dst:
+            f.write(code_fmt(f"""\
+                /* low half of pair: cmp_gt via swapped LT */
+                tcg_gen_gvec_3_var({d}_base, {d}_off,
+                                   {b}_base, {b}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table});
+                /* high half of pair */
+                tcg_gen_gvec_3_var({d}_base, {d}_off + sizeof(HLXVector),
+                                   {b}_base, {b}_off + sizeof(HLXVector),
+                                   {a}_base, {a}_off + sizeof(HLXVector),
+                                   {oprsz}, {maxsz}, &{table});
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                /* cmp_gt via swapped LT: b < a means a > b */
+                tcg_gen_gvec_3_var({d}_base, {d}_off,
+                                   {b}_base, {b}_off,
+                                   {a}_base, {a}_off,
+                                   {oprsz}, {maxsz}, &{table});
+            """))
     else:
         raise Exception(f"unknown HLX inline op {op!r} for tag {tag!r}")
 

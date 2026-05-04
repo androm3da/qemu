@@ -1,14 +1,17 @@
 /*
- * HLX GVecGen3 descriptor tables for inline TCG IR generation.
+ * HLX GVecGen3/GVecGen2 descriptor tables for inline TCG IR generation.
  *
- * Phase C of the HLX inlining plan: saturating add/sub and logical ops.
+ * Phase C: saturating add/sub and logical ops.
+ * Phase D.1: min/max (smin/umin/smax/umax) and abs.
  *
- * Design: the canonical GVecGen3 descriptors for ssadd/sssub/usadd/ussub
- * live as static locals inside tcg_gen_gvec_ssadd() etc. in tcg-op-gvec.c.
+ * Design: the canonical GVecGen3 descriptors for ssadd/sssub/usadd/ussub,
+ * and the GVecGen3 descriptors for smin/smax/umin/umax, and the GVecGen2
+ * descriptor for abs, live as static locals in tcg-op-gvec.c.
  * Rather than exporting them from TCG core, we duplicate the small set we
  * need here (Option 1 from the plan).  The fniv pointers (tcg_gen_ssadd_vec,
- * etc.) are already public.  The fni4/fni8 helpers for usadd/ussub are
- * static in tcg-op-gvec.c, so we provide our own copies here.
+ * tcg_gen_smin_vec, tcg_gen_abs_vec, etc.) are already public.
+ * The fni8 helper for abs at MO_16 (tcg_gen_vec_abs16_i64) is static in
+ * tcg-op-gvec.c, so we provide our own copy here.
  *
  * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
@@ -17,6 +20,7 @@
 
 #include "qemu/osdep.h"
 #include "tcg/tcg.h"
+#include "tcg/tcg-temp-internal.h"
 #include "tcg/tcg-op-common.h"
 #include "tcg/tcg-op-gvec-common.h"
 #include "hlx_gvec_tables.h"
@@ -196,4 +200,240 @@ const GVecGen3 hlx_orc_op = {
     .fniv      = tcg_gen_orc_vec,
     .fno       = gen_helper_gvec_orc,
     .prefer_i64 = true,
+};
+
+/* -----------------------------------------------------------------------
+ * Phase D.1: min/max descriptor arrays (GVecGen3[4])
+ * ----------------------------------------------------------------------- */
+
+/* smin: signed minimum */
+static const TCGOpcode hlx_vecop_smin[] = { INDEX_op_smin_vec, 0 };
+
+const GVecGen3 hlx_smin_op[4] = {
+    { .fniv    = tcg_gen_smin_vec,
+      .fno     = gen_helper_gvec_smin8,
+      .opt_opc = hlx_vecop_smin,
+      .vece    = MO_8 },
+    { .fniv    = tcg_gen_smin_vec,
+      .fno     = gen_helper_gvec_smin16,
+      .opt_opc = hlx_vecop_smin,
+      .vece    = MO_16 },
+    { .fni4    = tcg_gen_smin_i32,
+      .fniv    = tcg_gen_smin_vec,
+      .fno     = gen_helper_gvec_smin32,
+      .opt_opc = hlx_vecop_smin,
+      .vece    = MO_32 },
+    { .fni8    = tcg_gen_smin_i64,
+      .fniv    = tcg_gen_smin_vec,
+      .fno     = gen_helper_gvec_smin64,
+      .opt_opc = hlx_vecop_smin,
+      .vece    = MO_64 },
+};
+
+/* umin: unsigned minimum */
+static const TCGOpcode hlx_vecop_umin[] = { INDEX_op_umin_vec, 0 };
+
+const GVecGen3 hlx_umin_op[4] = {
+    { .fniv    = tcg_gen_umin_vec,
+      .fno     = gen_helper_gvec_umin8,
+      .opt_opc = hlx_vecop_umin,
+      .vece    = MO_8 },
+    { .fniv    = tcg_gen_umin_vec,
+      .fno     = gen_helper_gvec_umin16,
+      .opt_opc = hlx_vecop_umin,
+      .vece    = MO_16 },
+    { .fni4    = tcg_gen_umin_i32,
+      .fniv    = tcg_gen_umin_vec,
+      .fno     = gen_helper_gvec_umin32,
+      .opt_opc = hlx_vecop_umin,
+      .vece    = MO_32 },
+    { .fni8    = tcg_gen_umin_i64,
+      .fniv    = tcg_gen_umin_vec,
+      .fno     = gen_helper_gvec_umin64,
+      .opt_opc = hlx_vecop_umin,
+      .vece    = MO_64 },
+};
+
+/* smax: signed maximum */
+static const TCGOpcode hlx_vecop_smax[] = { INDEX_op_smax_vec, 0 };
+
+const GVecGen3 hlx_smax_op[4] = {
+    { .fniv    = tcg_gen_smax_vec,
+      .fno     = gen_helper_gvec_smax8,
+      .opt_opc = hlx_vecop_smax,
+      .vece    = MO_8 },
+    { .fniv    = tcg_gen_smax_vec,
+      .fno     = gen_helper_gvec_smax16,
+      .opt_opc = hlx_vecop_smax,
+      .vece    = MO_16 },
+    { .fni4    = tcg_gen_smax_i32,
+      .fniv    = tcg_gen_smax_vec,
+      .fno     = gen_helper_gvec_smax32,
+      .opt_opc = hlx_vecop_smax,
+      .vece    = MO_32 },
+    { .fni8    = tcg_gen_smax_i64,
+      .fniv    = tcg_gen_smax_vec,
+      .fno     = gen_helper_gvec_smax64,
+      .opt_opc = hlx_vecop_smax,
+      .vece    = MO_64 },
+};
+
+/* umax: unsigned maximum */
+static const TCGOpcode hlx_vecop_umax[] = { INDEX_op_umax_vec, 0 };
+
+const GVecGen3 hlx_umax_op[4] = {
+    { .fniv    = tcg_gen_umax_vec,
+      .fno     = gen_helper_gvec_umax8,
+      .opt_opc = hlx_vecop_umax,
+      .vece    = MO_8 },
+    { .fniv    = tcg_gen_umax_vec,
+      .fno     = gen_helper_gvec_umax16,
+      .opt_opc = hlx_vecop_umax,
+      .vece    = MO_16 },
+    { .fni4    = tcg_gen_umax_i32,
+      .fniv    = tcg_gen_umax_vec,
+      .fno     = gen_helper_gvec_umax32,
+      .opt_opc = hlx_vecop_umax,
+      .vece    = MO_32 },
+    { .fni8    = tcg_gen_umax_i64,
+      .fniv    = tcg_gen_umax_vec,
+      .fno     = gen_helper_gvec_umax64,
+      .opt_opc = hlx_vecop_umax,
+      .vece    = MO_64 },
+};
+
+/* -----------------------------------------------------------------------
+ * Phase D.1: abs descriptor array (GVecGen2[4])
+ *
+ * The fni8 helper for MO_8 (tcg_gen_vec_abs8_i64) and MO_16
+ * (tcg_gen_vec_abs16_i64) are static in tcg-op-gvec.c, so we provide
+ * our own copies here using the same algorithm.
+ * ----------------------------------------------------------------------- */
+
+/*
+ * gen_absv_mask — produce abs of each element using mask trick.
+ * Copied from tcg-op-gvec.c (static helper).
+ *
+ * Produces abs of each <nbit>-wide element packed in a 64-bit word:
+ *   t = -1 for each negative element (broadcast from sign bit)
+ *   d = (b ^ t) + (t & 1)  — which is  b ^ (-1) + 1  == -b if b < 0
+ */
+static void hlx_gen_absv_mask(TCGv_i64 d, TCGv_i64 b, unsigned vece)
+{
+    TCGv_i64 t = tcg_temp_new_i64();
+    int nbit = 8 << vece;
+
+    /* Create -1 for each negative element. */
+    tcg_gen_shri_i64(t, b, nbit - 1);
+    tcg_gen_andi_i64(t, t, dup_const(vece, 1));
+    tcg_gen_muli_i64(t, t, (1 << nbit) - 1);
+
+    /* Invert and add one; msb is cleared, so no carry into next element. */
+    tcg_gen_xor_i64(d, b, t);
+    tcg_gen_andi_i64(t, t, dup_const(vece, 1));
+    tcg_gen_add_i64(d, d, t);
+
+    tcg_temp_free_i64(t);
+}
+
+static void hlx_vec_abs16_i64(TCGv_i64 d, TCGv_i64 b)
+{
+    hlx_gen_absv_mask(d, b, MO_16);
+}
+
+static const TCGOpcode hlx_vecop_abs[] = { INDEX_op_abs_vec, 0 };
+
+const GVecGen2 hlx_abs_op[4] = {
+    { .fno     = gen_helper_gvec_abs8,
+      .opt_opc = hlx_vecop_abs,
+      .fniv    = tcg_gen_abs_vec,
+      .vece    = MO_8 },
+    { .fni8    = hlx_vec_abs16_i64,
+      .fniv    = tcg_gen_abs_vec,
+      .fno     = gen_helper_gvec_abs16,
+      .opt_opc = hlx_vecop_abs,
+      .vece    = MO_16 },
+    { .fni4    = tcg_gen_abs_i32,
+      .fniv    = tcg_gen_abs_vec,
+      .fno     = gen_helper_gvec_abs32,
+      .opt_opc = hlx_vecop_abs,
+      .vece    = MO_32 },
+    { .fni8    = tcg_gen_abs_i64,
+      .fniv    = tcg_gen_abs_vec,
+      .fno     = gen_helper_gvec_abs64,
+      .opt_opc = hlx_vecop_abs,
+      .prefer_i64 = true,
+      .vece    = MO_64 },
+};
+
+/* -----------------------------------------------------------------------
+ * Phase D.2: compare greater-than (signed and unsigned) — MO_16
+ *
+ * cmp.gt produces all-1s (0xFFFF) if a > b, else all-0s (0x0000) per lane.
+ *
+ * The fniv wrapper calls tcg_gen_cmp_vec(TCG_COND_GT, ...) which requires
+ * INDEX_op_cmp_vec.  The fni8 path manually packs 4 × int16_t per i64.
+ * The fno falls back to the existing gen_helper_gvec_lt16 helper by swapping
+ * the a and b pointer arguments — but GVecGen3 doesn't support argument
+ * swap, so we instead provide fni8 and rely on the helper only for odd sizes
+ * which won't occur here (HLX vectors are always 2048 bytes, divisible by 8).
+ * For safety we set fno to gen_helper_gvec_gt16 if available, otherwise
+ * provide only fni8 + fniv.
+ *
+ * NOTE: gen_helper_gvec_gt16 does NOT exist in the standard helper set
+ * (there is no TCG_COND_GT helper).  We set fno = NULL and rely entirely on
+ * fni8 + fniv.  Because oprsz is always >= 8 for HLX this is fine.
+ * ----------------------------------------------------------------------- */
+
+/* -----------------------------------------------------------------------
+ * Phase D.2: compare greater-than (signed and unsigned) — MO_16
+ *
+ * cmp.gt produces all-1s (0xFFFF) if a > b, else all-0s (0x0000) per lane.
+ *
+ * Implementation: use signed-LT (b < a ≡ a > b) and unsigned-LT descriptors.
+ * The gen_hlx_inline "cmp_gt" op type emits tcg_gen_gvec_3_var with the two
+ * source arguments SWAPPED, so the LT descriptor computes (b < a) = (a > b).
+ *
+ * For the fniv path (vectorised): the wrapper calls cmp_vec(TCG_COND_LT, ...)
+ * on the already-swapped inputs.
+ * For the fno path (used for HLX's 2048-byte vectors): gen_helper_gvec_lt16
+ * / gen_helper_gvec_ltu16 are passed swapped src pointers.
+ * ----------------------------------------------------------------------- */
+
+static void hlx_fniv_cmp_slt_h(unsigned vece, TCGv_vec r,
+                                TCGv_vec a, TCGv_vec b)
+{
+    tcg_gen_cmp_vec(TCG_COND_LT, vece, r, a, b);
+}
+
+static void hlx_fniv_cmp_ult_h(unsigned vece, TCGv_vec r,
+                                TCGv_vec a, TCGv_vec b)
+{
+    tcg_gen_cmp_vec(TCG_COND_LTU, vece, r, a, b);
+}
+
+static const TCGOpcode hlx_vecop_cmp[] = { INDEX_op_cmp_vec, 0 };
+
+/*
+ * Signed LT descriptor — used with swapped args to implement signed GT.
+ * fno = gen_helper_gvec_lt16 computes d[i] = (a[i] < b[i]) ? ~0 : 0.
+ * When called with (d, b, a) it computes (b < a) = (a > b).
+ */
+const GVecGen3 hlx_cmp_slt_h_op = {
+    .fniv    = hlx_fniv_cmp_slt_h,
+    .fno     = gen_helper_gvec_lt16,
+    .opt_opc = hlx_vecop_cmp,
+    .vece    = MO_16,
+};
+
+/*
+ * Unsigned LT descriptor — used with swapped args to implement unsigned GT.
+ * fno = gen_helper_gvec_ltu16 computes d[i] = (a[i] <u b[i]) ? ~0 : 0.
+ * When called with (d, b, a) it computes (b <u a) = (a >u b).
+ */
+const GVecGen3 hlx_cmp_ult_h_op = {
+    .fniv    = hlx_fniv_cmp_ult_h,
+    .fno     = gen_helper_gvec_ltu16,
+    .opt_opc = hlx_vecop_cmp,
+    .vece    = MO_16,
 };
