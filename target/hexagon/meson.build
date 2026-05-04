@@ -294,6 +294,7 @@ hexagon_ss.add(files(
     'mmvec/hvx_qfloat.c',
     'hlx/decode_ext_hlx.c',
     'hlx_helper.c',
+    'hlx_gvec_tables.c',
 ))
 
 hexagon_softmmu_ss.add(files(

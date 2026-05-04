@@ -319,6 +319,14 @@ def skip_qemu_helper(tag):
 # "combine_pair" op: dest is a pair, src regs are two singles (Lu, Lv).
 #   Ldd.l = Lv  (low half)
 #   Ldd.h = Lu  (high half, offset by sizeof(HLXVector))
+#
+# "gvec3" op: calls tcg_gen_gvec_3_var with a single GVecGen3 descriptor.
+#   "table" — name of the (non-indexed) extern const GVecGen3 in hlx_gvec_tables.h
+#
+# "gvec3_arr" op: calls tcg_gen_gvec_3_var with a descriptor from a GVecGen3[4]
+#   array indexed by MemOp element size.
+#   "table" — name of the extern const GVecGen3[4] array in hlx_gvec_tables.h
+#   "vece"  — MemOp constant used as the array index (e.g. "MO_16")
 HLX_INLINE_TAGS = {
     # Phase A
     "LX_add_h":      {"op": "add",          "vece": "MO_16"},
@@ -341,6 +349,48 @@ HLX_INLINE_TAGS = {
     # Phase B — combine: pair dest, two single sources
     # Ldd.l = Lv, Ldd.h = Lu
     "LX_combine_w":  {"op": "combine_pair", "vece": "MO_64"},
+    # Phase C — saturating add/sub: single L-reg (MO_16)
+    "LX_add_h_sat":  {"op": "gvec3_arr", "table": "hlx_ssadd_op", "vece": "MO_16"},
+    "LX_add_uh_sat": {"op": "gvec3_arr", "table": "hlx_usadd_op", "vece": "MO_16"},
+    "LX_sub_h_sat":  {"op": "gvec3_arr", "table": "hlx_sssub_op", "vece": "MO_16"},
+    "LX_sub_uh_sat": {"op": "gvec3_arr", "table": "hlx_ussub_op", "vece": "MO_16"},
+    # Phase C — saturating add/sub: pair L-regs (MO_32, size = 2 * sizeof(HLXVector))
+    #
+    # NOTE: LX_add_w_sat, LX_add_uw_sat, LX_sub_w_sat, LX_sub_uw_sat are NOT
+    # inlined here.  The HLX word-pair physical layout interleaves elements:
+    # lo L-reg holds the low 16 bits of each word, hi L-reg holds the high 16
+    # bits.  A plain MO_32 gvec call on the lo or hi register alone treats
+    # adjacent lo-halfwords as a single 32-bit entity, giving wrong results for
+    # saturating addition where carry from lo to hi matters.  These ops are
+    # correctly handled by the C helper (helper_funcs_generated.c.inc) which
+    # uses hlx_interleave_pair / hlx_deinterleave_pair.
+    # Phase C - saturating add/sub: paired halfword (MO_16, size = 2 *
+    # sizeof(HLXVector))
+    "LX_add_hp_sat": {"op": "gvec3_arr", "table": "hlx_ssadd_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_add_uhp_sat":{"op": "gvec3_arr", "table": "hlx_usadd_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_sub_hp_sat": {"op": "gvec3_arr", "table": "hlx_sssub_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_sub_uhp_sat":{"op": "gvec3_arr", "table": "hlx_ussub_op", "vece": "MO_16",
+                      "size": "2 * sizeof(HLXVector)"},
+    # Phase C — element-wise logicals: single L-reg
+    "LX_and":        {"op": "gvec3",     "table": "hlx_and_op",  "vece": "MO_64"},
+    "LX_or":         {"op": "gvec3",     "table": "hlx_or_op",   "vece": "MO_64"},
+    "LX_xor":        {"op": "gvec3",     "table": "hlx_xor_op",  "vece": "MO_64"},
+    "LX_andn":       {"op": "gvec3",     "table": "hlx_andc_op", "vece": "MO_64"},
+    "LX_orn":        {"op": "gvec3",     "table": "hlx_orc_op",  "vece": "MO_64"},
+    # Phase C — element-wise logicals: pair L-regs
+    "LX_and_w":      {"op": "gvec3",     "table": "hlx_and_op",  "vece": "MO_64",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_or_w":       {"op": "gvec3",     "table": "hlx_or_op",   "vece": "MO_64",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_xor_w":      {"op": "gvec3",     "table": "hlx_xor_op",  "vece": "MO_64",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_andn_w":     {"op": "gvec3",     "table": "hlx_andc_op", "vece": "MO_64",
+                      "size": "2 * sizeof(HLXVector)"},
+    "LX_orn_w":      {"op": "gvec3",     "table": "hlx_orc_op",  "vece": "MO_64",
+                      "size": "2 * sizeof(HLXVector)"},
 }
 
 def is_hlx_inline_tag(tag):
