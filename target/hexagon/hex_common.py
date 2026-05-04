@@ -308,6 +308,78 @@ def skip_qemu_helper(tag):
     return tag in overrides.keys()
 
 
+# Per-tag override: HLX instructions that should emit inline gvec TCG IR
+# instead of a helper call. See nimble-inlining-pangolin.md.
+HLX_INLINE_TAGS = {
+    "LX_add_h": {"op": "add", "vece": "MO_16"},
+}
+
+def is_hlx_inline_tag(tag):
+    return tag in HLX_INLINE_TAGS
+
+def gen_hlx_inline(f, tag, regs):
+    """Emit an inline gvec call for HLX instructions in HLX_INLINE_TAGS.
+
+    regs is the list of (regtype, regid, ...) tuples from the insn
+    dictionary. For LX_add_h: [('L','d',...), ('L','u',...), ('L','v',...)].
+    """
+    desc = HLX_INLINE_TAGS[tag]
+    op = desc["op"]
+    vece = desc["vece"]
+    oprsz = desc.get("oprsz", "sizeof(HLXVector)")
+    maxsz = desc.get("maxsz", "sizeof(HLXVector)")
+
+    def reg(i):
+        regtype, regid, *_ = regs[i]
+        return f"{regtype}{regid}V"
+
+    if op == "add":
+        d, a, b = reg(0), reg(1), reg(2)
+        f.write(code_fmt(f"""\
+            tcg_gen_gvec_add_var({vece},
+                                 {d}_base, {d}_off,
+                                 {a}_base, {a}_off,
+                                 {b}_base, {b}_off,
+                                 {oprsz}, {maxsz});
+        """))
+    elif op == "sub":
+        d, a, b = reg(0), reg(1), reg(2)
+        f.write(code_fmt(f"""\
+            tcg_gen_gvec_sub_var({vece},
+                                 {d}_base, {d}_off,
+                                 {a}_base, {a}_off,
+                                 {b}_base, {b}_off,
+                                 {oprsz}, {maxsz});
+        """))
+    elif op == "mov":
+        d, a = reg(0), reg(1)
+        f.write(code_fmt(f"""\
+            tcg_gen_gvec_mov_var({vece},
+                                 {d}_base, {d}_off,
+                                 {a}_base, {a}_off,
+                                 {oprsz}, {maxsz});
+        """))
+    elif op == "dup_imm":
+        d = reg(0)
+        imm = desc["imm"]
+        f.write(code_fmt(f"""\
+            tcg_gen_gvec_dup_imm_var({vece},
+                                     {d}_base, {d}_off,
+                                     {oprsz}, {maxsz}, {imm});
+        """))
+    elif op == "gvec3":
+        d, a, b = reg(0), reg(1), reg(2)
+        table = desc["table"]
+        f.write(code_fmt(f"""\
+            tcg_gen_gvec_3_var({d}_base, {d}_off,
+                               {a}_base, {a}_off,
+                               {b}_base, {b}_off,
+                               {oprsz}, {maxsz}, &{table});
+        """))
+    else:
+        raise Exception(f"unknown HLX inline op {op!r} for tag {tag!r}")
+
+
 def is_idef_parser_enabled(tag):
     return tag in idef_parser_enabled
 
@@ -1241,7 +1313,11 @@ class LRegDest(Hlx, Register, Single, Dest):
             const intptr_t {self.hlx_off()} =
                 offsetof(CPUHexagonState, {storage}[{self.reg_num}]);
         """))
-        if not skip_qemu_helper(tag):
+        if is_hlx_inline_tag(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()}_base = tcg_env;
+            """))
+        elif not skip_qemu_helper(tag):
             f.write(code_fmt(f"""\
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
@@ -1267,18 +1343,24 @@ class LRegSource(Hlx, Register, Single, OldSource):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
         f.write(code_fmt(f"""\
-            TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+            TCGv_ptr {self.reg_tcg()}_base;
+            intptr_t {self.reg_tcg()}_off;
             if (test_bit({self.reg_num}, ctx->lregs_updated_tmp)) {{
-                tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env,
-                                 offsetof(CPUHexagonState,
-                                          tmp_LRegs[{self.reg_num}]));
+                {self.reg_tcg()}_base = tcg_env;
+                {self.reg_tcg()}_off =
+                    offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}]);
             }} else {{
-                TCGv_ptr _hlx_base = ctx_get_hlx_base(ctx);
-                tcg_gen_addi_ptr({self.reg_tcg()}, _hlx_base,
-                                 offsetof(HexagonHLXContext,
-                                          LRegs[{self.reg_num}]));
+                {self.reg_tcg()}_base = ctx_get_hlx_base(ctx);
+                {self.reg_tcg()}_off =
+                    offsetof(HexagonHLXContext, LRegs[{self.reg_num}]);
             }}
         """))
+        if not is_hlx_inline_tag(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
+                tcg_gen_addi_ptr({self.reg_tcg()}, {self.reg_tcg()}_base,
+                                 {self.reg_tcg()}_off);
+            """))
     def helper_hlx_desc(self, f):
         desc = f"*(HLXVector *)({self.helper_arg_name()})"
         f.write(code_fmt(f"""\
@@ -1356,7 +1438,11 @@ class LRegTmp(Hlx, Register, Single, ReadWrite):
             const intptr_t {self.hlx_off()} =
                 offsetof(CPUHexagonState, tmp_LRegs[{self.reg_num}]);
         """))
-        if not skip_qemu_helper(tag):
+        if is_hlx_inline_tag(tag):
+            f.write(code_fmt(f"""\
+                TCGv_ptr {self.reg_tcg()}_base = tcg_env;
+            """))
+        elif not skip_qemu_helper(tag):
             f.write(code_fmt(f"""\
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hlx_off()});
@@ -1375,6 +1461,9 @@ class LRegTmp(Hlx, Register, Single, ReadWrite):
             ctx_log_lreg_tmp_write(ctx, {self.reg_num});
         """))
 
+# TODO Phase B/C: extend LRegPairDest, LRegPairSource, LRegPairReadWrite,
+# LRegNewSource, LRegReadWrite with _base/_off exposure similar to LRegDest/
+# LRegSource/LRegTmp above.  LX_combine_w (Phase B) needs LRegPairDest first.
 class LRegPairDest(Hlx, Register, Pair, Dest):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
