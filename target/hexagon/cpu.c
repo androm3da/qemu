@@ -459,7 +459,19 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->cfi_active = 0;
     env->cfi_active_log = 0;
     env->cfi_updated = 0;
+#ifdef CONFIG_USER_ONLY
+    /*
+     * In linux-user mode there is no HLX QOM device.  The CCR.XE3 check
+     * is guarded by #ifndef CONFIG_USER_ONLY in translate.c, so HLX
+     * instructions always execute.  Point hlx_ctx at the embedded
+     * single-context fallback so that commit helpers always find a
+     * valid register file.
+     */
+    memset(&env->hlx_user_ctx, 0, sizeof(env->hlx_user_ctx));
+    env->hlx_ctx = &env->hlx_user_ctx;
+#else
     env->hlx_ctx = NULL;
+#endif
 #ifndef CONFIG_USER_ONLY
     memset(env->t_sreg, 0, sizeof(uint32_t) * NUM_SREGS);
     memset(env->greg, 0, sizeof(uint32_t) * NUM_GREGS);

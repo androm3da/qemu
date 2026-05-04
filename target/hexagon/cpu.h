@@ -20,6 +20,15 @@
 
 /* Forward declaration; full definition in hw/hexagon/hexagon_hlx.h */
 typedef struct HexagonHLXContext HexagonHLXContext;
+
+#ifdef CONFIG_USER_ONLY
+/*
+ * In linux-user mode we embed a single HLX context directly in
+ * CPUArchState (no QOM device), so we need the full struct definition.
+ */
+#include "hw/hexagon/hexagon_hlx.h"
+#endif
+
 #include "fpu/softfloat-types.h"
 
 #ifndef CONFIG_USER_ONLY
@@ -188,8 +197,21 @@ typedef struct CPUArchState {
      * pool exists, or when CCR.XA3 selects a context not present
      * in HLX_CONTEXTS. Updated by hexagon_modify_ccr() on CCR writes
      * and reconstructed by hexagon_cpu_post_load() after migration.
+     *
+     * In linux-user mode there is no HLX QOM device: the CCR.XE3
+     * check is skipped (#ifndef CONFIG_USER_ONLY in translate.c), so
+     * HLX instructions always execute.  hlx_ctx is initialised at
+     * CPU reset to point at the embedded hlx_user_ctx below so that
+     * the commit helpers (hlx_copy_live_to_future, hlx_commit_reg,
+     * hlx_commit_tmp_reg) and the TCG gvec source-register path
+     * always find a valid context.
      */
     HexagonHLXContext *hlx_ctx;
+
+#ifdef CONFIG_USER_ONLY
+    /* Embedded single context used in linux-user mode (see comment above). */
+    HexagonHLXContext hlx_user_ctx;
+#endif
 
     /* Per-packet intra-packet scratch; NOT per-context. */
     HLXVector future_LRegs[NUM_LREGS] QEMU_ALIGNED(16);
