@@ -69,4 +69,24 @@ extern const GVecGen3 hlx_ushsat_add_op;
 extern const GVecGen3 hlx_ushsat_sub_op;
 extern const GVecGen2 hlx_abs_uh_sat_op;
 
+/*
+ * Phase F: halfword average ops (MO_16).
+ *
+ * hlx_avg_sh_op (GVecGen3, MO_16):
+ *   d[i] = trunc_avg(s16(a[i]), s16(b[i]))  — signed, truncating
+ *
+ * hlx_avg_sh_rnd_op (GVecGen3, MO_16):
+ *   d[i] = rnd_avg(s16(a[i]), s16(b[i]))    — signed, rounded
+ *
+ * hlx_avg_uh_op (GVecGen3, MO_16):
+ *   d[i] = trunc_avg(u16(a[i]), u16(b[i]))  — unsigned, truncating
+ *
+ * hlx_avg_uh_rnd_op (GVecGen3, MO_16):
+ *   d[i] = rnd_avg(u16(a[i]), u16(b[i]))    — unsigned, rounded
+ */
+extern const GVecGen3 hlx_avg_sh_op;
+extern const GVecGen3 hlx_avg_sh_rnd_op;
+extern const GVecGen3 hlx_avg_uh_op;
+extern const GVecGen3 hlx_avg_uh_rnd_op;
+
 #endif /* HLX_GVEC_TABLES_H */
