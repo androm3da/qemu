@@ -793,3 +793,32 @@ const GVecGen3 hlx_absdiff_uh_op = {
     .fno     = gen_helper_hlx_gvec_absdiff_uh16,
     .vece    = MO_16,
 };
+
+/* -----------------------------------------------------------------------
+ * Phase H: sari-by-15 on halfwords (GVecGen2, MO_16)
+ *
+ * hlx_sari15_h_op: d[i] = (int16_t)a[i] >> 15
+ *   Produces 0x0000 for non-negative input lanes, 0xFFFF for negative.
+ *   Used to fill the high L-reg of LX_conv_w_h (sxt halfword→word-pair):
+ *   the high halfword of each 32-bit word equals the sign bit replicated.
+ *
+ * HLX vectors are 2048 bytes so fno is the primary path; fniv is provided
+ * for smaller-vector contexts (tests, future use).
+ * ----------------------------------------------------------------------- */
+
+static void hlx_fniv_sari15_h(unsigned vece, TCGv_vec r, TCGv_vec a)
+{
+    tcg_gen_sari_vec(vece, r, a, 15);
+}
+
+static const TCGOpcode hlx_vecop_sari15_h[] = {
+    INDEX_op_sari_vec,
+    0
+};
+
+const GVecGen2 hlx_sari15_h_op = {
+    .fniv    = hlx_fniv_sari15_h,
+    .opt_opc = hlx_vecop_sari15_h,
+    .fno     = gen_helper_hlx_gvec_sari15_h16,
+    .vece    = MO_16,
+};

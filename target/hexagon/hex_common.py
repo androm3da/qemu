@@ -475,6 +475,19 @@ HLX_INLINE_TAGS = {
                          "vece": "MO_16"},
     "LX_absdiff_uh":    {"op": "gvec3", "table": "hlx_absdiff_uh_op",
                          "vece": "MO_16"},
+
+    # Phase H: halfword→word-pair conversions.
+    # Dest is a pair (4096 bytes total); source is a single halfword vector
+    # (2048 bytes).  Physical word-pair layout: lo L-reg holds the low
+    # halfword of each word element, hi L-reg holds the high halfword.
+    #   zxt (LX_conv_uw_uh): lo = source verbatim, hi = zero
+    #   sxt (LX_conv_w_h):   lo = source verbatim, hi = sari(source, 15)
+    # These use the special "conv_h_to_w_pair" op type — not "pair_dst" —
+    # because the source is a single vector, not a pair.
+    "LX_conv_uw_uh":    {"op": "conv_h_to_w_pair", "sign_extend": False,
+                         "vece": "MO_16"},
+    "LX_conv_w_h":      {"op": "conv_h_to_w_pair", "sign_extend": True,
+                         "vece": "MO_16", "table": "hlx_sari15_h_op"},
 }
 
 def is_hlx_inline_tag(tag):
@@ -737,6 +750,42 @@ def gen_hlx_inline(f, tag, regs):
                                    {b}_base, {b}_off,
                                    {a}_base, {a}_off,
                                    {oprsz}, {maxsz}, &{table});
+            """))
+    elif op == "conv_h_to_w_pair":
+        # Halfword→word-pair conversion.
+        # Dest is a pair: lo L-reg at offset +0, hi L-reg at +sizeof(HLXVector).
+        # Source is a single halfword vector (2048 bytes).
+        #   zxt: lo = verbatim copy of source; hi = all zeros.
+        #   sxt: lo = verbatim copy of source; hi = sari(source, 15) per halfword
+        #        (0x0000 for non-negative lanes, 0xFFFF for negative).
+        d, a = reg(0), reg(1)
+        single = "sizeof(HLXVector)"
+        sign_extend = desc.get("sign_extend", False)
+        if sign_extend:
+            table = desc["table"]
+            f.write(code_fmt(f"""\
+                /* lo L-reg: verbatim copy of the halfword source */
+                tcg_gen_gvec_mov_var(MO_64,
+                                     {d}_base, {d}_off,
+                                     {a}_base, {a}_off,
+                                     {single}, {single});
+                /* hi L-reg: arithmetic shift-right-by-15 per halfword
+                 * (sign-replicate: 0x0000 for non-negative, 0xFFFF for negative) */
+                tcg_gen_gvec_2_var({d}_base, {d}_off + sizeof(HLXVector),
+                                   {a}_base, {a}_off,
+                                   {single}, {single}, &{table});
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                /* lo L-reg: verbatim copy of the halfword source */
+                tcg_gen_gvec_mov_var(MO_64,
+                                     {d}_base, {d}_off,
+                                     {a}_base, {a}_off,
+                                     {single}, {single});
+                /* hi L-reg: zero fill (zero-extend has no sign bits) */
+                tcg_gen_gvec_dup_imm_var(MO_64,
+                                         {d}_base, {d}_off + sizeof(HLXVector),
+                                         {single}, {single}, 0);
             """))
     else:
         raise Exception(f"unknown HLX inline op {op!r} for tag {tag!r}")

@@ -101,4 +101,14 @@ extern const GVecGen3 hlx_avg_uh_rnd_op;
 extern const GVecGen3 hlx_absdiff_sh_op;
 extern const GVecGen3 hlx_absdiff_uh_op;
 
+/*
+ * Phase H: sari-by-15 on halfwords (GVecGen2, MO_16).
+ *
+ * hlx_sari15_h_op:
+ *   d[i] = (int16_t)a[i] >> 15
+ *   Result is 0x0000 for non-negative lanes, 0xFFFF for negative lanes.
+ *   Used for the high L-reg of LX_conv_w_h (sxt halfword→word-pair).
+ */
+extern const GVecGen2 hlx_sari15_h_op;
+
 #endif /* HLX_GVEC_TABLES_H */
