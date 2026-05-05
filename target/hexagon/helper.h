@@ -36,6 +36,11 @@ DEF_HELPER_FLAGS_2(cabacdecbin_pred, TCG_CALL_NO_RWG_SE, s32, s64, s64)
 DEF_HELPER_5(hlx_load_vec, void, env, ptr, tl, i32, i32)
 DEF_HELPER_5(hlx_store_vec, void, env, tl, ptr, i32, i32)
 
+/* Phase E: GVec fno helpers for signed→unsigned saturating ops (MO_16) */
+DEF_HELPER_FLAGS_4(hlx_gvec_ushsat_add16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+DEF_HELPER_FLAGS_4(hlx_gvec_ushsat_sub16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+DEF_HELPER_FLAGS_3(hlx_gvec_abs_uh_sat16, TCG_CALL_NO_RWG, void, ptr, ptr, i32)
+
 DEF_HELPER_5(check_vtcm_memcpy, void, env, i32, i32, i32, i32)
 
 /* Floating point */

@@ -435,6 +435,22 @@ HLX_INLINE_TAGS = {
                       "vece": "MO_16",   "size": "2 * sizeof(HLXVector)"},
     "LX_cmp_gt_uhp": {"op": "cmp_gt",    "table": "hlx_cmp_ult_h_op",
                       "vece": "MO_16",   "size": "2 * sizeof(HLXVector)"},
+    # Phase E — signed→unsigned saturating add/sub: single L-reg (MO_16)
+    # LX_add_uhh_sat: Ld.uh = add(Lu.h, Lv.h):sat — signed add, clamp to [0, 65535]
+    "LX_add_uhh_sat":   {"op": "gvec3", "table": "hlx_ushsat_add_op",
+                         "vece": "MO_16"},
+    # LX_sub_uhh_sat: Ld.uh = sub(Lu.h, Lv.h):sat — signed sub, clamp to [0, 65535]
+    "LX_sub_uhh_sat":   {"op": "gvec3", "table": "hlx_ushsat_sub_op",
+                         "vece": "MO_16"},
+    # Phase E — signed→unsigned saturating add/sub: pair L-regs (MO_16)
+    # Halfwords are independent MO_16 lanes, so pair = two-call emission.
+    "LX_add_uhp_h_sat": {"op": "gvec3", "table": "hlx_ushsat_add_op",
+                         "vece": "MO_16", "size": "2 * sizeof(HLXVector)"},
+    "LX_sub_uhp_h_sat": {"op": "gvec3", "table": "hlx_ushsat_sub_op",
+                         "vece": "MO_16", "size": "2 * sizeof(HLXVector)"},
+    # Phase E — saturating abs: Ld.h = abs(Lu.h):sat  (INT16_MIN → INT16_MAX)
+    "LX_abs_uh_sat":    {"op": "gvec2", "table": "hlx_abs_uh_sat_op",
+                         "vece": "MO_16"},
 }
 
 def is_hlx_inline_tag(tag):

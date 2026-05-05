@@ -53,4 +53,20 @@ extern const GVecGen2 hlx_abs_op[4]; /* absolute value */
 extern const GVecGen3 hlx_cmp_slt_h_op; /* signed   LT, MO_16 (used for GT) */
 extern const GVecGen3 hlx_cmp_ult_h_op; /* unsigned LT, MO_16 (used for GT) */
 
+/*
+ * Phase E: signed→unsigned saturating add/sub and saturating absolute.
+ *
+ * hlx_ushsat_add_op (GVecGen3, MO_16):
+ *   d[i] = clamp(s16(a[i]) + s16(b[i]), 0, 65535)
+ *
+ * hlx_ushsat_sub_op (GVecGen3, MO_16):
+ *   d[i] = clamp(s16(a[i]) - s16(b[i]), 0, 65535)
+ *
+ * hlx_abs_uh_sat_op (GVecGen2, MO_16):
+ *   d[i] = min(abs(s16(a[i])), 32767)   (INT16_MIN saturates to INT16_MAX)
+ */
+extern const GVecGen3 hlx_ushsat_add_op;
+extern const GVecGen3 hlx_ushsat_sub_op;
+extern const GVecGen2 hlx_abs_uh_sat_op;
+
 #endif /* HLX_GVEC_TABLES_H */
