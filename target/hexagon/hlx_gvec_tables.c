@@ -726,3 +726,70 @@ const GVecGen3 hlx_avg_uh_rnd_op = {
     .fno     = gen_helper_hlx_gvec_avg_uh16_rnd,
     .vece    = MO_16,
 };
+
+/* -----------------------------------------------------------------------
+ * Phase G: halfword absolute-difference ops (MO_16)
+ *
+ * Algorithm: max(a, b) - min(a, b) per lane.
+ * For signed:   use signed compares for max/min.
+ * For unsigned: use unsigned compares for max/min.
+ * Result is uint16_t in [0, 65535] — no overflow possible because
+ * max >= min by construction and the difference fits in a halfword.
+ *
+ * HLX vectors are 2048 bytes — fno is always used (gvec never unrolls
+ * at that size), fniv bodies are provided for smaller-vector contexts.
+ * ----------------------------------------------------------------------- */
+
+static void hlx_fniv_absdiff_sh(unsigned vece, TCGv_vec r,
+                                 TCGv_vec a, TCGv_vec b)
+{
+    /* max(a,b) - min(a,b), signed compares */
+    TCGv_vec mx = tcg_temp_new_vec_matching(r);
+    TCGv_vec mn = tcg_temp_new_vec_matching(r);
+    tcg_gen_smax_vec(vece, mx, a, b);
+    tcg_gen_smin_vec(vece, mn, a, b);
+    tcg_gen_sub_vec(vece, r, mx, mn);
+    tcg_temp_free_vec(mn);
+    tcg_temp_free_vec(mx);
+}
+
+static void hlx_fniv_absdiff_uh(unsigned vece, TCGv_vec r,
+                                 TCGv_vec a, TCGv_vec b)
+{
+    /* max(a,b) - min(a,b), unsigned compares */
+    TCGv_vec mx = tcg_temp_new_vec_matching(r);
+    TCGv_vec mn = tcg_temp_new_vec_matching(r);
+    tcg_gen_umax_vec(vece, mx, a, b);
+    tcg_gen_umin_vec(vece, mn, a, b);
+    tcg_gen_sub_vec(vece, r, mx, mn);
+    tcg_temp_free_vec(mn);
+    tcg_temp_free_vec(mx);
+}
+
+static const TCGOpcode hlx_vecop_absdiff_sh[] = {
+    INDEX_op_smax_vec,
+    INDEX_op_smin_vec,
+    INDEX_op_sub_vec,
+    0
+};
+
+static const TCGOpcode hlx_vecop_absdiff_uh[] = {
+    INDEX_op_umax_vec,
+    INDEX_op_umin_vec,
+    INDEX_op_sub_vec,
+    0
+};
+
+const GVecGen3 hlx_absdiff_sh_op = {
+    .fniv    = hlx_fniv_absdiff_sh,
+    .opt_opc = hlx_vecop_absdiff_sh,
+    .fno     = gen_helper_hlx_gvec_absdiff_sh16,
+    .vece    = MO_16,
+};
+
+const GVecGen3 hlx_absdiff_uh_op = {
+    .fniv    = hlx_fniv_absdiff_uh,
+    .opt_opc = hlx_vecop_absdiff_uh,
+    .fno     = gen_helper_hlx_gvec_absdiff_uh16,
+    .vece    = MO_16,
+};

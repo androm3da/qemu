@@ -278,3 +278,49 @@ void HELPER(hlx_gvec_avg_uh16_rnd)(void *d, void *a, void *b, uint32_t desc)
         *(uint16_t *)((char *)d + i) = r;
     }
 }
+
+/*
+ * Phase G: GVec fno helpers for halfword absdiff ops (MO_16).
+ *
+ * Both variants use max(a, b) - min(a, b) which avoids overflow because
+ * the result is always non-negative and fits in uint16_t:
+ *   absdiff ∈ [0, 65535] for signed inputs (INT16_MIN, INT16_MAX)
+ *   absdiff ∈ [0, 65535] for unsigned inputs (0, UINT16_MAX)
+ */
+
+/*
+ * hlx_gvec_absdiff_sh16 — d[i] = absdiff(s16(a[i]), s16(b[i]))
+ * Signed absdiff: max(a, b) - min(a, b) using signed compares.
+ * Result is uint16_t in [0, 65535].
+ */
+void HELPER(hlx_gvec_absdiff_sh16)(void *d, void *a, void *b, uint32_t desc)
+{
+    intptr_t oprsz = simd_oprsz(desc);
+    intptr_t i;
+
+    for (i = 0; i < oprsz; i += sizeof(int16_t)) {
+        int16_t av = *(int16_t *)((char *)a + i);
+        int16_t bv = *(int16_t *)((char *)b + i);
+        int16_t mx = (av > bv) ? av : bv;
+        int16_t mn = (av > bv) ? bv : av;
+        *(uint16_t *)((char *)d + i) = (uint16_t)(mx - mn);
+    }
+}
+
+/*
+ * hlx_gvec_absdiff_uh16 — d[i] = absdiff(u16(a[i]), u16(b[i]))
+ * Unsigned absdiff: max(a, b) - min(a, b) using unsigned compares.
+ */
+void HELPER(hlx_gvec_absdiff_uh16)(void *d, void *a, void *b, uint32_t desc)
+{
+    intptr_t oprsz = simd_oprsz(desc);
+    intptr_t i;
+
+    for (i = 0; i < oprsz; i += sizeof(uint16_t)) {
+        uint16_t av = *(uint16_t *)((char *)a + i);
+        uint16_t bv = *(uint16_t *)((char *)b + i);
+        uint16_t mx = (av > bv) ? av : bv;
+        uint16_t mn = (av > bv) ? bv : av;
+        *(uint16_t *)((char *)d + i) = mx - mn;
+    }
+}

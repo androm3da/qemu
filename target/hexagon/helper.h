@@ -47,6 +47,10 @@ DEF_HELPER_FLAGS_4(hlx_gvec_avg_sh16_rnd, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, 
 DEF_HELPER_FLAGS_4(hlx_gvec_avg_uh16,     TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 DEF_HELPER_FLAGS_4(hlx_gvec_avg_uh16_rnd, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
 
+/* Phase G: GVec fno helpers for halfword absdiff ops (MO_16) */
+DEF_HELPER_FLAGS_4(hlx_gvec_absdiff_sh16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+DEF_HELPER_FLAGS_4(hlx_gvec_absdiff_uh16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
+
 DEF_HELPER_5(check_vtcm_memcpy, void, env, i32, i32, i32, i32)
 
 /* Floating point */

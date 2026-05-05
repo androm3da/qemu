@@ -89,4 +89,16 @@ extern const GVecGen3 hlx_avg_sh_rnd_op;
 extern const GVecGen3 hlx_avg_uh_op;
 extern const GVecGen3 hlx_avg_uh_rnd_op;
 
+/*
+ * Phase G: halfword absdiff ops (GVecGen3, MO_16).
+ *
+ * hlx_absdiff_sh_op:
+ *   d[i] = (uint16_t)(max(s16(a[i]), s16(b[i])) - min(s16(a[i]), s16(b[i])))
+ *
+ * hlx_absdiff_uh_op:
+ *   d[i] = max(u16(a[i]), u16(b[i])) - min(u16(a[i]), u16(b[i]))
+ */
+extern const GVecGen3 hlx_absdiff_sh_op;
+extern const GVecGen3 hlx_absdiff_uh_op;
+
 #endif /* HLX_GVEC_TABLES_H */

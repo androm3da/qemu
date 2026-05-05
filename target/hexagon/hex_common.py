@@ -466,6 +466,15 @@ HLX_INLINE_TAGS = {
                          "vece": "MO_16"},
     "LX_avg_uh_rnd":    {"op": "gvec3", "table": "hlx_avg_uh_rnd_op",
                          "vece": "MO_16"},
+    # Phase G — halfword absdiff ops: single L-reg (MO_16)
+    # LX_absdiff_h:  Ld.uh = absdiff(Lu.h,  Lv.h)   signed absdiff
+    # LX_absdiff_uh: Ld.uh = absdiff(Lu.uh, Lv.uh)  unsigned absdiff
+    # NOTE: LX_absdiff_w and LX_absdiff_uw stay as helpers — halfword-
+    # interleaved word-pair layout defeats per-L-reg MO_32 inlining.
+    "LX_absdiff_h":     {"op": "gvec3", "table": "hlx_absdiff_sh_op",
+                         "vece": "MO_16"},
+    "LX_absdiff_uh":    {"op": "gvec3", "table": "hlx_absdiff_uh_op",
+                         "vece": "MO_16"},
 }
 
 def is_hlx_inline_tag(tag):
