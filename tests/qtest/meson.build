@@ -303,6 +303,7 @@ qtests_hexagon = [
   'wdog-test',
   'qcom-ipcc-test',
   'turing-rsc-test',
+  'qcom-smem-test',
 ]
 
 qos_test_ss = ss.source_set()
@@ -408,6 +409,7 @@ qtests = {
   'pxe-test': files('boot-sector.c'),
   'pnv-xive2-test': files('pnv-xive2-common.c', 'pnv-xive2-flush-sync.c',
                           'pnv-xive2-nvpg_bar.c'),
+  'qcom-smem-test': files(meson.project_source_root() / 'hw/misc/qcom-smem-fill.c'),
   'qos-test': [chardev, io, qos_test_ss.apply({}).sources()],
   'tpm-crb-swtpm-test': [io, tpmemu_files],
   'tpm-crb-test': [io, tpmemu_files],
