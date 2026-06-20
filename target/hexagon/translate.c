@@ -54,6 +54,7 @@ static const AnalyzeInsn opcode_analyze[XX_LAST_OPCODE] = {
 TCGv hex_gpr[TOTAL_PER_THREAD_REGS];
 TCGv hex_pred[NUM_PREGS];
 TCGv hex_slot_cancelled;
+TCGv hex_next_PC;
 TCGv hex_new_value_usr;
 TCGv hex_store_addr[STORES_MAX];
 TCGv_i32 hex_store_width[STORES_MAX];
@@ -184,9 +185,15 @@ static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx,
     }
 }
 
+static bool need_next_PC(DisasContext *ctx);
+
 static void gen_end_tb(DisasContext *ctx)
 {
     gen_exec_counters(ctx);
+
+    if (ctx->need_next_pc) {
+        tcg_gen_mov_tl(hex_gpr[HEX_REG_PC], hex_next_PC);
+    }
 
     if (ctx->branch_cond != TCG_COND_NEVER) {
         if (ctx->branch_cond != TCG_COND_ALWAYS) {
@@ -402,6 +409,14 @@ static bool need_next_PC(DisasContext *ctx)
             return true;
         }
     }
+    /*
+     * We end the TB on some instructions that do not change the flow (for
+     * other reasons). In these cases, we must set pc too, as the insn won't
+     * do it themselves.
+     */
+    if (pkt_ends_tb(&ctx->pkt) && !check_for_attrib(&ctx->pkt, A_COF)) {
+        return true;
+    }
     return false;
 }
 
@@ -570,6 +585,8 @@ static void gen_start_packet(DisasContext *ctx)
 
     /* Clear out the disassembly context */
     ctx->next_PC = next_PC;
+    ctx->need_next_pc = need_next_PC(ctx);
+    tcg_gen_movi_tl(hex_next_PC, next_PC);
     ctx->reg_log_idx = 0;
     bitmap_zero(ctx->regs_written, TOTAL_PER_THREAD_REGS);
     bitmap_zero(ctx->predicated_regs, TOTAL_PER_THREAD_REGS);
@@ -1326,6 +1343,8 @@ void hexagon_translate_init(void)
     }
     hex_new_value_usr = tcg_global_mem_new(tcg_env,
         offsetof(CPUHexagonState, new_value_usr), "new_value_usr");
+    hex_next_PC = tcg_global_mem_new(tcg_env,
+        offsetof(CPUHexagonState, next_PC), "next_PC");
 
     for (i = 0; i < NUM_PREGS; i++) {
         hex_pred[i] = tcg_global_mem_new(tcg_env,
