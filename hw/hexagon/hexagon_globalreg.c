@@ -11,6 +11,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/resettable.h"
+#include "hw/intc/l2vic.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 #include "target/hexagon/cpu.h"
@@ -135,6 +136,37 @@ static inline uint32_t apply_write_mask(uint32_t new_val, uint32_t cur_val,
     return new_val;
 }
 
+static inline bool is_vid_reg(uint32_t reg)
+{
+    return reg == HEX_SREG_VID || reg == HEX_SREG_VID1;
+}
+
+/*
+ * HEX_SREG_VID/VID1 are not stored in the plain regs[] array at all: they are
+ * a view onto the L2VIC's VID group registers, accessed only through the
+ * L2VIC interface. Reads with no L2VIC wired up return 0; writes are dropped.
+ */
+static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
+{
+    if (is_vid_reg(reg)) {
+        return s->l2vic ?
+            l2vic_read_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1) : 0;
+    }
+    return s->regs[reg];
+}
+
+static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
+                          uint32_t value)
+{
+    if (is_vid_reg(reg)) {
+        if (s->l2vic) {
+            l2vic_update_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1, value);
+        }
+        return;
+    }
+    s->regs[reg] = value;
+}
+
 uint32_t hexagon_globalreg_read(HexagonGlobalRegState *s, uint32_t reg,
                                 uint32_t htid)
 {
@@ -146,7 +178,7 @@ uint32_t hexagon_globalreg_read(HexagonGlobalRegState *s, uint32_t reg,
     g_assert(reg < NUM_SREGS);
     g_assert(reg >= HEX_SREG_GLB_START);
 
-    value = s->regs[reg];
+    value = get_reg_value(s, reg);
 
     trace_hexagon_globalreg_read(htid, get_sreg_name(reg), value);
     return value;
@@ -160,7 +192,7 @@ void hexagon_globalreg_write(HexagonGlobalRegState *s, uint32_t reg,
     }
     g_assert(reg < NUM_SREGS);
     g_assert(reg >= HEX_SREG_GLB_START);
-    s->regs[reg] = value;
+    set_reg_value(s, reg, value);
     trace_hexagon_globalreg_write(htid, get_sreg_name(reg), value);
 }
 
@@ -168,6 +200,7 @@ uint32_t hexagon_globalreg_masked_value(HexagonGlobalRegState *s, uint32_t reg,
                                         uint32_t value)
 {
     uint32_t reg_mask;
+    uint32_t cur_val;
 
     if (!s) {
         return value;
@@ -175,9 +208,10 @@ uint32_t hexagon_globalreg_masked_value(HexagonGlobalRegState *s, uint32_t reg,
     g_assert(reg < NUM_SREGS);
     g_assert(reg >= HEX_SREG_GLB_START);
     reg_mask = global_sreg_immut_masks[reg];
+    cur_val = get_reg_value(s, reg);
     return reg_mask == IMMUTABLE ?
-            s->regs[reg] :
-            apply_write_mask(value, s->regs[reg], reg_mask);
+            cur_val :
+            apply_write_mask(value, cur_val, reg_mask);
 }
 
 void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
@@ -186,7 +220,7 @@ void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
     if (!s) {
         return;
     }
-    s->regs[reg] = hexagon_globalreg_masked_value(s, reg, value);
+    set_reg_value(s, reg, hexagon_globalreg_masked_value(s, reg, value));
 }
 
 uint64_t hexagon_globalreg_get_pcycle_base(HexagonGlobalRegState *s)
@@ -275,6 +309,8 @@ static const VMStateDescription vmstate_hexagon_globalreg = {
 };
 
 static const Property hexagon_globalreg_properties[] = {
+    DEFINE_PROP_LINK("l2vic", HexagonGlobalRegState, l2vic,
+                     TYPE_L2VIC_INTERFACE, L2VicInterface *),
     DEFINE_PROP_UINT32("boot-evb", HexagonGlobalRegState, boot_evb, 0x0),
     DEFINE_PROP_UINT64("config-table-addr", HexagonGlobalRegState,
                        config_table_addr, 0xffffffffULL),
