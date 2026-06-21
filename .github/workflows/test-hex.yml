@@ -175,3 +175,68 @@ jobs:
             build/tests/functional/**/*.log
           if-no-files-found: ignore
           retention-days: 7
+
+  build-wasm64:
+    name: Build Hexagon (wasm64, emcc)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    # Cross-builds the wasm64-emscripten host config, exercising the
+    # idef-parser preprocessing step under emcc (compiler id "emscripten",
+    # not an invocable program -- see target/hexagon/meson.build use of
+    # cmd_array() instead of get_id()). wasm64 has no linux-user host
+    # support, so this only builds hexagon-softmmu, and there is no way to
+    # execute the resulting binary in this job, so this only verifies that
+    # the build succeeds.
+    #
+    # Runs inside the same container image used by the project's own
+    # build-wasm64-64bit/-32bit GitLab CI jobs (built from
+    # .gitlab-ci.d/dockerfiles/emsdk-wasm64-cross.docker), rather than
+    # rebuilding zlib/libffi/pixman/glib from source here. That avoids
+    # pinned-version/upstream-URL drift (e.g. zlib.net reshuffling old
+    # releases) and guarantees the same emcc/libtool/dependency versions
+    # the GitLab pipeline already validates.
+    container:
+      image: registry.gitlab.com/qemu-project/qemu/qemu/emsdk-wasm64-cross:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install missing build tools
+        run: |
+          apt-get update
+          apt-get install -y flex bison
+
+      - name: Configure and build QEMU (wasm64)
+        env:
+          # target/hexagon/meson.build builds a native (build-machine)
+          # idef-parser helper that depends on glib-2.0. Meson resolves
+          # native dependencies via PKG_CONFIG_PATH_FOR_BUILD, not the
+          # plain PKG_CONFIG_PATH baked into this image (which points
+          # pkg-config at the wasm64-built glib for the host/cross side).
+          # Without this, the native lookup finds nothing and configure
+          # fails even though a native libglib2.0-dev is installed.
+          PKG_CONFIG_PATH_FOR_BUILD: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+        run: |
+          mkdir build
+          cd build
+          emconfigure ../configure \
+            --disable-docs \
+            --static \
+            --cpu=wasm64 \
+            --disable-tools \
+            --enable-debug \
+            --enable-tcg-interpreter \
+            --target-list=hexagon-softmmu
+          emmake make -j"$(nproc)"
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-wasm64
+          path: |
+            build/config.log
+            build/meson-logs/meson-log.txt
+          if-no-files-found: ignore
+          retention-days: 7
