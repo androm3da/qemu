@@ -16,6 +16,7 @@
 #include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/hexagon/hexagon_tlb.h"
 #include "hw/intc/l2vic.h"
+#include "hw/virtio/virtio-mmio.h"
 #include "hw/core/loader.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
@@ -30,13 +31,18 @@
 #include "system/system.h"
 #include <libfdt.h>
 
+#define NUM_VIRTIO_TRANSPORTS 8
+#define VIRTIO_IRQ_BASE 16
+
 enum {
     VIRT_UART0,
+    VIRT_VIRTIO,
     VIRT_FDT,
 };
 
 static const MemMapEntry base_memmap[] = {
     [VIRT_UART0] = { 0x10000000, 0x00000200 },
+    [VIRT_VIRTIO] = { 0x90000000, 0x00000200 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
 };
 
@@ -227,6 +233,30 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
     return bios_addr;  /* Return entry point at address 0x0 */
 }
 
+static void create_virtio_mmio(const HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    hwaddr base = base_memmap[VIRT_VIRTIO].base;
+    hwaddr size = base_memmap[VIRT_VIRTIO].size;
+
+    for (int i = 0; i < NUM_VIRTIO_TRANSPORTS; i++) {
+        hwaddr addr = base + i * size;
+        char *nodename;
+
+        sysbus_create_simple(TYPE_VIRTIO_MMIO, addr,
+                             qdev_get_gpio_in(vms->parent_obj.l2vic_dev,
+                                              VIRTIO_IRQ_BASE + i));
+
+        nodename = g_strdup_printf("/virtio_mmio@%" PRIx64, addr);
+        qemu_fdt_add_subnode(ms->fdt, nodename);
+        qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "virtio,mmio");
+        qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", addr, size);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupts",
+                              VIRTIO_IRQ_BASE + i);
+        g_free(nodename);
+    }
+}
+
 static void do_cpu_reset(void *opaque)
 {
     HexagonCPU *cpu = opaque;
@@ -329,6 +359,7 @@ static void virt_init(MachineState *ms)
     fdt_add_cpu_nodes(vms);
     clk_phandle = fdt_add_clocks(vms);
     fdt_add_uart(vms, VIRT_UART0, clk_phandle);
+    create_virtio_mmio(vms);
 
     rom_add_blob_fixed_as("config_table.rom", &m_cfg->cfgtable,
                           sizeof(m_cfg->cfgtable), m_cfg->cfgbase,
