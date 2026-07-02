@@ -18,6 +18,7 @@ Contents:
 
    target-arm
    target-avr
+   target-hexagon
    target-loongarch
    target-m68k
    target-mips
