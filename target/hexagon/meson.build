@@ -477,7 +477,9 @@ rpclib_dep = rpclib_proj.dependency('rpc')
 coproc_lib = static_library(
   'coproc',
   files('coproc.h', 'coproc.cpp', 'coproc_trace.c'),
-  cpp_args: '-std=c++20',
+  # -Wno-undef: rpclib's bundled optional.hpp tests undefined macros and
+  # trips QEMU's -Werror=undef with newer host compilers.
+  cpp_args: ['-std=c++20', '-Wno-undef'],
   include_directories : [
     include_directories('../../include'),
   ],
