@@ -198,11 +198,13 @@ move:
     0x10000000  (256 B)      VIRT_UART0  (pl011)
     0x11000000  (16 MiB)     VIRT_MMIO   (8 virtio-mmio slots, 16 MiB each)
     0x26300000  (4 KiB)      VIRT_PLL    (cdsp-fabia-pll)
-    0x99800000  (4 MiB)      VIRT_FDT    (generated or -dtb device tree)
     0x99c00000  (512 B)      VIRT_BOOT   (built-in bootloader shim, see
                              `The two-stage boot: "h2" shim -> loadlinux
                              -> vmlinux`_)
     0xab000000  (4 KiB)      VIRT_GPT    (generic purpose timer)
+    0xbf800000  (4 MiB)      VIRT_FDT    (generated or -dtb device tree;
+                             deliberately inside the Linux guest's RAM
+                             window -- see `Proposed layout`_)
     m_cfg->cfgbase           config table ROM (0xde000000 for v68n_1024,
                              the config used by ``virt``)
 
@@ -282,7 +284,6 @@ above, for a machine started with ``-m 4G``:
                 stacks.  Budget ~80 MiB: a few hundred KiB of code/data,
                 1 MiB/thread stacks (THREADS_MAX = 16 in target/hexagon/
                 cpu.h, so <=16 MiB), plus DEFAULT_HEAP_SIZE-class 64 MiB.
-    0x99800000  VIRT_FDT (fixed, 4 MiB window, avoid).
     0x99c00000  VIRT_BOOT shim (fixed, 512 B, avoid).
     0xa0000000  linux kernel (h2 guest), i.e. vmlinux.bin -- matches the
                 known-working functional test exactly.  Budget: leave at
@@ -291,6 +292,12 @@ above, for a machine started with ``-m 4G``:
     0xab000000  VIRT_GPT (fixed, 4 KiB, avoid -- falls inside the 64-128
                 MiB kernel headroom above; keep the kernel image itself
                 under ~0xaaf00000 or treat VIRT_GPT as a deliberate hole).
+    0xbf800000  VIRT_FDT (fixed, 4 MiB window).  The FDT must live inside
+                the Linux guest's RAM window: the kernel derives
+                PHYS_OFFSET from its own load address (0xa0000000) and
+                can only phys_to_virt() a bootloader-provided DTB at or
+                above it.  The kernel reserves this range from its
+                allocator when it adopts the DTB.
     0xc0000000  initramfs (if used instead of/alongside a virtio-blk
                 disk), 4 MiB aligned per ``hexagon_load_initrd()``'s own
                 ``QEMU_ALIGN_UP()``.  At 0xc0000000 there is 1 GiB of
