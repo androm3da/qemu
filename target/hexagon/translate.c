@@ -1214,17 +1214,14 @@ static void gen_commit_hlx(DisasContext *ctx)
     }
 
     /*
-     * Commit .tmp LReg writes only for registers not also written by a
-     * regular instruction.  The .tmp value is for intra-packet forwarding;
-     * if another instruction writes the same register, its result wins.
+     * HLX .tmp writes are NOT committed to the architectural register file.
+     * Per the HLX spec ("A temporary load instruction does not write the
+     * load data to the register and another instruction must use the data
+     * in the same packet"), a .tmp value is purely intra-packet scratch,
+     * consumed by same-packet instructions via tmp_LRegs and then discarded.
+     * Committing it here would clobber the register's real (committed) value
+     * with transient data, corrupting subsequent packets that read the reg.
      */
-    for (i = 0; i < ctx->lreg_tmp_log_idx; i++) {
-        int rnum = ctx->lreg_tmp_log[i];
-        if (test_bit(rnum, ctx->lregs_updated)) {
-            continue;
-        }
-        gen_helper_hlx_commit_tmp_reg(tcg_env, tcg_constant_i32(rnum));
-    }
 }
 
 static void update_exec_counters(DisasContext *ctx)
