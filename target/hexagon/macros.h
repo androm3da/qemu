@@ -802,7 +802,7 @@ static inline TCGv gen_read_ireg(TCGv result, TCGv val, int shift)
  */
 #define STORE_CANCEL(EA) { }
 
-#define fMPY3216UU(A, B) ((uint32_t)((uint64_t)(A) * (uint32_t)(B)))
+#define fMPY3216UU(A, B) (fZE32_64(A) * fZXTN(16, 64, B))
 #define check_ilog2_compliance(RESULT, INPUT, OFFSET) do {} while (0)
 #define f64BIT_SCALAR_MASK(REG) do {} while (0)
 
