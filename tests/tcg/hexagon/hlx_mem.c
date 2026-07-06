@@ -21,6 +21,9 @@
 
 #include "hlx_test.h"
 
+/* Committed-value seed for the false-predicate load test */
+#define SEED_VAL  0x1234
+
 /* Single-register buffers */
 static uint16_t buf_a[HLX_HALF_ELEMS] HLX_ALIGN;
 static uint16_t buf_b[HLX_HALF_ELEMS] HLX_ALIGN;
@@ -41,11 +44,17 @@ static void init_data(void)
 static void test_pred_load_true(void)
 {
     init_data();
-    /* if (Pv) Ld.tmp = mem(Rs) -- with true predicate */
+    /*
+     * if (Pv) Ld.tmp = mem(Rs) -- with true predicate.
+     *
+     * A .tmp load only forwards its data within the same packet, so the
+     * consuming assign (L1.h = L0.h) and the .new store must live in the
+     * same packet as the load.
+     */
     asm volatile(
         "p0 = cmp.eq(r0, r0)\n"     /* p0 = true */
-        "{ if (p0) L0.tmp = mem(%0) }\n"
-        "{ L1.h = L0.h\n"
+        "{ if (p0) L0.tmp = mem(%0)\n"
+        "  L1.h = L0.h\n"
         "  mem(%1) = L1.new }\n"
         : : "r"(buf_a), "r"(buf_out) : "memory"
     );
@@ -55,21 +64,28 @@ static void test_pred_load_true(void)
 static void test_pred_load_false(void)
 {
     init_data();
-    /* if (Pv) Ld.tmp = mem(Rs) -- with false predicate
-     * When predicate is false, the load is cancelled.
-     * The output should reflect whatever was in L0 before (not buf_a).
-     * We pre-load L0 with buf_b, then do a false-predicated load of buf_a.
+    /*
+     * if (Pv) Ld.tmp = mem(Rs) -- with false predicate.
+     *
+     * A .tmp load never writes the register file; it only forwards within
+     * its packet.  With a false predicate the load is cancelled, so the
+     * same-packet consumer (L1.h = L0.h) reads whatever committed value L0
+     * already holds.  Seed L0 with a regular (non-tmp) HLX write first, then
+     * confirm the cancelled tmp load does not override it.
      */
+    uint32_t seed = SEED_VAL;
     asm volatile(
-        "{ L0.tmp = mem(%0) }\n"     /* Load buf_b into L0 */
-        "p0 = !cmp.eq(r0, r0)\n"    /* p0 = false (always) */
-        "{ if (p0) L0.tmp = mem(%1) }\n"  /* Should NOT load buf_a */
-        "{ L1.h = L0.h\n"
+        "{ L0.h = %0.h }\n"          /* seed committed L0 with SEED_VAL */
+        "p0 = !cmp.eq(r0, r0)\n"     /* p0 = false (always) */
+        "{ if (p0) L0.tmp = mem(%1)\n"
+        "  L1.h = L0.h\n"
         "  mem(%2) = L1.new }\n"
-        : : "r"(buf_b), "r"(buf_a), "r"(buf_out) : "memory"
+        : : "r"(seed), "r"(buf_a), "r"(buf_out) : "memory"
     );
-    /* L0 should still contain buf_b */
-    check_h("LX_L16b_p_tmp (false)", buf_out, buf_b, HLX_HALF_ELEMS);
+    for (int i = 0; i < HLX_HALF_ELEMS; i++) {
+        expected[i] = SEED_VAL;
+    }
+    check_h("LX_L16b_p_tmp (false)", buf_out, expected, HLX_HALF_ELEMS);
 }
 
 /* ===== Predicated store ===== */
@@ -77,11 +93,16 @@ static void test_pred_load_false(void)
 static void test_pred_store_true(void)
 {
     init_data();
-    /* if (Pv) mem(Rs) = Ku.new -- with true predicate */
+    /*
+     * if (Pv) mem(Rs) = Ku.new -- with true predicate.
+     *
+     * The .tmp load, its consumer, and the predicated .new store all live
+     * in one packet so the loaded data is forwarded correctly.
+     */
     asm volatile(
-        "{ L0.tmp = mem(%0) }\n"
         "p0 = cmp.eq(r0, r0)\n"     /* p0 = true */
-        "{ L1.h = L0.h\n"
+        "{ L0.tmp = mem(%0)\n"
+        "  L1.h = L0.h\n"
         "  if (p0) mem(%1) = L1.new }\n"
         : : "r"(buf_a), "r"(buf_out) : "memory"
     );
@@ -91,13 +112,15 @@ static void test_pred_store_true(void)
 static void test_pred_store_false(void)
 {
     init_data();
-    /* if (Pv) mem(Rs) = Ku.new -- with false predicate
-     * Store should be cancelled; buf_out retains 0xDEAD
+    /*
+     * if (Pv) mem(Rs) = Ku.new -- with false predicate.
+     * Same same-packet producer pattern, but the false predicate cancels
+     * the store; buf_out retains 0xDEAD.
      */
     asm volatile(
-        "{ L0.tmp = mem(%0) }\n"
         "p0 = !cmp.eq(r0, r0)\n"    /* p0 = false (always) */
-        "{ L1.h = L0.h\n"
+        "{ L0.tmp = mem(%0)\n"
+        "  L1.h = L0.h\n"
         "  if (p0) mem(%1) = L1.new }\n"
         : : "r"(buf_a), "r"(buf_out) : "memory"
     );

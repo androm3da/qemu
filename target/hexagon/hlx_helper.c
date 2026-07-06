@@ -113,6 +113,13 @@ void HELPER(hlx_copy_live_to_future)(CPUHexagonState *env, uint32_t rnum)
            sizeof(HLXVector));
 }
 
+void HELPER(hlx_copy_live_to_tmp)(CPUHexagonState *env, uint32_t rnum)
+{
+    g_assert(env->hlx_ctx != NULL);
+    memcpy(&env->tmp_LRegs[rnum], &env->hlx_ctx->LRegs[rnum],
+           sizeof(HLXVector));
+}
+
 void HELPER(hlx_commit_reg)(CPUHexagonState *env, uint32_t rnum)
 {
     g_assert(env->hlx_ctx != NULL);

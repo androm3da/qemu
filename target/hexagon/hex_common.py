@@ -1724,6 +1724,11 @@ class LRegDest(Hlx, Register, Single, Dest):
             const intptr_t {self.hlx_off()} =
                 offsetof(CPUHexagonState, {storage}[{self.reg_num}]);
         """))
+        if "A_HLX_TMP" in attribdict[tag] and "A_CONDEXEC" in attribdict[tag]:
+            f.write(code_fmt(f"""\
+                gen_helper_hlx_copy_live_to_tmp(tcg_env,
+                    tcg_constant_i32({self.reg_num}));
+            """))
         if is_hlx_inline_tag(tag):
             f.write(code_fmt(f"""\
                 TCGv_ptr {self.reg_tcg()}_base = tcg_env;
