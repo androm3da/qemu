@@ -25,6 +25,10 @@
 #include "hw/timer/qct-qtimer.h"
 #include "hw/misc/cdsp-pll.h"
 #include "hw/misc/qup-wrapper.h"
+#ifdef CONFIG_IVSHMEM_FLAT_DEVICE
+#include "chardev/char.h"
+#include "hw/misc/ivshmem-flat.h"
+#endif
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qemu/datadir.h"
@@ -53,6 +57,8 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_FDT] = { 0xbf800000, 0x00400000 },
     [VIRT_BOOT] = { 0x99c00000, 0x00000200 },
     [VIRT_PLL] = { 0x26300000, 0x00001000 },
+    [VIRT_IVSHMEM] = { 0x19000000, 0x00001000 },
+    [VIRT_IVSHMEM_SHM] = { 0x90900000, 0x00400000 },
 };
 
 static const int irqmap[] = {
@@ -62,7 +68,18 @@ static const int irqmap[] = {
     [VIRT_QUP_UART0] = 16,
     [VIRT_QTMR0] = 2,
     [VIRT_QTMR1] = 4,
+    [VIRT_IVSHMEM] = 26,
 };
+
+/*
+ * Carve-up of the ivshmem shared-memory window: the first part is the
+ * Qualcomm SMEM region, followed by a page used as the "TCSR mutex"
+ * hardware spinlock (plain shared memory implements the tcsr-mutex
+ * write-owner/read-back protocol between the two VMs).
+ */
+#define IVSHMEM_SMEM_SIZE   0x00200000
+#define IVSHMEM_TCSR_OFFSET IVSHMEM_SMEM_SIZE
+#define IVSHMEM_TCSR_SIZE   0x00020000
 
 
 static void create_fdt(HexagonVirtMachineState *vms)
@@ -356,6 +373,118 @@ static void fdt_add_virtio_devices(const HexagonVirtMachineState *vms)
         g_free(nodename);
     }
 }
+
+#ifdef CONFIG_IVSHMEM_FLAT_DEVICE
+/*
+ * Create an ivshmem-flat device connected to an ivshmem-server socket
+ * and describe it to the guest as a Qualcomm SMEM + GLINK edge: the
+ * shared-memory window holds the SMEM heap and the tcsr-mutex spinlock
+ * page, and the device's doorbell registers/interrupt back the GLINK
+ * intent/rx signalling via the "ivshmem-doorbell" mailbox binding.
+ */
+static void create_ivshmem(HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    hwaddr regs_base = base_memmap[VIRT_IVSHMEM].base;
+    hwaddr shm_base = base_memmap[VIRT_IVSHMEM_SHM].base;
+    hwaddr shm_size = base_memmap[VIRT_IVSHMEM_SHM].size;
+    int irq = irqmap[VIRT_IVSHMEM];
+    Chardev *chr;
+    DeviceState *dev;
+    SysBusDevice *sbd;
+
+    chr = qemu_chr_find(vms->ivshmem_chardev);
+    if (!chr) {
+        error_report("ivshmem chardev '%s' not found", vms->ivshmem_chardev);
+        exit(1);
+    }
+
+    dev = qdev_new(TYPE_IVSHMEM_FLAT);
+    qdev_prop_set_chr(dev, "chardev", chr);
+    qdev_prop_set_uint32(dev, "shmem-size", shm_size);
+    sbd = SYS_BUS_DEVICE(dev);
+    sysbus_realize_and_unref(sbd, &error_fatal);
+
+    sysbus_mmio_map(sbd, 0, regs_base);
+    /* The shared memory window shadows part of ddr.ram */
+    sysbus_mmio_map_overlap(sbd, 1, shm_base, 10);
+    sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(vms->l2vic, irq));
+
+    if (ms->dtb) {
+        return;
+    }
+
+    uint32_t smem_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    uint32_t hwlock_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    uint32_t mbox_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    g_autofree char *smem_rmem = g_strdup_printf(
+        "/reserved-memory/smem@%" PRIx64, shm_base);
+    g_autofree char *hwlock = g_strdup_printf(
+        "/soc/hwlock@%" PRIx64, shm_base + IVSHMEM_TCSR_OFFSET);
+    g_autofree char *mbox = g_strdup_printf("/soc/mailbox@%" PRIx64,
+                                            regs_base);
+
+    qemu_fdt_add_subnode(ms->fdt, "/reserved-memory");
+    qemu_fdt_setprop_cell(ms->fdt, "/reserved-memory", "#address-cells", 2);
+    qemu_fdt_setprop_cell(ms->fdt, "/reserved-memory", "#size-cells", 1);
+    qemu_fdt_setprop(ms->fdt, "/reserved-memory", "ranges", NULL, 0);
+
+    qemu_fdt_add_subnode(ms->fdt, smem_rmem);
+    qemu_fdt_setprop_cells(ms->fdt, smem_rmem, "reg", 0, shm_base,
+                           IVSHMEM_SMEM_SIZE);
+    qemu_fdt_setprop(ms->fdt, smem_rmem, "no-map", NULL, 0);
+    qemu_fdt_setprop_cell(ms->fdt, smem_rmem, "phandle", smem_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, hwlock);
+    qemu_fdt_setprop_string(ms->fdt, hwlock, "compatible", "qcom,tcsr-mutex");
+    qemu_fdt_setprop_cells(ms->fdt, hwlock, "reg", 0,
+                           shm_base + IVSHMEM_TCSR_OFFSET, IVSHMEM_TCSR_SIZE);
+    qemu_fdt_setprop_cell(ms->fdt, hwlock, "#hwlock-cells", 1);
+    qemu_fdt_setprop_cell(ms->fdt, hwlock, "phandle", hwlock_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, "/soc/smem");
+    qemu_fdt_setprop_string(ms->fdt, "/soc/smem", "compatible", "qcom,smem");
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/smem", "memory-region",
+                          smem_phandle);
+    qemu_fdt_setprop_cells(ms->fdt, "/soc/smem", "hwlocks", hwlock_phandle,
+                           3);
+
+    qemu_fdt_add_subnode(ms->fdt, mbox);
+    qemu_fdt_setprop_string(ms->fdt, mbox, "compatible", "ivshmem-doorbell");
+    qemu_fdt_setprop_cells(ms->fdt, mbox, "reg", 0, regs_base,
+                           base_memmap[VIRT_IVSHMEM].size);
+    qemu_fdt_setprop_cells(ms->fdt, mbox, "interrupts", 32 + irq, 0);
+    qemu_fdt_setprop_cell(ms->fdt, mbox, "interrupt-parent",
+                          irq_hvm_ic_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, mbox, "#mbox-cells", 0);
+    qemu_fdt_setprop_cell(ms->fdt, mbox, "phandle", mbox_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, "/soc/glink-edge");
+    qemu_fdt_setprop_string(ms->fdt, "/soc/glink-edge", "compatible",
+                            "qcom,glink-smem-edge");
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/glink-edge", "mboxes", mbox_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, "/soc/glink-edge", "qcom,remote-pid", 0);
+    /* This machine models the DSP: the remote side of the edge */
+    qemu_fdt_setprop(ms->fdt, "/soc/glink-edge", "qcom,is-remote", NULL, 0);
+
+    static const struct {
+        const char *node;
+        const char *channel;
+    } channels[] = {
+        { "echo", "glink-echo" },
+        { "ip-bridge", "IP_BRIDGE" },
+        { "qrtr", "IPCRTR" },
+        { "fastrpc", "fastrpc-cdsp-smd" },
+    };
+    for (unsigned i = 0; i < ARRAY_SIZE(channels); i++) {
+        g_autofree char *node = g_strdup_printf("/soc/glink-edge/%s",
+                                                channels[i].node);
+        qemu_fdt_add_subnode(ms->fdt, node);
+        qemu_fdt_setprop_string(ms->fdt, node, "qcom,glink-channels",
+                                channels[i].channel);
+    }
+}
+#endif /* CONFIG_IVSHMEM_FLAT_DEVICE */
 
 static void create_qtimer(HexagonVirtMachineState *vms,
                           const hexagon_machine_config *m_cfg)
@@ -835,6 +964,11 @@ static void virt_init(MachineState *ms)
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR0]));
     sysbus_connect_irq(SYS_BUS_DEVICE(vms->qtimer), 1,
                        qdev_get_gpio_in(vms->l2vic, irqmap[VIRT_QTMR1]));
+#ifdef CONFIG_IVSHMEM_FLAT_DEVICE
+    if (vms->ivshmem_chardev) {
+        create_ivshmem(vms);
+    }
+#endif
     create_pll(vms);
     fdt_add_pll_node(vms);
 
@@ -861,6 +995,22 @@ static void virt_init(MachineState *ms)
     g_free(cpus);
 }
 
+
+static char *virt_get_ivshmem_chardev(Object *obj, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
+    return g_strdup(vms->ivshmem_chardev);
+}
+
+static void virt_set_ivshmem_chardev(Object *obj, const char *value,
+                                     Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
+    g_free(vms->ivshmem_chardev);
+    vms->ivshmem_chardev = g_strdup(value);
+}
 
 static void virt_get_kernel_addr(Object *obj, Visitor *v,
                                  const char *name, void *opaque,
@@ -903,6 +1053,14 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     object_class_property_set_description(oc, "kernel-addr",
         "Physical address offset for loading the kernel ELF "
         "(used with -bios + -kernel)");
+
+    object_class_property_add_str(oc, "ivshmem-chardev",
+                                  virt_get_ivshmem_chardev,
+                                  virt_set_ivshmem_chardev);
+    object_class_property_set_description(oc, "ivshmem-chardev",
+        "ID of the chardev connected to an ivshmem-server socket; "
+        "enables the ivshmem-flat shared-memory device and the "
+        "SMEM/GLINK device tree nodes describing it");
 }
 
 

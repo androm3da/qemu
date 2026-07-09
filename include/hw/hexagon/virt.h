@@ -41,6 +41,7 @@ struct HexagonVirtMachineState {
     uint64_t kernel_load_addr;
     hwaddr fdt_addr;
     char *firmware_path;
+    char *ivshmem_chardev;
 };
 
 void hexagon_load_fdt(const struct HexagonVirtMachineState *vms);
@@ -56,6 +57,8 @@ enum {
     VIRT_FDT,
     VIRT_BOOT,
     VIRT_PLL,
+    VIRT_IVSHMEM,
+    VIRT_IVSHMEM_SHM,
 };
 
 #define TYPE_HEXAGON_VIRT_MACHINE MACHINE_TYPE_NAME("virt")
