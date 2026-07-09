@@ -97,6 +97,8 @@ enum {
     VIRT_NVDIMM_ACPI,
     VIRT_PVTIME,
     VIRT_ACPI_PCIHP,
+    VIRT_IVSHMEM,
+    VIRT_IVSHMEM_SHM,
     VIRT_LOWMEMMAP_LAST,
 };
 
@@ -175,6 +177,7 @@ struct VirtMachineState {
     bool mte;
     bool dtb_randomness;
     bool second_ns_uart_present;
+    char *ivshmem_chardev;
     OnOffAuto acpi;
     VirtGICType gic_version;
     VirtIOMMUType iommu;

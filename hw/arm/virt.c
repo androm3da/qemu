@@ -62,6 +62,8 @@
 #include "hw/pci-bridge/pci_expander_bridge.h"
 #include "hw/virtio/virtio-pci.h"
 #include "hw/core/sysbus-fdt.h"
+#include "chardev/char.h"
+#include "hw/misc/ivshmem-flat.h"
 #include "hw/core/platform-bus.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/arm/fdt.h"
@@ -214,6 +216,8 @@ static const MemMapEntry base_memmap[] = {
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
     [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
+    [VIRT_IVSHMEM] =            { 0x0f000000, 0x00001000 },
+    [VIRT_IVSHMEM_SHM] =        { 0x0f400000, 0x00400000 },
     [VIRT_PCIE_MMIO] =          { 0x10000000, 0x2eff0000 },
     [VIRT_PCIE_PIO] =           { 0x3eff0000, 0x00010000 },
     [VIRT_PCIE_ECAM] =          { 0x3f000000, 0x01000000 },
@@ -261,6 +265,7 @@ static const int a15irqmap[] = {
     [VIRT_GPIO] = 7,
     [VIRT_UART1] = 8,
     [VIRT_ACPI_GED] = 9,
+    [VIRT_IVSHMEM] = 10,
     [VIRT_MMIO] = 16, /* ...to 16 + NUM_VIRTIO_TRANSPORTS - 1 */
     [VIRT_GIC_V2M] = 48, /* ...to 48 + NUM_GICV2M_SPIS - 1 */
     [VIRT_SMMU] = 74,    /* ...to 74 + NUM_SMMU_IRQS - 1 */
@@ -2255,6 +2260,121 @@ static void create_cxl_host_reg_region(VirtMachineState *vms)
     vms->highmem_cxl = true;
 }
 
+/*
+ * Carve-up of the ivshmem shared-memory window, shared with the
+ * hexagon virt machine: a Qualcomm SMEM region followed by a
+ * "TCSR mutex" spinlock page (plain shared memory implements the
+ * tcsr-mutex write-owner/read-back protocol between the two VMs).
+ */
+#define IVSHMEM_SMEM_SIZE   0x00200000
+#define IVSHMEM_TCSR_OFFSET IVSHMEM_SMEM_SIZE
+#define IVSHMEM_TCSR_SIZE   0x00020000
+
+/*
+ * Create an ivshmem-flat device connected to an ivshmem-server socket
+ * and describe it to the guest as a Qualcomm SMEM + GLINK edge (host
+ * side, with a hexagon virt guest as the remote DSP peer).
+ */
+static void create_ivshmem(VirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    hwaddr regs_base = vms->memmap[VIRT_IVSHMEM].base;
+    hwaddr shm_base = vms->memmap[VIRT_IVSHMEM_SHM].base;
+    hwaddr shm_size = vms->memmap[VIRT_IVSHMEM_SHM].size;
+    int irq = vms->irqmap[VIRT_IVSHMEM];
+    Chardev *chr;
+    DeviceState *dev;
+    SysBusDevice *sbd;
+
+    if (!object_class_by_name(TYPE_IVSHMEM_FLAT)) {
+        error_report("ivshmem-flat device not available in this binary");
+        exit(1);
+    }
+
+    chr = qemu_chr_find(vms->ivshmem_chardev);
+    if (!chr) {
+        error_report("ivshmem chardev '%s' not found", vms->ivshmem_chardev);
+        exit(1);
+    }
+
+    dev = qdev_new(TYPE_IVSHMEM_FLAT);
+    qdev_prop_set_chr(dev, "chardev", chr);
+    qdev_prop_set_uint32(dev, "shmem-size", shm_size);
+    sbd = SYS_BUS_DEVICE(dev);
+    sysbus_realize_and_unref(sbd, &error_fatal);
+
+    sysbus_mmio_map(sbd, 0, regs_base);
+    sysbus_mmio_map(sbd, 1, shm_base);
+    sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(vms->gic, irq));
+
+    uint32_t smem_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    uint32_t hwlock_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    uint32_t mbox_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    g_autofree char *smem_rmem = g_strdup_printf(
+        "/reserved-memory/smem@%" PRIx64, shm_base);
+    g_autofree char *hwlock = g_strdup_printf(
+        "/hwlock@%" PRIx64, shm_base + IVSHMEM_TCSR_OFFSET);
+    g_autofree char *mbox = g_strdup_printf("/mailbox@%" PRIx64, regs_base);
+
+    qemu_fdt_add_subnode(ms->fdt, "/reserved-memory");
+    qemu_fdt_setprop_cell(ms->fdt, "/reserved-memory", "#address-cells", 2);
+    qemu_fdt_setprop_cell(ms->fdt, "/reserved-memory", "#size-cells", 2);
+    qemu_fdt_setprop(ms->fdt, "/reserved-memory", "ranges", NULL, 0);
+
+    qemu_fdt_add_subnode(ms->fdt, smem_rmem);
+    qemu_fdt_setprop_sized_cells(ms->fdt, smem_rmem, "reg",
+                                 2, shm_base, 2, IVSHMEM_SMEM_SIZE);
+    qemu_fdt_setprop(ms->fdt, smem_rmem, "no-map", NULL, 0);
+    qemu_fdt_setprop_cell(ms->fdt, smem_rmem, "phandle", smem_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, hwlock);
+    qemu_fdt_setprop_string(ms->fdt, hwlock, "compatible", "qcom,tcsr-mutex");
+    qemu_fdt_setprop_sized_cells(ms->fdt, hwlock, "reg",
+                                 2, shm_base + IVSHMEM_TCSR_OFFSET,
+                                 2, IVSHMEM_TCSR_SIZE);
+    qemu_fdt_setprop_cell(ms->fdt, hwlock, "#hwlock-cells", 1);
+    qemu_fdt_setprop_cell(ms->fdt, hwlock, "phandle", hwlock_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, "/smem");
+    qemu_fdt_setprop_string(ms->fdt, "/smem", "compatible", "qcom,smem");
+    qemu_fdt_setprop_cell(ms->fdt, "/smem", "memory-region", smem_phandle);
+    qemu_fdt_setprop_cells(ms->fdt, "/smem", "hwlocks", hwlock_phandle, 3);
+
+    qemu_fdt_add_subnode(ms->fdt, mbox);
+    qemu_fdt_setprop_string(ms->fdt, mbox, "compatible", "ivshmem-doorbell");
+    qemu_fdt_setprop_sized_cells(ms->fdt, mbox, "reg",
+                                 2, regs_base,
+                                 2, vms->memmap[VIRT_IVSHMEM].size);
+    qemu_fdt_setprop_cells(ms->fdt, mbox, "interrupts",
+                           gic_fdt_irq_type_spi(vms), irq,
+                           GIC_FDT_IRQ_FLAGS_EDGE_LO_HI);
+    qemu_fdt_setprop_cell(ms->fdt, mbox, "#mbox-cells", 0);
+    qemu_fdt_setprop_cell(ms->fdt, mbox, "phandle", mbox_phandle);
+
+    qemu_fdt_add_subnode(ms->fdt, "/glink-edge");
+    qemu_fdt_setprop_string(ms->fdt, "/glink-edge", "compatible",
+                            "qcom,glink-smem-edge");
+    qemu_fdt_setprop_cell(ms->fdt, "/glink-edge", "mboxes", mbox_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, "/glink-edge", "qcom,remote-pid", 1);
+
+    static const struct {
+        const char *node;
+        const char *channel;
+    } channels[] = {
+        { "echo", "glink-echo" },
+        { "ip-bridge", "IP_BRIDGE" },
+        { "qrtr", "IPCRTR" },
+        { "fastrpc", "fastrpc-cdsp-smd" },
+    };
+    for (unsigned i = 0; i < ARRAY_SIZE(channels); i++) {
+        g_autofree char *node = g_strdup_printf("/glink-edge/%s",
+                                                channels[i].node);
+        qemu_fdt_add_subnode(ms->fdt, node);
+        qemu_fdt_setprop_string(ms->fdt, node, "qcom,glink-channels",
+                                channels[i].channel);
+    }
+}
+
 static void create_platform_bus(VirtMachineState *vms)
 {
     DeviceState *dev;
@@ -3184,6 +3304,10 @@ static void machvirt_init(MachineState *machine)
      */
     create_virtio_devices(vms);
 
+    if (vms->ivshmem_chardev) {
+        create_ivshmem(vms);
+    }
+
     vms->fw_cfg = create_fw_cfg(vms, &address_space_memory);
     rom_set_fw(vms->fw_cfg);
 
@@ -3508,6 +3632,22 @@ static void virt_set_oem_table_id(Object *obj, const char *value,
         return;
     }
     strncpy(vms->oem_table_id, value, 8);
+}
+
+static char *virt_get_ivshmem_chardev(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return g_strdup(vms->ivshmem_chardev);
+}
+
+static void virt_set_ivshmem_chardev(Object *obj, const char *value,
+                                     Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    g_free(vms->ivshmem_chardev);
+    vms->ivshmem_chardev = g_strdup(value);
 }
 
 
@@ -4260,6 +4400,14 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
     object_class_property_add_str(oc, "x-oem-table-id",
                                   virt_get_oem_table_id,
                                   virt_set_oem_table_id);
+
+    object_class_property_add_str(oc, "ivshmem-chardev",
+                                  virt_get_ivshmem_chardev,
+                                  virt_set_ivshmem_chardev);
+    object_class_property_set_description(oc, "ivshmem-chardev",
+        "ID of the chardev connected to an ivshmem-server socket; "
+        "enables the ivshmem-flat shared-memory device and the "
+        "SMEM/GLINK device tree nodes describing it");
     object_class_property_set_description(oc, "x-oem-table-id",
                                           "Override the default value of field OEM Table ID "
                                           "in ACPI table header."
