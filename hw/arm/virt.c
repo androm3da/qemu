@@ -217,7 +217,12 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
     [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
     [VIRT_IVSHMEM] =            { 0x0f000000, 0x00001000 },
-    [VIRT_IVSHMEM_SHM] =        { 0x0f400000, 0x00400000 },
+    /*
+     * Deliberately matches the hexagon virt machine's window address so
+     * physical addresses exchanged over fastrpc are valid on both ends
+     * (no SMMU is modeled).  Requires RAM (from 1 GiB) not to reach it.
+     */
+    [VIRT_IVSHMEM_SHM] =        { 0x90900000, 0x00400000 },
     [VIRT_PCIE_MMIO] =          { 0x10000000, 0x2eff0000 },
     [VIRT_PCIE_PIO] =           { 0x3eff0000, 0x00010000 },
     [VIRT_PCIE_ECAM] =          { 0x3f000000, 0x01000000 },
@@ -2269,6 +2274,7 @@ static void create_cxl_host_reg_region(VirtMachineState *vms)
 #define IVSHMEM_SMEM_SIZE   0x00200000
 #define IVSHMEM_TCSR_OFFSET IVSHMEM_SMEM_SIZE
 #define IVSHMEM_TCSR_SIZE   0x00020000
+#define IVSHMEM_FASTRPC_OFFSET (IVSHMEM_TCSR_OFFSET + IVSHMEM_TCSR_SIZE)
 
 /*
  * Create an ivshmem-flat device connected to an ivshmem-server socket
@@ -2288,6 +2294,13 @@ static void create_ivshmem(VirtMachineState *vms)
 
     if (!object_class_by_name(TYPE_IVSHMEM_FLAT)) {
         error_report("ivshmem-flat device not available in this binary");
+        exit(1);
+    }
+
+    if (vms->memmap[VIRT_MEM].base + ms->ram_size > shm_base) {
+        error_report("RAM overlaps the ivshmem window at 0x%" PRIx64
+                     "; use -m %" PRId64 "M or less", shm_base,
+                     (shm_base - vms->memmap[VIRT_MEM].base) / MiB);
         exit(1);
     }
 
@@ -2326,6 +2339,24 @@ static void create_ivshmem(VirtMachineState *vms)
                                  2, shm_base, 2, IVSHMEM_SMEM_SIZE);
     qemu_fdt_setprop(ms->fdt, smem_rmem, "no-map", NULL, 0);
     qemu_fdt_setprop_cell(ms->fdt, smem_rmem, "phandle", smem_phandle);
+
+    /*
+     * The remainder of the window is a coherent DMA pool for fastrpc:
+     * invoke payloads allocated from it are directly visible to the
+     * DSP guest, standing in for SMMU-mapped memory on real hardware.
+     */
+    uint32_t frpc_pool_phandle = qemu_fdt_alloc_phandle(ms->fdt);
+    hwaddr frpc_pool_base = shm_base + IVSHMEM_FASTRPC_OFFSET;
+    hwaddr frpc_pool_size = shm_size - IVSHMEM_FASTRPC_OFFSET;
+    g_autofree char *frpc_rmem = g_strdup_printf(
+        "/reserved-memory/fastrpc@%" PRIx64, frpc_pool_base);
+    qemu_fdt_add_subnode(ms->fdt, frpc_rmem);
+    qemu_fdt_setprop_string(ms->fdt, frpc_rmem, "compatible",
+                            "shared-dma-pool");
+    qemu_fdt_setprop_sized_cells(ms->fdt, frpc_rmem, "reg",
+                                 2, frpc_pool_base, 2, frpc_pool_size);
+    qemu_fdt_setprop(ms->fdt, frpc_rmem, "no-map", NULL, 0);
+    qemu_fdt_setprop_cell(ms->fdt, frpc_rmem, "phandle", frpc_pool_phandle);
 
     qemu_fdt_add_subnode(ms->fdt, hwlock);
     qemu_fdt_setprop_string(ms->fdt, hwlock, "compatible", "qcom,tcsr-mutex");
@@ -2369,7 +2400,6 @@ static void create_ivshmem(VirtMachineState *vms)
         { "echo", "glink-echo" },
         { "ip-bridge", "IP_BRIDGE" },
         { "qrtr", "IPCRTR" },
-        { "fastrpc", "fastrpc-cdsp-smd" },
     };
     for (unsigned i = 0; i < ARRAY_SIZE(channels); i++) {
         g_autofree char *node = g_strdup_printf("/glink-edge/%s",
@@ -2378,6 +2408,30 @@ static void create_ivshmem(VirtMachineState *vms)
         qemu_fdt_setprop_string(ms->fdt, node, "qcom,glink-channels",
                                 channels[i].channel);
     }
+
+    /*
+     * FastRPC channel node in the shape drivers/misc/fastrpc.c expects:
+     * a qcom,fastrpc edge child with one compute context bank.  The
+     * compute-cb has no 'reg' so the session gets sid 0, which makes
+     * the driver allocate invoke payloads from the rpmsg device's
+     * reserved DMA pool above.
+     */
+    qemu_fdt_add_subnode(ms->fdt, "/glink-edge/fastrpc");
+    qemu_fdt_setprop_string(ms->fdt, "/glink-edge/fastrpc", "compatible",
+                            "qcom,fastrpc");
+    qemu_fdt_setprop_string(ms->fdt, "/glink-edge/fastrpc",
+                            "qcom,glink-channels", "fastrpcglink-apps-dsp");
+    qemu_fdt_setprop_string(ms->fdt, "/glink-edge/fastrpc", "label", "cdsp");
+    qemu_fdt_setprop(ms->fdt, "/glink-edge/fastrpc", "qcom,non-secure-domain",
+                     NULL, 0);
+    qemu_fdt_setprop_cell(ms->fdt, "/glink-edge/fastrpc", "memory-region",
+                          frpc_pool_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, "/glink-edge/fastrpc", "#address-cells", 1);
+    qemu_fdt_setprop_cell(ms->fdt, "/glink-edge/fastrpc", "#size-cells", 0);
+
+    qemu_fdt_add_subnode(ms->fdt, "/glink-edge/fastrpc/compute-cb");
+    qemu_fdt_setprop_string(ms->fdt, "/glink-edge/fastrpc/compute-cb",
+                            "compatible", "qcom,fastrpc-compute-cb");
 }
 
 static void create_platform_bus(VirtMachineState *vms)

@@ -477,7 +477,7 @@ static void create_ivshmem(HexagonVirtMachineState *vms)
     } channels[] = {
         { "ip-bridge", "IP_BRIDGE" },
         { "qrtr", "IPCRTR" },
-        { "fastrpc", "fastrpc-cdsp-smd" },
+        { "fastrpc", "fastrpcglink-apps-dsp" },
     };
     for (unsigned i = 0; i < ARRAY_SIZE(channels); i++) {
         g_autofree char *node = g_strdup_printf("/soc/glink-edge/%s",
