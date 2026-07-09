@@ -467,11 +467,14 @@ static void create_ivshmem(HexagonVirtMachineState *vms)
     /* This machine models the DSP: the remote side of the edge */
     qemu_fdt_setprop(ms->fdt, "/soc/glink-edge", "qcom,is-remote", NULL, 0);
 
+    /*
+     * The echo channel is deliberately not listed: the AP side opens
+     * it, and the DSP-side echo driver binds to the incoming open.
+     */
     static const struct {
         const char *node;
         const char *channel;
     } channels[] = {
-        { "echo", "glink-echo" },
         { "ip-bridge", "IP_BRIDGE" },
         { "qrtr", "IPCRTR" },
         { "fastrpc", "fastrpc-cdsp-smd" },
