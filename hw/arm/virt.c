@@ -2356,6 +2356,11 @@ static void create_ivshmem(VirtMachineState *vms)
                             "qcom,glink-smem-edge");
     qemu_fdt_setprop_cell(ms->fdt, "/glink-edge", "mboxes", mbox_phandle);
     qemu_fdt_setprop_cell(ms->fdt, "/glink-edge", "qcom,remote-pid", 1);
+    /*
+     * The remote (DSP) side of a GLINK edge always runs intentless;
+     * both sides must agree, so mark the host side intentless too.
+     */
+    qemu_fdt_setprop(ms->fdt, "/glink-edge", "qcom,intentless", NULL, 0);
 
     static const struct {
         const char *node;
