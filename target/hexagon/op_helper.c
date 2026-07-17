@@ -1557,7 +1557,29 @@ void HELPER(raise_stack_overflow)(CPUHexagonState *env, uint32_t slot,
 
 void HELPER(ciad)(CPUHexagonState *env, uint32_t mask)
 {
-    g_assert_not_reached();
+    uint32_t ipendad;
+    uint32_t iad;
+    HexagonCPU *cpu;
+
+    BQL_LOCK_GUARD();
+    cpu = env_archcpu(env);
+    ipendad = hexagon_globalreg_read(cpu->globalregs, HEX_SREG_IPENDAD,
+                                     env->threadId);
+    iad = fGET_FIELD(ipendad, IPENDAD_IAD);
+    fSET_FIELD(ipendad, IPENDAD_IAD, iad & ~mask);
+    hexagon_globalreg_write(cpu->globalregs, HEX_SREG_IPENDAD,
+                            ipendad, env->threadId);
+
+    /*
+     * ds_master additionally clears the pending interrupt in the L2VIC here
+     * (l2vic_clear_interrupt()).  The L2VIC device isn't modelled on this
+     * branch yet, so record the missing effect instead.
+     */
+    qemu_log_mask(LOG_UNIMP,
+                  "%s: L2VIC clear-interrupt effect not implemented "
+                  "(mask=0x%" PRIx32 ")\n", __func__, mask);
+
+    hex_interrupt_update(env);
 }
 
 void HELPER(siad)(CPUHexagonState *env, uint32_t mask)
