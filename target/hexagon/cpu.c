@@ -327,8 +327,15 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
+
+    target_ulong ssr = env->t_sreg[HEX_SREG_SSR];
+    bool hvx_enabled = extract32(ssr, reg_field_info[SSR_XE].offset,
+                                 reg_field_info[SSR_XE].width);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED,
+                           hvx_enabled);
 #else
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX, MMU_USER_IDX);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED, 1);
 #endif
 
     return (TCGTBCPUState){ .pc = pc, .flags = hex_flags };

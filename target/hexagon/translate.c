@@ -718,6 +718,12 @@ static void gen_start_packet(DisasContext *ctx)
             i = find_next_bit(ctx->predicated_tmp_vregs, NUM_VREGS, i + 1);
         }
     }
+
+#ifndef CONFIG_USER_ONLY
+    if (ctx->pkt.pkt_has_hvx && !ctx->hvx_coproc_enabled) {
+        gen_precise_exception(HEX_CAUSE_NO_COPROC_ENABLE, ctx->pkt.pc);
+    }
+#endif
 }
 
 bool is_gather_store_insn(DisasContext *ctx)
@@ -1214,6 +1220,8 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
 #ifndef CONFIG_USER_ONLY
     ctx->num_cycles = 0;
     ctx->pcycle_enabled = FIELD_EX32(hex_flags, TB_FLAGS, PCYCLE_ENABLED);
+    ctx->hvx_coproc_enabled =
+        FIELD_EX32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED);
 #endif
 }
 
