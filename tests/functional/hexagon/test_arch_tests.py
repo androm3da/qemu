@@ -52,6 +52,13 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_guest_mode")
 
+    def test_hvx_context(self) -> None:
+        """Tests HVX context handling: vector register isolation, the
+        NO_COPROC_ENABLE exception raised when HVX is used with SSR.XE
+        clear, and context switching via SSR.XA.
+        """
+        self.run_uart_test("test_hvx_context")
+
 
 if __name__ == "__main__":
     QemuSystemTest.main()
