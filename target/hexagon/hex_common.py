@@ -1058,11 +1058,24 @@ class QRegReadWrite(Register, Hvx, ReadWrite):
         """))
 
 class GuestRegister(Register):
-    pass
+    def gen_check_impl(self, f, regno):
+        if self.is_written():
+            f.write(code_fmt(f"""\
+                if (!greg_writable(insn->regno[{regno}],
+                    {str(self.is_pair()).lower()})) {{
+                    return;
+                }}
+            """))
+        else:
+            f.write(code_fmt(f"""\
+                check_greg_impl(insn->regno[{regno}],
+                                {str(self.is_pair()).lower()});
+            """))
 
 class GuestDest(GuestRegister, Single, Dest):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
+        self.gen_check_impl(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i32 {self.reg_tcg()} = tcg_temp_new_i32();
         """))
@@ -1082,6 +1095,7 @@ class GuestSource(GuestRegister, Single, OldSource):
         """))
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
+        self.gen_check_impl(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i32 {self.reg_tcg()} = tcg_temp_new_i32();
             gen_read_greg({self.reg_tcg()}, {self.reg_num});
@@ -1092,6 +1106,7 @@ class GuestSource(GuestRegister, Single, OldSource):
 class GuestPairDest(GuestRegister, Pair, Dest):
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
+        self.gen_check_impl(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i64 {self.reg_tcg()} = tcg_temp_new_i64();
         """))
@@ -1111,6 +1126,7 @@ class GuestPairSource(GuestRegister, Pair, OldSource):
         """))
     def decl_tcg(self, f, tag, regno):
         self.decl_reg_num(f, regno)
+        self.gen_check_impl(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i64 {self.reg_tcg()} = tcg_temp_new_i64();
             gen_read_greg_pair({self.reg_tcg()}, {self.reg_num});
