@@ -107,6 +107,10 @@ class SysTestsStandaloneTests(QemuSystemTest):
         """gregs exercises guest register reads/writes, including GPCYCLE."""
         self.run_exit_zero("gregs")
 
+    def test_timer_reg(self):
+        """timer_reg reads the timer and user-timer registers."""
+        self.run_exit_zero("timer_reg")
+
     def test_semihost(self):
         self.run_console_pattern("semihost", "PASS", "-append", "arg1", "arg2")
 
