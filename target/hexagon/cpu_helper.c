@@ -209,7 +209,7 @@ uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
     uint64_t total = 0;
     CPUState *cs;
 
-    g_assert(bql_locked());
+    BQL_LOCK_GUARD();
     CPU_FOREACH(cs) {
         CPUHexagonState *thread_env = cpu_env(cs);
         total += thread_env->t_cycle_count;
