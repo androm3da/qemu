@@ -103,6 +103,10 @@ class SysTestsStandaloneTests(QemuSystemTest):
             f.write("valid\n")
         self.run_exit_zero("access", "-append", testfile)
 
+    def test_gregs(self):
+        """gregs exercises guest register reads/writes, including GPCYCLE."""
+        self.run_exit_zero("gregs")
+
     def test_semihost(self):
         self.run_console_pattern("semihost", "PASS", "-append", "arg1", "arg2")
 
