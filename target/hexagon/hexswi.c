@@ -894,8 +894,39 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
         break;
 
     case HEX_EVENT_IMPRECISE:
-        qemu_log_mask(LOG_UNIMP,
-                "Imprecise exception: this case is not yet handled");
+        /*
+         * Imprecise events (e.g. multi-TLB match, NMI) can be delivered
+         * to a thread in WAIT mode.  Clear WAIT and adjust PC so
+         * set_addresses computes the correct ELR (the instruction after
+         * the wait).
+         */
+        if (get_exe_mode(env) == HEX_EXE_MODE_WAIT) {
+            env->gpr[HEX_REG_PC] = env->wait_next_pc - 4;
+            clear_wait_mode(env);
+        }
+        switch (env->cause_code) {
+        case HEX_CAUSE_IMPRECISE_MULTI_TLB_MATCH:
+            hexagon_ssr_set_cause(env, env->cause_code);
+            set_addresses(env, 4, cs->exception_index);
+            arch_set_system_reg(env, HEX_SREG_DIAG,
+                (0x4 << 4) |
+                    (arch_get_system_reg(env, HEX_SREG_HTID) & 0xF));
+            break;
+
+        case HEX_CAUSE_IMPRECISE_NMI:
+            hexagon_ssr_set_cause(env, env->cause_code);
+            set_addresses(env, 4, cs->exception_index);
+            arch_set_system_reg(env, HEX_SREG_DIAG,
+                (0x3 << 4) |
+                    (arch_get_system_reg(env, HEX_SREG_HTID) & 0xF));
+            break;
+
+        default:
+            qemu_log_mask(LOG_UNIMP,
+                    "Imprecise exception with unhandled cause 0x%x\n",
+                    env->cause_code);
+            break;
+        }
         break;
 
     default:
