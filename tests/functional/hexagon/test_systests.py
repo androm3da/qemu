@@ -111,6 +111,10 @@ class SysTestsStandaloneTests(QemuSystemTest):
         """timer_reg reads the timer and user-timer registers."""
         self.run_exit_zero("timer_reg")
 
+    def test_mmu_multi_tlb(self):
+        """mmu_multi_tlb checks the imprecise multi-TLB-match exception."""
+        self.run_exit_zero("mmu_multi_tlb")
+
     def test_semihost(self):
         self.run_console_pattern("semihost", "PASS", "-append", "arg1", "arg2")
 
