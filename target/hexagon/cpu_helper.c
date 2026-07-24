@@ -36,7 +36,7 @@ uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
     uint64_t total = 0;
     CPUState *cs;
 
-    g_assert(bql_locked());
+    BQL_LOCK_GUARD();
     CPU_FOREACH(cs) {
         CPUHexagonState *thread_env = cpu_env(cs);
         total += thread_env->t_cycle_count;
@@ -54,11 +54,20 @@ uint32_t hexagon_get_sys_pcycle_count_low(CPUHexagonState *env)
     return (uint32_t)(hexagon_get_sys_pcycle_count(env));
 }
 
+/*
+ * The get/set family of functions all lock the BQL themselves via
+ * BQL_LOCK_GUARD(), which is a no-op if the calling thread already
+ * holds it.  This makes each function safe to call independently, and
+ * makes the read-modify-write below atomic when a setter is the
+ * outermost caller: its own guard keeps the BQL held across the read
+ * and the write, and the nested guards taken by the functions it
+ * calls just see the lock is already held.
+ */
 void hexagon_set_sys_pcycle_count_high(CPUHexagonState *env, uint32_t val)
 {
     uint64_t old;
 
-    g_assert(bql_locked());
+    BQL_LOCK_GUARD();
     old = hexagon_get_sys_pcycle_count(env);
     old = deposit64(old, 32, 32, val);
     hexagon_set_sys_pcycle_count(env, old);
@@ -68,7 +77,7 @@ void hexagon_set_sys_pcycle_count_low(CPUHexagonState *env, uint32_t val)
 {
     uint64_t old;
 
-    g_assert(bql_locked());
+    BQL_LOCK_GUARD();
     old = hexagon_get_sys_pcycle_count(env);
     old = deposit64(old, 0, 32, val);
     hexagon_set_sys_pcycle_count(env, old);
@@ -81,7 +90,7 @@ void hexagon_set_sys_pcycle_count(CPUHexagonState *env, uint64_t val)
     int num_threads;
     int64_t delta, per_thread, remainder;
 
-    g_assert(bql_locked());
+    BQL_LOCK_GUARD();
     total = hexagon_get_sys_pcycle_count(env);
 
     /* Count active threads */
