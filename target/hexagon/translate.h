@@ -93,6 +93,8 @@ typedef struct DisasContext {
     TCGv gpreg_written;
     TCGv mult_reg_written;
     bool pcycle_enabled;
+    bool hvx_coproc_enabled;
+    bool hvx_check_emitted;
     uint32_t num_cycles;
 } DisasContext;
 

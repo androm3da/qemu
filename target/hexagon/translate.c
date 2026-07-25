@@ -762,6 +762,19 @@ static void gen_start_packet(DisasContext *ctx)
             i = find_next_bit(ctx->predicated_tmp_vregs, NUM_VREGS, i + 1);
         }
     }
+
+#ifndef CONFIG_USER_ONLY
+    /*
+     * HVX is only usable while SSR:XE grants access to the coprocessor.
+     * SSR:XE is a TB flag, so one exception for the first HVX packet in
+     * the TB is enough.
+     */
+    if (ctx->pkt.pkt_has_hvx && !ctx->hvx_coproc_enabled &&
+        !ctx->hvx_check_emitted) {
+        gen_precise_exception(HEX_CAUSE_NO_COPROC_ENABLE, ctx->pkt.pc);
+        ctx->hvx_check_emitted = true;
+    }
+#endif
 }
 
 bool is_gather_store_insn(DisasContext *ctx)
@@ -1289,6 +1302,9 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
 #ifndef CONFIG_USER_ONLY
     ctx->num_cycles = 0;
     ctx->pcycle_enabled = FIELD_EX32(hex_flags, TB_FLAGS, PCYCLE_ENABLED);
+    ctx->hvx_coproc_enabled =
+        FIELD_EX32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED);
+    ctx->hvx_check_emitted = false;
 #endif
 }
 
