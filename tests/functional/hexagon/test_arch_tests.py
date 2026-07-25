@@ -90,6 +90,12 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_user_mode")
 
+    def test_sys_regs(self) -> None:
+        """Tests system control register access: EVB, SYSCFG, IMASK,
+        VID, MODECTL, cfgbase, REV, and the SSR/ELR/BADVA registers.
+        """
+        self.run_uart_test("test_sys_regs")
+
 
 if __name__ == "__main__":
     QemuSystemTest.main()
