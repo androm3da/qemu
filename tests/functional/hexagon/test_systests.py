@@ -115,6 +115,16 @@ class SysTestsStandaloneTests(QemuSystemTest):
         """mmu_multi_tlb checks the imprecise multi-TLB-match exception."""
         self.run_exit_zero("mmu_multi_tlb")
 
+    def test_double_ex(self):
+        """double_ex checks double-exception handling (write-conflict then
+        an exception while SSR:EX is set)."""
+        self.run_exit_zero("double_ex")
+
+    def test_multiple_writes(self):
+        """multiple_writes checks register write-conflict detection for
+        static, mixed, and runtime-predicated multi-write packets."""
+        self.run_exit_zero("multiple_writes")
+
     def test_semihost(self):
         self.run_console_pattern("semihost", "PASS", "-append", "arg1", "arg2")
 
