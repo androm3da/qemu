@@ -20,6 +20,8 @@
 
 #include "fpu/softfloat-types.h"
 
+#define NUM_GPREGS 32
+
 #ifndef CONFIG_USER_ONLY
 #define NUM_GREGS 32
 #define GREG_WRITES_MAX 2
