@@ -317,6 +317,9 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     CPUHexagonState *env = cpu_env(cs);
     vaddr pc = env->gpr[HEX_REG_PC];
     uint32_t hex_flags = 0;
+#ifndef CONFIG_USER_ONLY
+    uint32_t syscfg = arch_get_system_reg(env, HEX_SREG_SYSCFG);
+#endif
 
     if (pc == env->gpr[HEX_REG_SA0]) {
         hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, IS_TIGHT_LOOP, 1);
@@ -329,7 +332,8 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
 #ifndef CONFIG_USER_ONLY
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
-    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED,
+                           GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, syscfg));
 #else
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX, MMU_USER_IDX);
 #endif
