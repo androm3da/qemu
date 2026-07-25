@@ -1061,11 +1061,15 @@ static void gen_cond_return(DisasContext *ctx, TCGv_i64 dst, TCGv src,
 {
     TCGv LSB = tcg_temp_new();
     TCGLabel *skip = gen_new_label();
+    TCGLabel *end = gen_new_label();
     tcg_gen_andi_tl(LSB, pred, 1);
 
     tcg_gen_brcondi_tl(cond, LSB, 0, skip);
     gen_return(ctx, dst, src);
+    tcg_gen_br(end);
     gen_set_label(skip);
+    gen_cancel(ctx->insn->slot);
+    gen_set_label(end);
 }
 
 /* sub-instruction version (no RddV, so handle it manually) */
