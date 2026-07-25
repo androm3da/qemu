@@ -96,6 +96,13 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_sys_regs")
 
+    def test_timer(self) -> None:
+        """Tests the system timer: TIMERLO/TIMERHI, the QTimer MMIO
+        version register, and PCYCLE used as a cycle counter with
+        SYSCFG:PCYCLEEN gating.
+        """
+        self.run_uart_test("test_timer")
+
 
 if __name__ == "__main__":
     QemuSystemTest.main()
