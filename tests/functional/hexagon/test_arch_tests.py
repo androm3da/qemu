@@ -103,6 +103,13 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_timer")
 
+    def test_pmu(self) -> None:
+        """Tests the performance counters: PCYCLE monotonicity and
+        64-bit consistency, PCYCLELO/PCYCLEHI, SYSCFG:PCYCLEEN gating,
+        and UPCYCLE access under SSR:CE.
+        """
+        self.run_uart_test("test_pmu")
+
 
 if __name__ == "__main__":
     QemuSystemTest.main()
