@@ -11,6 +11,7 @@
 #include "hw/core/boards.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/hexagon/hexagon_hvx_context.h"
 #include "hex_interrupts.h"
 #include "hex_mmu.h"
 #include "system/runstate.h"
@@ -315,6 +316,78 @@ void hexagon_resume_threads(CPUHexagonState *current_env, uint32_t mask)
     }
 }
 
+/*
+ * SSR:XA is three bits wide whatever EXT_CONTEXTS says, so the values
+ * above the number of contexts a core has fold back onto the low ones:
+ *
+ *                            EXT_CONTEXTS
+ *   SSR:XA     2         4         6         8
+ *   000     ctx 0     ctx 0     ctx 0     ctx 0
+ *   001     ctx 1     ctx 1     ctx 1     ctx 1
+ *   010     ctx 0     ctx 2     ctx 2     ctx 2
+ *   011     ctx 1     ctx 3     ctx 3     ctx 3
+ *   100     ctx 0     ctx 0     ctx 4     ctx 4
+ *   101     ctx 1     ctx 1     ctx 5     ctx 5
+ *   110     ctx 0     ctx 2     ctx 2     ctx 6
+ *   111     ctx 1     ctx 3     ctx 3     ctx 7
+ */
+static unsigned hexagon_hvx_context_count(HexagonCPU *cpu)
+{
+    unsigned n;
+
+    for (n = 0; n < HVX_CONTEXTS_MAX; n++) {
+        if (!cpu->hvx_ctx[n]) {
+            break;
+        }
+    }
+    return n;
+}
+
+static unsigned hexagon_hvx_context_index(HexagonCPU *cpu, uint8_t xa)
+{
+    unsigned n = hexagon_hvx_context_count(cpu);
+
+    g_assert(n > 0);
+    if (n == 6 && xa >= 6) {
+        return xa - 6 + 2;
+    }
+    return xa % n;
+}
+
+/*
+ * Two threads using one context at the same time is undefined, but the
+ * operating system is the one that got it wrong, so only complain.
+ */
+static void hexagon_hvx_check_overcommit(CPUHexagonState *env, unsigned idx)
+{
+    CPUState *cs;
+    unsigned users = 0;
+
+    CPU_FOREACH(cs) {
+        CPUHexagonState *other = cpu_env(cs);
+
+        if (other->hvx == env->hvx &&
+            GET_SSR_FIELD(SSR_XE, other->t_sreg[HEX_SREG_SSR])) {
+            users++;
+        }
+    }
+
+    if (users > 1) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "HVX context %u is enabled for %u hardware threads "
+                      "at once, which is undefined\n", idx, users);
+    }
+}
+
+void hexagon_hvx_select_context(CPUHexagonState *env, uint32_t ssr)
+{
+    HexagonCPU *cpu = env_archcpu(env);
+    unsigned idx = hexagon_hvx_context_index(cpu, GET_SSR_FIELD(SSR_XA, ssr));
+
+    env->hvx = &cpu->hvx_ctx[idx]->regs;
+    hexagon_hvx_check_overcommit(env, idx);
+}
+
 void hexagon_modify_ssr(CPUHexagonState *env, uint32_t new, uint32_t old)
 {
     bool old_EX, old_UM, old_GM, old_IE;
@@ -336,6 +409,11 @@ void hexagon_modify_ssr(CPUHexagonState *env, uint32_t new, uint32_t old)
         (old_UM != new_UM) ||
         (old_GM != new_GM)) {
         hex_mmu_mode_change(env);
+    }
+
+    if (GET_SSR_FIELD(SSR_XA, new) != GET_SSR_FIELD(SSR_XA, old) ||
+        GET_SSR_FIELD(SSR_XE, new) != GET_SSR_FIELD(SSR_XE, old)) {
+        hexagon_hvx_select_context(env, new);
     }
 
     old_asid = GET_SSR_FIELD(SSR_ASID, old);
