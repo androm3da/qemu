@@ -38,7 +38,7 @@ void cpu_loop(CPUHexagonState *env)
      * CPUHexagonState, so its HVX context pointer still names the
      * parent's register file.  Every thread has its own.
      */
-    env->hvx = &env->hvx_ctx;
+    env->hvx = &HEXAGON_CPU(cs)->hvx_ctx;
 
     for (;;) {
         cpu_exec_start(cs);

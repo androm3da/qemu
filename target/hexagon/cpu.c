@@ -43,6 +43,7 @@
 #include "exec/page-protection.h"
 #include "exec/target_page.h"
 #include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/hexagon/hexagon_hvx_context.h"
 #endif
 
 static ObjectClass *hexagon_cpu_class_by_name(const char *cpu_model)
@@ -415,15 +416,18 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     CPUState *cs = CPU(obj);
     HexagonCPUClass *mcc = HEXAGON_CPU_GET_CLASS(obj);
     CPUHexagonState *env = cpu_env(cs);
-#ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(cs);
-#endif
 
     if (mcc->parent_phases.hold) {
         mcc->parent_phases.hold(obj, type);
     }
 
-    env->hvx = &env->hvx_ctx;
+    /* SSR is cleared below, so SSR:XA selects extension context 0. */
+#ifdef CONFIG_USER_ONLY
+    env->hvx = &cpu->hvx_ctx;
+#else
+    env->hvx = &cpu->hvx_ctx[0]->regs;
+#endif
 
     set_default_nan_mode(1, &env->fp_status);
     set_float_detect_tininess(float_tininess_before_rounding, &env->fp_status);
@@ -475,6 +479,11 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
 #ifndef CONFIG_USER_ONLY
     if (!HEXAGON_CPU(dev)->tlb) {
         error_setg(errp, "hexagon cpu requires 'tlb' link property to be set");
+        return;
+    }
+    if (!HEXAGON_CPU(dev)->hvx_ctx[0]) {
+        error_setg(errp,
+                   "hexagon cpu requires at least one 'hvx-context' link");
         return;
     }
 #endif
@@ -539,7 +548,22 @@ static void hexagon_cpu_init(Object *obj)
 {
 #ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(obj);
+    int i;
+
     qdev_init_gpio_in(DEVICE(cpu), hexagon_cpu_set_irq, 8);
+
+    /*
+     * The machine links every extension context it has to every CPU; which
+     * one the CPU uses is chosen at run time by SSR:XA, so the links
+     * themselves stay fixed once realized.
+     */
+    for (i = 0; i < HVX_CONTEXTS_MAX; i++) {
+        object_property_add_link(obj, "hvx-context[*]",
+                                 TYPE_HEXAGON_HVX_CONTEXT,
+                                 (Object **)&cpu->hvx_ctx[i],
+                                 qdev_prop_allow_set_link_before_realize,
+                                 OBJ_PROP_LINK_STRONG);
+    }
 #endif
 }
 
