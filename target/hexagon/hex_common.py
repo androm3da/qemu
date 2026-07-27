@@ -284,7 +284,15 @@ def need_ea(tag):
 
 
 def need_PC(tag):
-    return "A_IMPLICIT_READS_PC" in attribdict[tag]
+    #
+    # k0lock/tlblock re-execute themselves when the lock is contested, so
+    # their helpers need the address of the packet they belong to.
+    #
+    return (
+        "A_IMPLICIT_READS_PC" in attribdict[tag]
+        or tag == "Y2_k0lock"
+        or tag == "Y2_tlblock"
+    )
 
 
 def need_next_PC(tag):
