@@ -299,6 +299,13 @@ static void l2vic_set_irq(void *opaque, int irq, int level)
 
     if (level) {
         set_bit32(irq, s->int_pending);
+    } else if (!test_bit32(irq, s->int_type)) {
+        /*
+         * Level-triggered: de-assertion clears a pending bit that has
+         * not yet been latched into int_status, so it is not
+         * re-delivered on the next ciad.
+         */
+        clear_bit32(irq, s->int_pending);
     }
     l2vic_update(s, irq);
 }
