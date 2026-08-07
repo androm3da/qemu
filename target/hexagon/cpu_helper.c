@@ -248,32 +248,28 @@ void hexagon_resume_threads(CPUHexagonState *current_env, uint32_t mask)
 
 void hexagon_modify_ssr(CPUHexagonState *env, uint32_t new, uint32_t old)
 {
-    bool old_EX, old_UM, old_GM, old_IE;
-    bool new_EX, new_UM, new_GM, new_IE;
+    bool old_EX, old_IE;
+    bool new_EX, new_IE;
     uint8_t old_asid, new_asid;
 
     g_assert(bql_locked());
 
     old_EX = GET_SSR_FIELD(SSR_EX, old);
-    old_UM = GET_SSR_FIELD(SSR_UM, old);
-    old_GM = GET_SSR_FIELD(SSR_GM, old);
     old_IE = GET_SSR_FIELD(SSR_IE, old);
     new_EX = GET_SSR_FIELD(SSR_EX, new);
-    new_UM = GET_SSR_FIELD(SSR_UM, new);
-    new_GM = GET_SSR_FIELD(SSR_GM, new);
     new_IE = GET_SSR_FIELD(SSR_IE, new);
-
-    if ((old_EX != new_EX) ||
-        (old_UM != new_UM) ||
-        (old_GM != new_GM)) {
-        hex_mmu_mode_change(env);
-    }
 
     old_asid = GET_SSR_FIELD(SSR_ASID, old);
     new_asid = GET_SSR_FIELD(SSR_ASID, new);
+    /*
+     * Only the ASID affects translation.  EX/UM/GM just pick the mode, which
+     * is already captured in mmu_idx.  With the MMU off every mode shares
+     * MMU_KERNEL_IDX, but there the mapping is the identity with full
+     * permissions and so is mode independent too; hex_mmu_on()/hex_mmu_off()
+     * flush on the SYSCFG.MMUEN transition.
+     */
     if (new_asid != old_asid) {
-        CPUState *cs = env_cpu(env);
-        tlb_flush(cs);
+        hex_mmu_asid_change(env);
     }
 
     /* See if the interrupts have been enabled or we have exited EX mode */
