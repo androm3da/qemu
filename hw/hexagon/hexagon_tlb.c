@@ -40,8 +40,6 @@ static inline uint64_t GET_PPD(uint64_t entry)
     return GET_PTE_PPD(entry) | (GET_PTE_PA35(entry) << 24);
 }
 
-#define NO_ASID      (1 << 8)
-
 typedef enum {
     PGSIZE_4K,
     PGSIZE_16K,
@@ -57,17 +55,17 @@ typedef enum {
 
 #define NUM_PGSIZE_TYPES (PGSIZE_1G + 1)
 
-static const uint64_t encmask_2_mask[] = {
-    0x0fffLL,                           /* 4k,   0000 */
-    0x3fffLL,                           /* 16k,  0001 */
-    0xffffLL,                           /* 64k,  0010 */
-    0x3ffffLL,                          /* 256k, 0011 */
-    0xfffffLL,                          /* 1m,   0100 */
-    0x3fffffLL,                         /* 4m,   0101 */
-    0xffffffLL,                         /* 16m,  0110 */
-    0x3ffffffLL,                        /* 64m,  0111 */
-    0xfffffffLL,                        /* 256m, 1000 */
-    0x3fffffffLL,                       /* 1g,   1001 */
+static const char *pgsize_str[NUM_PGSIZE_TYPES] = {
+    "4K",
+    "16K",
+    "64K",
+    "256K",
+    "1M",
+    "4M",
+    "16M",
+    "64M",
+    "256M",
+    "1G",
 };
 
 /*
@@ -102,7 +100,7 @@ static inline uint64_t hex_tlb_phys_page_num(uint64_t entry)
 
 static inline uint64_t hex_tlb_phys_addr(uint64_t entry)
 {
-    uint64_t pagemask = encmask_2_mask[hex_tlb_pgsize_type(entry)];
+    uint64_t pagemask = hex_tlb_page_size_bytes(entry) - 1;
     uint64_t pagenum = hex_tlb_phys_page_num(entry);
     uint64_t PA = (pagenum << qemu_target_page_bits()) & (~pagemask);
     return PA;
@@ -172,13 +170,8 @@ static inline bool hex_tlb_entry_match_noperm(uint64_t entry, uint32_t asid,
                                               uint64_t VA)
 {
     if (GET_PTE_V(entry)) {
-        if (GET_PTE_G(entry)) {
-            /* Global entry - ignore ASID */
-        } else if (asid != NO_ASID) {
-            uint32_t tlb_asid = GET_PTE_ASID(entry);
-            if (tlb_asid != asid) {
-                return false;
-            }
+        if (!GET_PTE_G(entry) && GET_PTE_ASID(entry) != asid) {
+            return false;
         }
 
         uint64_t page_size = hex_tlb_page_size_bytes(entry);
@@ -251,23 +244,6 @@ static inline void hex_tlb_entry_get_perm(uint64_t entry,
     }
 }
 
-static inline bool hex_tlb_entry_match(uint64_t entry, uint8_t asid,
-                                       uint32_t VA,
-                                       MMUAccessType access_type, hwaddr *PA,
-                                       int *prot, uint64_t *size,
-                                       int32_t *excp, int *cause_code,
-                                       int mmu_idx)
-{
-    if (hex_tlb_entry_match_noperm(entry, asid, VA)) {
-        hex_tlb_entry_get_perm(entry, access_type, mmu_idx, prot, excp,
-                               cause_code);
-        *PA = hex_tlb_phys_addr(entry);
-        *size = hex_tlb_page_size_bytes(entry);
-        return true;
-    }
-    return false;
-}
-
 static bool hex_tlb_is_match(uint64_t entry1, uint64_t entry2,
                              bool consider_gbit)
 {
@@ -324,8 +300,13 @@ bool hexagon_tlb_find_match(HexagonTLBState *tlb, uint32_t asid,
     *cause_code = 0;
 
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
-        if (hex_tlb_entry_match(tlb->entries[i], asid, VA, access_type,
-                                PA, prot, size, excp, cause_code, mmu_idx)) {
+        uint64_t entry = tlb->entries[i];
+
+        if (hex_tlb_entry_match_noperm(entry, asid, VA)) {
+            hex_tlb_entry_get_perm(entry, access_type, mmu_idx, prot, excp,
+                                   cause_code);
+            *PA = hex_tlb_phys_addr(entry);
+            *size = hex_tlb_page_size_bytes(entry);
             if (*excp == 0) {
                 for (i++; i < tlb->num_entries; i++) {
                     if (hex_tlb_entry_match_noperm(tlb->entries[i], asid,
