@@ -166,9 +166,9 @@
 #define fTLBW_EXTENDED(INDEX, VALUE) \
     hex_tlbw(env, (INDEX), (VALUE))
 #define fTLB_ENTRY_OVERLAP(VALUE) \
-    (hex_tlb_check_overlap(env, VALUE, -1) != -2)
+    (hexagon_tlb_check_overlap(env_archcpu(env)->tlb, VALUE, -1) != -2)
 #define fTLB_ENTRY_OVERLAP_IDX(VALUE) \
-    hex_tlb_check_overlap(env, VALUE, -1)
+    hexagon_tlb_check_overlap(env_archcpu(env)->tlb, VALUE, -1)
 #define fTLBR(INDEX) \
     hexagon_tlb_read(env_archcpu(env)->tlb, \
                      fTLB_NONPOW2WRAP(fTLB_IDXMASK(INDEX)))

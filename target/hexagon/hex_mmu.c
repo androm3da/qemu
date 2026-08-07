@@ -104,26 +104,6 @@ uint32_t hex_tlb_lookup(CPUHexagonState *env, uint32_t ssr, uint32_t VA)
     return result;
 }
 
-/*
- * Return codes:
- * 0 or positive             index of match
- * -1                        multiple matches
- * -2                        no match
- */
-int hex_tlb_check_overlap(CPUHexagonState *env, uint64_t entry, uint64_t index)
-{
-    HexagonCPU *cpu = env_archcpu(env);
-    return hexagon_tlb_check_overlap(cpu->tlb, entry, index);
-}
-
-#ifdef CONFIG_HMP
-void dump_mmu(MonitorHMP *hmp, CPUHexagonState *env)
-{
-    HexagonCPU *cpu = env_archcpu(env);
-    hexagon_tlb_dump(hmp, cpu->tlb);
-}
-#endif
-
 static inline void print_thread(const char *str, CPUState *cs)
 {
     g_assert(bql_locked());
