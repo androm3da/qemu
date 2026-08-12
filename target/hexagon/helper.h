@@ -20,6 +20,8 @@
 
 DEF_HELPER_FLAGS_3(raise_exception, TCG_CALL_NO_RETURN, noreturn, env, i32, i32)
 DEF_HELPER_2(commit_store, void, env, int)
+DEF_HELPER_4(llsc_load, i64, env, i32, i32, int)
+DEF_HELPER_5(llsc_store, i32, env, i32, i64, i32, int)
 DEF_HELPER_3(gather_store, void, env, i32, int)
 DEF_HELPER_1(commit_hvx_stores, void, env)
 DEF_HELPER_FLAGS_4(fcircadd, TCG_CALL_NO_RWG_SE, s32, s32, s32, s32, s32)
