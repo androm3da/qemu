@@ -27,6 +27,28 @@ int err;
 
 #include "hex_test.h"
 
+static inline int32_t load_locked32(int32_t *x)
+{
+    int32_t value;
+
+    __asm__ __volatile__("%[value] = memw_locked(%[addr])"
+                         : [value] "=r"(value) : [addr] "r"(x) : "memory");
+    return value;
+}
+
+static inline int store_conditional32(int32_t *x, int32_t value)
+{
+    int result;
+
+    __asm__ __volatile__(
+        "memw_locked(%[addr], p0) = %[value]\n\t"
+        "%[result] = p0"
+        : [result] "=r"(result)
+        : [addr] "r"(x), [value] "r"(value)
+        : "p0", "memory");
+    return result != 0;
+}
+
 static inline int32_t atomic_inc32(int32_t *x)
 {
     int32_t old, dummy;
@@ -89,6 +111,51 @@ static inline int64_t atomic_dec64(int64_t *x)
 volatile int32_t tick32 = 1; /* Using volatile because we are testing atomics */
 volatile int64_t tick64 = 1; /* Using volatile because we are testing atomics */
 
+/* Volatile: handoff between the two guest threads */
+static volatile int aba_value;
+/* Volatile: handoff between the two guest threads */
+static volatile int aba_phase;
+
+static void *aba_thread(void *arg)
+{
+    while (aba_phase != 1) {
+    }
+    load_locked32((int32_t *)&aba_value);
+    check32(store_conditional32((int32_t *)&aba_value, 2), 1);
+    load_locked32((int32_t *)&aba_value);
+    check32(store_conditional32((int32_t *)&aba_value, 1), 1);
+    aba_phase = 2;
+    return NULL;
+}
+
+static void test_reservations(void)
+{
+    int32_t value = 1;
+
+    check32(store_conditional32(&value, 2), 0);
+
+    check32(load_locked32(&value), 1);
+    value = 2;
+    check32(store_conditional32(&value, 3), 1);
+    check32(value, 3);
+
+    check32(load_locked32(&value), 3);
+    getpid();
+    check32(store_conditional32(&value, 4), 0);
+
+    pthread_t thread;
+    aba_value = 1;
+    aba_phase = 0;
+    pthread_create(&thread, NULL, aba_thread, NULL);
+    check32(load_locked32((int32_t *)&aba_value), 1);
+    aba_phase = 1;
+    while (aba_phase != 2) {
+    }
+    check32(store_conditional32((int32_t *)&aba_value, 3), 0);
+    check32(aba_value, 1);
+    pthread_join(thread, NULL);
+}
+
 void *thread1_func(void *arg)
 {
     for (int i = 0; i < LOOP_CNT; i++) {
@@ -122,6 +189,7 @@ void test_pthread(void)
 
 int main(int argc, char **argv)
 {
+    test_reservations();
     test_pthread();
     puts(err ? "FAIL" : "PASS");
     return err;
