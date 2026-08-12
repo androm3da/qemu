@@ -388,6 +388,7 @@ void hexagon_cpu_soft_reset(CPUHexagonState *env)
     HexagonCPU *cpu;
 
     BQL_LOCK_GUARD();
+    hexagon_clear_llsc(env);
     env->t_sreg[HEX_SREG_SSR] = 0;
     hexagon_ssr_set_cause(env, HEX_CAUSE_RESET);
 
@@ -427,6 +428,7 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     memset(env->t_sreg, 0, sizeof(uint32_t) * NUM_SREGS);
     memset(env->greg, 0, sizeof(uint32_t) * NUM_GREGS);
     env->wait_next_pc = 0;
+    hexagon_clear_llsc(env);
     env->tlb_lock_state = HEX_LOCK_UNLOCKED;
     env->k0_lock_state = HEX_LOCK_UNLOCKED;
     env->tlb_lock_count = 0;
@@ -753,7 +755,7 @@ void hexagon_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
 #endif
 
 static const TCGCPUOps hexagon_tcg_ops = {
-    /* MTTCG not yet supported: require strict ordering */
+    /* Conservatively use strict ordering for ordinary scalar memory. */
     .guest_default_memory_order = TCG_MO_ALL,
     .mttcg_supported = false,
     .initialize = hexagon_translate_init,
