@@ -506,7 +506,10 @@
                              tcg_constant_tl(ctx->pkt.pc))
 #else
 #define fGEN_TCG_Y2_icinva(SHORTCODE) \
-    do { RsV = RsV; } while (0)
+    gen_helper_insn_cache_op(tcg_env, RsV, \
+                             tcg_constant_tl(insn->slot), \
+                             tcg_constant_tl(ctx->mem_idx), \
+                             tcg_constant_tl(ctx->pkt.pc))
 #endif
 
 /*

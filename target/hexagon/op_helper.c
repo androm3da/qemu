@@ -26,6 +26,7 @@
 #include "exec/helper-proto.h"
 #include "exec/mmap-lock.h"
 #include "exec/target_page.h"
+#include "exec/page-protection.h"
 #include "exec/translation-block.h"
 #include "fpu/softfloat.h"
 #include "exec/cpu-interrupt.h"
@@ -473,13 +474,9 @@ int32_t HELPER(vacsh_pred)(CPUHexagonState *env,
 
 #ifdef CONFIG_USER_ONLY
 void HELPER(insn_cache_op)(CPUHexagonState *env, target_ulong RsV,
-                           int slot, int mmu_idx, target_ulong PC)
+                            int slot, int mmu_idx, target_ulong PC)
 {
-    target_ulong start = RsV & ~31;
-
-    mmap_lock();
-    tb_invalidate_phys_range(env_cpu(env), start, start + 31);
-    mmap_unlock();
+    tb_flush(env_cpu(env));
 }
 #endif
 
