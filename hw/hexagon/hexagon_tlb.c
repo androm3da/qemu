@@ -7,6 +7,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/lockable.h"
 #include "hw/hexagon/hexagon_tlb.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/resettable.h"
@@ -288,14 +289,21 @@ static bool hex_tlb_is_match(uint64_t entry1, uint64_t entry2,
 
 uint64_t hexagon_tlb_read(HexagonTLBState *tlb, uint32_t index)
 {
+    QEMU_LOCK_GUARD(&tlb->lock);
     g_assert(index < tlb->num_entries);
     return tlb->entries[index];
 }
 
-void hexagon_tlb_write(HexagonTLBState *tlb, uint32_t index, uint64_t value)
+uint64_t hexagon_tlb_write(HexagonTLBState *tlb, uint32_t index,
+                           uint64_t value)
 {
+    uint64_t old;
+
+    QEMU_LOCK_GUARD(&tlb->lock);
     g_assert(index < tlb->num_entries);
+    old = tlb->entries[index];
     tlb->entries[index] = value;
+    return old;
 }
 
 bool hexagon_tlb_find_match(HexagonTLBState *tlb, uint32_t asid,
@@ -309,6 +317,7 @@ bool hexagon_tlb_find_match(HexagonTLBState *tlb, uint32_t asid,
     *excp = 0;
     *cause_code = 0;
 
+    QEMU_LOCK_GUARD(&tlb->lock);
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
         if (hex_tlb_entry_match(tlb->entries[i], asid, VA, access_type,
                                 PA, prot, size, excp, cause_code, mmu_idx)) {
@@ -324,6 +333,8 @@ uint32_t hexagon_tlb_lookup(HexagonTLBState *tlb, uint32_t asid,
 {
     uint32_t not_found = 0x80000000;
     uint32_t idx = not_found;
+
+    QEMU_LOCK_GUARD(&tlb->lock);
 
     *imprecise_exception = 0;
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
@@ -363,6 +374,7 @@ int hexagon_tlb_check_overlap(HexagonTLBState *tlb, uint64_t entry,
     int matches = 0;
     int last_match = 0;
 
+    QEMU_LOCK_GUARD(&tlb->lock);
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
         if (hex_tlb_is_match(entry, tlb->entries[i], false)) {
             matches++;
@@ -381,6 +393,7 @@ int hexagon_tlb_check_overlap(HexagonTLBState *tlb, uint64_t entry,
 
 void hexagon_tlb_dump(Monitor *mon, HexagonTLBState *tlb)
 {
+    QEMU_LOCK_GUARD(&tlb->lock);
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
         hexagon_tlb_dump_entry(mon, tlb->entries[i]);
     }
@@ -395,6 +408,8 @@ uint32_t hexagon_tlb_get_num_entries(HexagonTLBState *tlb)
 
 static void hexagon_tlb_init(Object *obj)
 {
+    HexagonTLBState *s = HEXAGON_TLB(obj);
+    qemu_mutex_init(&s->lock);
 }
 
 static void hexagon_tlb_realize(DeviceState *dev, Error **errp)
@@ -414,6 +429,7 @@ static void hexagon_tlb_unrealize(DeviceState *dev)
     HexagonTLBState *s = HEXAGON_TLB(dev);
     g_free(s->entries);
     s->entries = NULL;
+    qemu_mutex_destroy(&s->lock);
 }
 
 static void hexagon_tlb_reset_hold(Object *obj, ResetType type)
