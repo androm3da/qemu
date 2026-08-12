@@ -551,67 +551,34 @@ void gen_set_byte_i64(int N, TCGv_i64 result, TCGv src)
 
 static inline void gen_load_locked4u(TCGv dest, TCGv vaddr, int mem_index)
 {
-    tcg_gen_qemu_ld_tl(dest, vaddr, mem_index, MO_LE | MO_UL | MO_ALIGN);
-    tcg_gen_mov_tl(hex_llsc_addr, vaddr);
-    tcg_gen_mov_tl(hex_llsc_val, dest);
+    TCGv_i64 value = tcg_temp_new_i64();
+
+    gen_helper_llsc_load(value, tcg_env, vaddr, tcg_constant_i32(4),
+                         tcg_constant_i32(mem_index));
+    tcg_gen_extrl_i64_i32(dest, value);
 }
 
 static inline void gen_load_locked8u(TCGv_i64 dest, TCGv vaddr, int mem_index)
 {
-    tcg_gen_qemu_ld_i64(dest, vaddr, mem_index, MO_LE | MO_UQ | MO_ALIGN);
-    tcg_gen_mov_tl(hex_llsc_addr, vaddr);
-    tcg_gen_mov_i64(hex_llsc_val_i64, dest);
+    gen_helper_llsc_load(dest, tcg_env, vaddr, tcg_constant_i32(8),
+                         tcg_constant_i32(mem_index));
 }
 
 static inline void gen_store_conditional4(DisasContext *ctx,
                                           TCGv pred, TCGv vaddr, TCGv src)
 {
-    TCGLabel *fail = gen_new_label();
-    TCGLabel *done = gen_new_label();
-    TCGv one, zero, tmp;
+    TCGv_i64 value = tcg_temp_new_i64();
 
-    tcg_gen_brcond_tl(TCG_COND_NE, vaddr, hex_llsc_addr, fail);
-
-    one = tcg_constant_tl(0xff);
-    zero = tcg_constant_tl(0);
-    tmp = tcg_temp_new();
-    tcg_gen_atomic_cmpxchg_tl(tmp, hex_llsc_addr, hex_llsc_val, src,
-                              ctx->mem_idx, MO_32 | MO_ALIGN);
-    tcg_gen_movcond_tl(TCG_COND_EQ, pred, tmp, hex_llsc_val,
-                       one, zero);
-    tcg_gen_br(done);
-
-    gen_set_label(fail);
-    tcg_gen_movi_tl(pred, 0);
-
-    gen_set_label(done);
-    tcg_gen_movi_tl(hex_llsc_addr, ~0);
+    tcg_gen_extu_i32_i64(value, src);
+    gen_helper_llsc_store(pred, tcg_env, vaddr, value, tcg_constant_i32(4),
+                          tcg_constant_i32(ctx->mem_idx));
 }
 
 static inline void gen_store_conditional8(DisasContext *ctx,
                                           TCGv pred, TCGv vaddr, TCGv_i64 src)
 {
-    TCGLabel *fail = gen_new_label();
-    TCGLabel *done = gen_new_label();
-    TCGv_i64 one, zero, tmp;
-
-    tcg_gen_brcond_tl(TCG_COND_NE, vaddr, hex_llsc_addr, fail);
-
-    one = tcg_constant_i64(0xff);
-    zero = tcg_constant_i64(0);
-    tmp = tcg_temp_new_i64();
-    tcg_gen_atomic_cmpxchg_i64(tmp, hex_llsc_addr, hex_llsc_val_i64, src,
-                               ctx->mem_idx, MO_64 | MO_ALIGN);
-    tcg_gen_movcond_i64(TCG_COND_EQ, tmp, tmp, hex_llsc_val_i64,
-                        one, zero);
-    tcg_gen_extrl_i64_i32(pred, tmp);
-    tcg_gen_br(done);
-
-    gen_set_label(fail);
-    tcg_gen_movi_tl(pred, 0);
-
-    gen_set_label(done);
-    tcg_gen_movi_tl(hex_llsc_addr, ~0);
+    gen_helper_llsc_store(pred, tcg_env, vaddr, src, tcg_constant_i32(8),
+                          tcg_constant_i32(ctx->mem_idx));
 }
 
 #ifndef CONFIG_HEXAGON_IDEF_PARSER
