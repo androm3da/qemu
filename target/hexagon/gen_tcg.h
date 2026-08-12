@@ -490,7 +490,10 @@
 #define fGEN_TCG_Y2_dczeroa(SHORTCODE) SHORTCODE
 #define fGEN_TCG_Y2_dczeroa_nt(SHORTCODE) SHORTCODE
 
-/* In linux-user mode, these are not modelled, suppress compiler warning */
+/*
+ * dcinva, dccleaninva, and dccleana are not modelled, suppress compiler
+ * warning
+ */
 #define fGEN_TCG_Y2_dcinva(SHORTCODE) \
     do { RsV = RsV; } while (0)
 #define fGEN_TCG_Y2_dccleaninva(SHORTCODE) \
@@ -498,7 +501,10 @@
 #define fGEN_TCG_Y2_dccleana(SHORTCODE) \
     do { RsV = RsV; } while (0)
 #define fGEN_TCG_Y2_icinva(SHORTCODE) \
-    do { RsV = RsV; } while (0)
+    gen_helper_insn_cache_op(tcg_env, RsV, \
+                             tcg_constant_tl(insn->slot), \
+                             tcg_constant_tl(ctx->mem_idx), \
+                             tcg_constant_tl(ctx->pkt.pc))
 
 /*
  * allocframe(#uiV)

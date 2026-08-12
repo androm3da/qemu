@@ -25,6 +25,7 @@
 #include "qemu/main-loop.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
+#include "exec/mmap-lock.h"
 #include "exec/target_page.h"
 #include "exec/translation-block.h"
 #include "fpu/softfloat.h"
@@ -450,6 +451,16 @@ int32_t HELPER(vacsh_pred)(CPUHexagonState *env,
         PeV = deposit32(PeV, i * 2 + 1, 1, (xv > sv));
     }
     return PeV;
+}
+
+void HELPER(insn_cache_op)(CPUHexagonState *env, target_ulong RsV,
+                           int slot, int mmu_idx, target_ulong PC)
+{
+    target_ulong start = RsV & ~31;
+
+    mmap_lock();
+    tb_invalidate_phys_range(env_cpu(env), start, start + 31);
+    mmap_unlock();
 }
 
 int64_t HELPER(cabacdecbin_val)(int64_t RssV, int64_t RttV)
