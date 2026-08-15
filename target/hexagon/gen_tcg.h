@@ -1320,6 +1320,30 @@
     do { } while (0)
 #define fGEN_TCG_Y2_syncht(SHORTCODE) \
     do { } while (0)
+/*
+ * User-DMA: no DMA engine is emulated, so these retire as no-ops and the
+ * status-returning forms report zero (idle, no error).
+ */
+#define fGEN_TCG_Y6_dmstart(SHORTCODE) \
+    do { RsV = RsV; } while (0)
+#define fGEN_TCG_Y6_dmresume(SHORTCODE) \
+    do { RsV = RsV; } while (0)
+#define fGEN_TCG_Y6_dmlink(SHORTCODE) \
+    do { RsV = RsV; RtV = RtV; } while (0)
+#define fGEN_TCG_Y6_dmcfgwr(SHORTCODE) \
+    do { RsV = RsV; RtV = RtV; } while (0)
+#define fGEN_TCG_Y6_dmcfgrd(SHORTCODE) \
+    do { RsV = RsV; tcg_gen_movi_tl(RdV, 0); } while (0)
+#define fGEN_TCG_Y6_dmpoll(SHORTCODE) \
+    tcg_gen_movi_tl(RdV, 0)
+#define fGEN_TCG_Y6_dmwait(SHORTCODE) \
+    tcg_gen_movi_tl(RdV, 0)
+#define fGEN_TCG_Y6_dmpause(SHORTCODE) \
+    tcg_gen_movi_tl(RdV, 0)
+#define fGEN_TCG_Y6_dmsyncht(SHORTCODE) \
+    tcg_gen_movi_tl(RdV, 0)
+#define fGEN_TCG_Y6_dmtlbsynch(SHORTCODE) \
+    tcg_gen_movi_tl(RdV, 0)
 #define fGEN_TCG_Y2_dcfetchbo(SHORTCODE) \
     do { \
         RsV = RsV; \
