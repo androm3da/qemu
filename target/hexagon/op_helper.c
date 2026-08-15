@@ -1867,6 +1867,18 @@ static inline QEMU_ALWAYS_INLINE uint32_t sreg_read(CPUHexagonState *env,
                                                     uint32_t reg)
 {
     g_assert(bql_locked());
+    if (reg == HEX_SREG_BADVA) {
+        /*
+         * BADVA is not a register of its own: it aliases BADVA0 or BADVA1,
+         * selected by SSR[BVS].  Guest code may write BADVA0/BADVA1 directly,
+         * so it cannot be served out of the stored BADVA copy.
+         */
+        uint32_t ssr = arch_get_system_reg(env, HEX_SREG_SSR);
+        if (GET_SSR_FIELD(SSR_BVS, ssr)) {
+            return arch_get_system_reg(env, HEX_SREG_BADVA1);
+        }
+        return arch_get_system_reg(env, HEX_SREG_BADVA0);
+    }
     return arch_get_system_reg(env, reg);
 }
 
