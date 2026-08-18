@@ -18,6 +18,9 @@ QEMU_OPTS = -M V66G_1024 -kernel
 swi_ciad: swi_ciad.S $(LINK_SCRIPT)
 	$(CC) $(HEX_SYS_FLAGS) $< -o $@
 
-HEX_SYS_TESTS = swi_ciad
+k0lock-tb-end: k0lock-tb-end.S $(LINK_SCRIPT)
+	$(CC) $(HEX_SYS_FLAGS) $< -o $@
+
+HEX_SYS_TESTS = swi_ciad k0lock-tb-end
 
 TESTS += $(HEX_SYS_TESTS)
