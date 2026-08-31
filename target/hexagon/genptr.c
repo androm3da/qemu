@@ -207,21 +207,29 @@ TCGv get_result_pred(DisasContext *ctx, int pnum)
 }
 
 #ifndef CONFIG_USER_ONLY
+/*
+ * Only G0-G3 have writable storage.  Dropping a write to any other greg
+ * is unimplemented behaviour if the register is architected, and a guest
+ * error if the encoding is reserved.
+ */
 G_GNUC_UNUSED
 static bool greg_writable(int rnum, bool pair)
 {
+    int last = pair ? rnum + 1 : rnum;
+    int mask;
+
+    if (last <= HEX_GREG_G3) {
+        return true;
+    }
+
+    mask = (greg_implemented(rnum) && greg_implemented(last))
+           ? LOG_UNIMP : LOG_GUEST_ERROR;
     if (pair) {
-        if (rnum < HEX_GREG_G3) {
-            return true;
-        }
-        qemu_log_mask(LOG_UNIMP,
+        qemu_log_mask(mask,
                 "Warning: ignoring write to guest register pair G%d:%d\n",
                 rnum + 1, rnum);
     } else {
-        if (rnum <= HEX_GREG_G3) {
-            return true;
-        }
-        qemu_log_mask(LOG_UNIMP,
+        qemu_log_mask(mask,
                 "Warning: ignoring write to guest register G%d\n", rnum);
     }
     return false;
