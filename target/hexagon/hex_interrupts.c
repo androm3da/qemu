@@ -216,6 +216,12 @@ static void restore_state(CPUHexagonState *env, bool int_accepted)
     }
 }
 
+/*
+ * "dtg" is direct-to-guest: interrupts 3-5 can be taken by the guest
+ * directly, through GEVB, rather than by the monitor, which would then
+ * have to reflect them into the guest by hand.  Routing is per-interrupt
+ * (CCR:VV1-VV3) and gated on guest interrupts being enabled (CCR:GIE).
+ */
 static bool int_should_dtg(CPUHexagonState *env, int int_num)
 {
     uint32_t ccr = env->t_sreg[HEX_SREG_CCR];
