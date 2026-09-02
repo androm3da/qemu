@@ -32,7 +32,13 @@ preprocessed_mmvec_ext = custom_target(
     'mmvec_ext.preprocessed.idef',
     output: 'mmvec_ext.preprocessed.idef',
     input: imported_dir / 'mmvec_ext.idef',
-    command: [idef_parser_dir / 'prepare', '@INPUT@', '-o', '@OUTPUT@'],
+    depend_files: [
+        imported_dir / 'mappings.idef',
+        imported_dir / 'mmvec/ext-v75.idef',
+        imported_dir / 'mmvec/ext-v79.idef',
+    ],
+    command: meson.get_compiler('c').cmd_array() +
+             ['-x', 'c', '-E', '-o', '@OUTPUT@', '@INPUT@'],
 )
 generated_mmvec_ext = custom_target(
     'generated_mmvec_ext.idef',

@@ -26,7 +26,8 @@
 #ifdef QEMU_GENERATE
 #define HEXAGON_REV_BYTE() (ctx->hex_def->hex_version)
 #else
-#define HEXAGON_REV_BYTE() (hexagon_rev_byte(env))
+#define HEXAGON_REV_BYTE() \
+    (HEXAGON_CPU_GET_CLASS(env_archcpu(env))->hex_def->hex_version)
 #endif
 
 #define GET_FIELD(FIELD, REGIN) \
