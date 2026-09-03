@@ -22,6 +22,7 @@ struct HexagonVirtMachineState {
     MemoryRegion bios;
     Clock *apb_clk;
     DeviceState *virtio_mmio[VIRTIO_DEV_COUNT];
+    char *firmware_path;
 };
 
 void hexagon_load_fdt(const struct HexagonVirtMachineState *vms);
