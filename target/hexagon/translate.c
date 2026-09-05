@@ -60,7 +60,6 @@ TCGv hex_store_addr[STORES_MAX];
 TCGv_i32 hex_store_width[STORES_MAX];
 TCGv hex_store_val32[STORES_MAX];
 TCGv_i64 hex_store_val64[STORES_MAX];
-TCGv hex_cause_code;
 #ifndef CONFIG_USER_ONLY
 TCGv_i64 hex_cycle_count;
 TCGv hex_imprecise_exception;
@@ -781,8 +780,7 @@ static void gen_insn(DisasContext *ctx)
     if (GET_ATTRIB(opcode, A_ACQUIRE)) {
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
     }
-    if (opcode == Y2_barrier || opcode == Y2_syncht ||
-        opcode == Y2_isync || opcode == Y6_dmsyncht) {
+    if (opcode == Y2_barrier || opcode == Y2_syncht || opcode == Y2_isync) {
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
     }
 }
@@ -792,7 +790,6 @@ static bool pkt_needs_serialization(Packet *pkt)
 {
     return check_for_opcode(pkt, Y2_barrier) ||
            check_for_opcode(pkt, Y2_syncht) ||
-           check_for_opcode(pkt, Y6_dmsyncht) ||
            check_for_attrib(pkt, A_RLS_ALL_THREAD) ||
            check_for_attrib(pkt, A_CVI_SCATTER_RELEASE);
 }
