@@ -33,12 +33,8 @@ void cpu_loop(CPUHexagonState *env)
     target_ulong syscallnum;
     target_ulong ret;
 
-    /*
-     * A cloned thread reaches here with a copy of the parent's
-     * CPUHexagonState, so its HVX context pointer still names the
-     * parent's register file.  Every thread has its own.
-     */
-    env->hvx = &env->hvx_ctx;
+    /* env->hvx is a raw pointer memcpy()'d from the parent; repoint it. */
+    env->hvx = &HEXAGON_CPU(cs)->hvx_ctx;
 
     for (;;) {
         cpu_exec_start(cs);

@@ -162,6 +162,8 @@ struct HexagonCommonMachineState {
     DeviceState *qtimer;
     DeviceState *glob_regs;
     DeviceState *tlb;
+    /* HVX extension contexts, QOM children named hvx-context[0..n-1]. */
+    unsigned num_hvx_ctx;
 };
 
 #endif
