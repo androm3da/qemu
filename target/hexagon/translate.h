@@ -91,6 +91,7 @@ typedef struct DisasContext {
     bool pcycle_enabled;
     bool hvx_coproc_enabled;
     bool hvx_check_emitted;
+    TCGv_ptr hvx_base;
     uint32_t num_cycles;
 } DisasContext;
 
@@ -191,10 +192,17 @@ static inline void ctx_log_reg_read_pair(DisasContext *ctx, int rnum)
     ctx_log_reg_read(ctx, rnum + 1);
 }
 
+/*
+ * An HVX register operand is a base pointer plus an offset from it.  The
+ * base is ctx->hvx_base for an architectural VReg or QReg, which lives in
+ * the extension context SSR:XA selects, and tcg_env for a packet temporary
+ * such as future_VRegs or vtmp.  The two are named <name>_base and
+ * <name>_off and are passed together.
+ */
 intptr_t ctx_future_vreg_off(DisasContext *ctx, int regnum,
-                             int num, bool alloc_ok);
+                             int num, bool alloc_ok, TCGv_ptr *base);
 intptr_t ctx_tmp_vreg_off(DisasContext *ctx, int regnum,
-                          int num, bool alloc_ok);
+                          int num, bool alloc_ok, TCGv_ptr *base);
 
 static inline void ctx_start_hvx_insn(DisasContext *ctx)
 {
