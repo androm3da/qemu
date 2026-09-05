@@ -209,8 +209,10 @@ static void v68n_1024_init(ObjectClass *oc, const void *data)
  * name.  Every earlier core tops out at THREADS_MAX/8 threads; these
  * are the first to need the full 12.
  *
- * The v81 ISA is not modelled, so both machines default to the newest
- * CPU that is; -cpu selects otherwise.
+ * v81's scalar ISA is modelled (TYPE_HEXAGON_CPU_V81), so both default
+ * to it; its HVX and HMX extensions are not, so HVX packets still
+ * decode against whatever generation the gvec backend already
+ * supports.  -cpu selects a different core.
  */
 static void v81dgb_1_config_init(MachineState *machine)
 {
@@ -224,7 +226,7 @@ static void v81dgb_1_init(ObjectClass *oc, const void *data)
     mc->desc = "Hexagon V81DGB_1";
     mc->init = v81dgb_1_config_init;
     init_mc(mc);
-    mc->default_cpu_type = TYPE_HEXAGON_CPU_V73;
+    mc->default_cpu_type = TYPE_HEXAGON_CPU_V81;
     mc->max_cpus = 12;
     mc->default_cpus = 12;
 }
@@ -241,7 +243,7 @@ static void v81qa_1_init(ObjectClass *oc, const void *data)
     mc->desc = "Hexagon V81QA_1";
     mc->init = v81qa_1_config_init;
     init_mc(mc);
-    mc->default_cpu_type = TYPE_HEXAGON_CPU_V73;
+    mc->default_cpu_type = TYPE_HEXAGON_CPU_V81;
     mc->max_cpus = 12;
     mc->default_cpus = 12;
 }
