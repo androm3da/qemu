@@ -1918,6 +1918,21 @@ uint64_t HELPER(sreg_read_pair)(CPUHexagonState *env, uint32_t reg)
         sreg_read(env, reg + 1));
 }
 
+/*
+ * UPCYCLELO/UPCYCLEHI alias the system-wide PCYCLE counter.  Take the
+ * 64-bit count in one BQL section so the halves come from the same
+ * snapshot, rather than reading PCYCLELO and PCYCLEHI as two independent
+ * sreg reads that could straddle the counter advancing.
+ */
+uint64_t HELPER(upcycle_read_pair)(CPUHexagonState *env)
+{
+    uint64_t counter;
+
+    BQL_LOCK_GUARD();
+    counter = hexagon_get_sys_pcycle_count(env);
+    return GET_SSR_FIELD(SSR_CE, env->t_sreg[HEX_SREG_SSR]) ? counter : 0;
+}
+
 uint32_t HELPER(greg_read)(CPUHexagonState *env, uint32_t reg)
 
 {
