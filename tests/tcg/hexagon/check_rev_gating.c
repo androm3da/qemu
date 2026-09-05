@@ -3,14 +3,14 @@
  * are rejected with SIGILL.
  *
  * Compiled with -mv66 so that e_flags selects CPU v66. The test embeds
- * instructions from v68 up through v79 via .word encoding: the
+ * instructions from v68 up through v81 via .word encoding: the
  * assembler enforces the selected CPU's own minimum version, so none
  * of these -- including ones it otherwise knows how to assemble at
- * their own target, such as callrh or unpause -- can be written as
- * themselves in a file built for v66. The v79 non-temporal hints
- * (":nt") aren't known to the assembler at any target yet, so those
- * would need .word regardless. The revision-gated decoder must reject
- * every one of them, and linux-user must deliver SIGILL.
+ * their own target, such as callrh, unpause or tlbp(Rss32) -- can be
+ * written as themselves in a file built for v66. The v79 non-temporal
+ * hints (":nt") aren't known to the assembler at any target yet, so
+ * those would need .word regardless. The revision-gated decoder must
+ * reject every one of them, and linux-user must deliver SIGILL.
  *
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -123,6 +123,9 @@ TRY_FUNC(v79_dczeroa_nt,
 TRY_FUNC(v79_dcfetchbo_nt,
          ".word 0x9402e000    /* dcfetch(r2+#0):nt */\n")
 
+TRY_FUNC(v81_tlbpp,
+         ".word 0x6c62c000    /* r0 = tlbp(r3:2) */\n")
+
 int main(void)
 {
     struct sigaction act;
@@ -161,6 +164,8 @@ int main(void)
     assert(try_v79_pstorerif_pi_nt() == SIGILL);
     assert(try_v79_dczeroa_nt() == SIGILL);
     assert(try_v79_dcfetchbo_nt() == SIGILL);
+
+    assert(try_v81_tlbpp() == SIGILL);
 
     assert(signals_handled == expected_signals);
 
