@@ -217,5 +217,11 @@ DEF_ATTRIB(HVX_IEEE_FP_OUT_32, "HVX IEEE FP 32-bit output", "", "")
 DEF_ATTRIB(CVI_VX_NO_TMP_LD, "HVX multiply without tmp load", "", "")
 DEF_ATTRIB(HVX_FLT, "This a floating point HVX instruction.", "", "")
 
+DEF_ATTRIB(FAKEINSN, "Not a real instruction", "", "")
+DEF_ATTRIB(MAPPING, "Not real -- asm mapped", "", "")
+DEF_ATTRIB(CONDMAPPING, "Not real -- mapped based on values", "", "")
+DEF_ATTRIB(VDBG, "Vector debugging instruction", "", "")
+DEF_ATTRIB(NOTE_MPYDV_RESOURCE, "Uses both HVX multiply resources.", "", "")
+
 /* Keep this as the last attribute: */
 DEF_ATTRIB(ZZ_LASTATTRIB, "Last attribute in the file", "", "")

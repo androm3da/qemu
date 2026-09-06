@@ -22,6 +22,32 @@ gen_tcg_h = meson.current_source_dir() / 'gen_tcg.h'
 gen_tcg_hvx_h = meson.current_source_dir() / 'gen_tcg_hvx.h'
 gen_tcg_sys_h = meson.current_source_dir() / 'gen_tcg_sys.h'
 idef_parser_dir = meson.current_source_dir() / 'idef-parser'
+imported_dir = meson.current_source_dir() / 'imported'
+
+#
+# Step 0
+# Create combined ext.idef for mmvec
+#
+preprocessed_mmvec_ext = custom_target(
+    'mmvec_ext.preprocessed.idef',
+    output: 'mmvec_ext.preprocessed.idef',
+    input: imported_dir / 'mmvec_ext.idef',
+    depend_files: [
+        imported_dir / 'mappings.idef',
+        imported_dir / 'mmvec/ext-v75.idef',
+        imported_dir / 'mmvec/ext-v79.idef',
+    ],
+    command: meson.get_compiler('c').cmd_array() +
+             ['-x', 'c', '-E', '-o', '@OUTPUT@', '@INPUT@'],
+)
+generated_mmvec_ext = custom_target(
+    'generated_mmvec_ext.idef',
+    output: 'generated_mmvec_ext.idef',
+    input: preprocessed_mmvec_ext,
+    depend_files: [hex_common_py],
+    command: [python, files('gen_mmvec_ext.py'), '@INPUT@' , '@OUTPUT@'],
+)
+hexagon_ss.add(generated_mmvec_ext)
 
 #
 #  Step 1
@@ -30,6 +56,7 @@ idef_parser_dir = meson.current_source_dir() / 'idef-parser'
 gen_semantics = executable(
     'gen_semantics',
     'gen_semantics.c',
+    sources: generated_mmvec_ext,
     native: true, build_by_default: false)
 
 semantics_generated = custom_target(
