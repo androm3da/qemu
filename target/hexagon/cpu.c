@@ -772,7 +772,7 @@ void hexagon_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
 static const TCGCPUOps hexagon_tcg_ops = {
     /* Conservatively use strict ordering for ordinary scalar memory. */
     .guest_default_memory_order = TCG_MO_ALL,
-    .mttcg_supported = false,
+    .mttcg_supported = true,
     .initialize = hexagon_translate_init,
     .translate_code = hexagon_translate_code,
     .get_tb_cpu_state = hexagon_get_tb_cpu_state,
