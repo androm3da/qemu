@@ -254,7 +254,9 @@ static unsigned hexagon_hvx_context_index(HexagonCPU *cpu, uint8_t xa)
 {
     unsigned n = hexagon_hvx_context_count(cpu);
 
-    g_assert(n > 0);
+    if (n == 0) {
+        return 0;
+    }
     /* Assert rather than guess at a mapping for a non-power-of-two count. */
     g_assert(is_power_of_2(n));
     return xa % n;
@@ -291,7 +293,9 @@ unsigned hexagon_hvx_select_context(CPUHexagonState *env, uint32_t ssr)
     HexagonCPU *cpu = env_archcpu(env);
     unsigned idx = hexagon_hvx_context_index(cpu, GET_SSR_FIELD(SSR_XA, ssr));
 
-    env->hvx = &cpu->hvx_ctx[idx]->regs;
+    if (cpu->hvx_ctx[0]) {
+        env->hvx = &cpu->hvx_ctx[idx]->regs;
+    }
     return idx;
 }
 

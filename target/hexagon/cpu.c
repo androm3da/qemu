@@ -339,10 +339,12 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     }
 
 #ifndef CONFIG_USER_ONLY
+    HexagonCPU *cpu = env_archcpu(env);
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED,
+                           cpu->hvx_ctx[0] &&
                            GET_SSR_FIELD(SSR_XE, env->t_sreg[HEX_SREG_SSR]));
 #else
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX, MMU_USER_IDX);
@@ -433,7 +435,7 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
 #ifdef CONFIG_USER_ONLY
     env->hvx = &cpu->hvx_ctx;
 #else
-    env->hvx = &cpu->hvx_ctx[0]->regs;
+    env->hvx = cpu->hvx_ctx[0] ? &cpu->hvx_ctx[0]->regs : &cpu->hvx_fallback;
 #endif
 
     set_default_nan_mode(1, &env->fp_status);
@@ -498,11 +500,6 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
     if (!HEXAGON_CPU(dev)->l2vic) {
         error_setg(errp,
                    "hexagon cpu requires 'l2vic' link property to be set");
-        return;
-    }
-    if (!HEXAGON_CPU(dev)->hvx_ctx[0]) {
-        error_setg(errp,
-                   "hexagon cpu requires at least one 'hvx-context' link");
         return;
     }
 #endif

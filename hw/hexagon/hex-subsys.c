@@ -116,11 +116,6 @@ static void hvx_contexts_create(HexagonCommonMachineState *hms,
                     n, HVX_CONTEXTS_MAX);
         n = HVX_CONTEXTS_MAX;
     }
-    /*
-     * A core without HVX still needs somewhere for the register file to
-     * live, since SSR:XE alone decides whether the packet faults.
-     */
-    n = MAX(n, 1);
 
     for (i = 0; i < n; i++) {
         DeviceState *ctx = qdev_new(TYPE_HEXAGON_HVX_CONTEXT);
