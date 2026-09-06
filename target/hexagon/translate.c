@@ -750,6 +750,21 @@ static void gen_start_packet(DisasContext *ctx)
         gen_precise_exception(HEX_CAUSE_NO_COPROC_ENABLE, ctx->pkt.pc);
         ctx->hvx_check_emitted = true;
     }
+
+    /*
+     * CPU_MODE is a TB flag (SSR writes end the TB, see
+     * sreg_write_ends_tb), so the monitor-only privilege A_PRIV requires
+     * can be resolved once per packet at translation time instead of
+     * with a per-instruction runtime helper call. As with the HVX check
+     * above, one exception for the first offending packet in the TB is
+     * enough.
+     */
+    if (check_for_attrib(&ctx->pkt, A_PRIV) &&
+        ctx->cpu_mode != HEX_CPU_MODE_MONITOR &&
+        !ctx->priv_check_emitted) {
+        gen_precise_exception(HEX_CAUSE_PRIV_USER_NO_SINSN, ctx->pkt.pc);
+        ctx->priv_check_emitted = true;
+    }
 #endif
 }
 
@@ -1274,6 +1289,8 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
     ctx->hvx_coproc_enabled =
         FIELD_EX32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED);
     ctx->hvx_check_emitted = false;
+    ctx->cpu_mode = FIELD_EX32(hex_flags, TB_FLAGS, CPU_MODE);
+    ctx->priv_check_emitted = false;
 #endif
 }
 

@@ -91,6 +91,8 @@ typedef struct DisasContext {
     bool pcycle_enabled;
     bool hvx_coproc_enabled;
     bool hvx_check_emitted;
+    int cpu_mode;
+    bool priv_check_emitted;
     TCGv_ptr hvx_base;
     uint32_t num_cycles;
 } DisasContext;
