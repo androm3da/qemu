@@ -750,17 +750,21 @@ static void gen_start_packet(DisasContext *ctx)
 
     /*
      * CPU_MODE is a TB flag (SSR writes end the TB, see
-     * sreg_write_ends_tb), so the monitor-only privilege A_PRIV requires
-     * can be resolved once per packet at translation time instead of
-     * with a per-instruction runtime helper call. As with the HVX check
-     * above, one exception for the first offending packet in the TB is
-     * enough.
+     * sreg_write_ends_tb), so the privilege A_PRIV/A_GUEST require can be
+     * resolved once per packet at translation time instead of with a
+     * per-instruction runtime helper call. As with the HVX check above,
+     * one exception for the first offending packet in the TB is enough.
      */
-    if (check_for_attrib(&ctx->pkt, A_PRIV) &&
-        ctx->cpu_mode != HEX_CPU_MODE_MONITOR &&
-        !ctx->priv_check_emitted) {
-        gen_precise_exception(HEX_CAUSE_PRIV_USER_NO_SINSN, ctx->pkt.pc);
-        ctx->priv_check_emitted = true;
+    if (!ctx->priv_check_emitted) {
+        if (check_for_attrib(&ctx->pkt, A_PRIV) &&
+            ctx->cpu_mode != HEX_CPU_MODE_MONITOR) {
+            gen_precise_exception(HEX_CAUSE_PRIV_USER_NO_SINSN, ctx->pkt.pc);
+            ctx->priv_check_emitted = true;
+        } else if (check_for_attrib(&ctx->pkt, A_GUEST) &&
+                   ctx->cpu_mode == HEX_CPU_MODE_USER) {
+            gen_precise_exception(HEX_CAUSE_PRIV_USER_NO_GINSN, ctx->pkt.pc);
+            ctx->priv_check_emitted = true;
+        }
     }
 #endif
 }
