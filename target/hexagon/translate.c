@@ -60,9 +60,6 @@ TCGv hex_store_addr[STORES_MAX];
 TCGv_i32 hex_store_width[STORES_MAX];
 TCGv hex_store_val32[STORES_MAX];
 TCGv_i64 hex_store_val64[STORES_MAX];
-TCGv hex_llsc_addr;
-TCGv hex_llsc_val;
-TCGv_i64 hex_llsc_val_i64;
 #ifndef CONFIG_USER_ONLY
 TCGv_i64 hex_cycle_count;
 TCGv hex_imprecise_exception;
@@ -1431,13 +1428,7 @@ void hexagon_translate_init(void)
     }
     hex_slot_cancelled = tcg_global_mem_new(tcg_env,
         offsetof(CPUHexagonState, slot_cancelled), "slot_cancelled");
-    hex_llsc_addr = tcg_global_mem_new(tcg_env,
-        offsetof(CPUHexagonState, llsc_addr), "llsc_addr");
-    hex_llsc_val = tcg_global_mem_new(tcg_env,
-        offsetof(CPUHexagonState, llsc_val), "llsc_val");
-    hex_llsc_val_i64 = tcg_global_mem_new_i64(tcg_env,
-        offsetof(CPUHexagonState, llsc_val_i64), "llsc_val_i64");
-    hex_cause_code = tcg_global_mem_new_i32(tcg_env,
+    hex_cause_code = tcg_global_mem_new(tcg_env,
         offsetof(CPUHexagonState, cause_code), "cause_code");
 #ifndef CONFIG_USER_ONLY
     hex_cycle_count = tcg_global_mem_new_i64(tcg_env,

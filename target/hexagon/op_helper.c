@@ -17,6 +17,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/lockable.h"
 #include "accel/tcg/cpu-ldst.h"
 #include "accel/tcg/cpu-loop.h"
 #include "accel/tcg/probe.h"
@@ -33,10 +34,147 @@
 #include "sys_macros.h"
 #include "arch.h"
 #include "hex_arch_types.h"
+#include "op_helper.h"
+#ifdef CONFIG_USER_ONLY
+#include "user/cpu_loop.h"
+#endif
+
+static QemuMutex llsc_lock;
+static gsize llsc_lock_init;
+
+static void llsc_lock_acquire(void)
+{
+    if (g_once_init_enter(&llsc_lock_init)) {
+        qemu_mutex_init(&llsc_lock);
+        g_once_init_leave(&llsc_lock_init, 1);
+    }
+    qemu_mutex_lock(&llsc_lock);
+}
+
+void hexagon_clear_llsc(CPUHexagonState *env)
+{
+    llsc_lock_acquire();
+    env->llsc_valid = false;
+    qemu_mutex_unlock(&llsc_lock);
+}
+
+static void *llsc_probe(CPUHexagonState *env, target_ulong vaddr, int size,
+                        MMUAccessType access_type, int mmu_idx, hwaddr *key)
+{
+    CPUState *cs = env_cpu(env);
+    uintptr_t ra = GETPC();
+    void *host;
+
+    if (vaddr & (size - 1)) {
+#ifdef CONFIG_USER_ONLY
+        cpu_loop_exit_sigbus(cs, vaddr, access_type, ra);
+#else
+        cs->cc->tcg_ops->do_unaligned_access(cs, vaddr, access_type,
+                                             mmu_idx, ra);
+#endif
+    }
+
+#ifdef CONFIG_USER_ONLY
+    host = probe_access(env, vaddr, size, access_type, mmu_idx, ra);
+    g_assert(host != NULL);
+    *key = (uintptr_t)host;
+#else
+    CPUTLBEntryFull *full;
+
+    probe_access_full(env, vaddr, size, access_type, mmu_idx, false,
+                      &host, &full, ra);
+    *key = full->phys_addr | (vaddr & ~TARGET_PAGE_MASK);
+    if (!host && tcg_cflags_has(cs, CF_PARALLEL)) {
+        cpu_loop_exit_atomic(cs, ra);
+    }
+#endif
+    return host;
+}
+
+uint64_t HELPER(llsc_load)(CPUHexagonState *env, target_ulong vaddr,
+                           uint32_t size, int mmu_idx)
+{
+    hwaddr key;
+    void *host = llsc_probe(env, vaddr, size, MMU_DATA_LOAD, mmu_idx, &key);
+    uint64_t value;
+
+    if (!host) {
+        value = size == 4 ? cpu_ldl_le_data_ra(env, vaddr, GETPC()) :
+                            cpu_ldq_le_data_ra(env, vaddr, GETPC());
+    } else {
+        llsc_lock_acquire();
+        value = size == 4 ? le32_to_cpu(qatomic_read((uint32_t *)host)) :
+                            le64_to_cpu(qatomic_read((uint64_t *)host));
+        env->llsc_paddr = key;
+        env->llsc_size = size;
+        env->llsc_valid = true;
+        qemu_mutex_unlock(&llsc_lock);
+        return value;
+    }
+
+    llsc_lock_acquire();
+    env->llsc_paddr = key;
+    env->llsc_size = size;
+    env->llsc_valid = true;
+    qemu_mutex_unlock(&llsc_lock);
+    return value;
+}
+
+uint32_t HELPER(llsc_store)(CPUHexagonState *env, target_ulong vaddr,
+                            uint64_t value, uint32_t size, int mmu_idx)
+{
+    hwaddr key;
+    void *host;
+
+    llsc_lock_acquire();
+    if (!env->llsc_valid) {
+        qemu_mutex_unlock(&llsc_lock);
+        return 0;
+    }
+    qemu_mutex_unlock(&llsc_lock);
+    host = llsc_probe(env, vaddr, size, MMU_DATA_STORE, mmu_idx, &key);
+
+    llsc_lock_acquire();
+    bool valid = env->llsc_valid && env->llsc_paddr == key &&
+                 env->llsc_size == size;
+    env->llsc_valid = false;
+    if (!valid) {
+        qemu_mutex_unlock(&llsc_lock);
+        return 0;
+    }
+
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        CPUHexagonState *other = cpu_env(cs);
+
+        if (other->llsc_valid &&
+            key < other->llsc_paddr + other->llsc_size &&
+            other->llsc_paddr < key + size) {
+            other->llsc_valid = false;
+        }
+    }
+
+    if (host) {
+        if (size == 4) {
+            qatomic_xchg((uint32_t *)host, cpu_to_le32(value));
+        } else {
+            qatomic_xchg((uint64_t *)host, cpu_to_le64(value));
+        }
+    }
+    qemu_mutex_unlock(&llsc_lock);
+
+    if (!host) {
+        if (size == 4) {
+            cpu_stl_le_data_ra(env, vaddr, value, GETPC());
+        } else {
+            cpu_stq_le_data_ra(env, vaddr, value, GETPC());
+        }
+    }
+    return 0xff;
+}
 #include "fma_emu.h"
 #include "mmvec/mmvec.h"
 #include "mmvec/macros.h"
-#include "op_helper.h"
 #include "cpu_helper.h"
 #include "tcg/tcg-gvec-desc.h"
 #include "translate.h"

@@ -177,6 +177,9 @@ typedef struct CPUArchState {
     target_ulong llsc_addr;
     target_ulong llsc_val;
     uint64_t     llsc_val_i64;
+    hwaddr llsc_paddr;
+    uint8_t llsc_size;
+    bool llsc_valid;
 
     /* The extension context selected by SSR:XA, never NULL. */
     HexagonHVXContext *hvx;
@@ -247,7 +250,7 @@ bool hexagon_thread_is_enabled(const CPUHexagonState *thread_env);
 uint32_t hexagon_greg_read(CPUHexagonState *env, uint32_t reg);
 void hexagon_cpu_soft_reset(CPUHexagonState *env);
 #endif
-
+void hexagon_clear_llsc(CPUHexagonState *env);
 typedef HexagonCPU ArchCPU;
 
 void hexagon_translate_init(void);
