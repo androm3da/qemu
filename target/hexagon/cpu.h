@@ -216,6 +216,7 @@ struct ArchCPU {
     HexagonHVXContext hvx_ctx QEMU_ALIGNED(16);
 #else
     HexagonHVXContextState *hvx_ctx[HVX_CONTEXTS_MAX];
+    HexagonHVXContext hvx_fallback QEMU_ALIGNED(16);
     HexagonTLBState *tlb;
     uint32_t boot_addr;
     HexagonGlobalRegState *globalregs;
