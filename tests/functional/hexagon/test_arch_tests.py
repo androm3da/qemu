@@ -98,11 +98,6 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_l2vic")
 
-    @skip("PCYCLE does not increment under TCG here (upcycle, "
-          "pcycle_incrementing, pcycle_monotonic all read back a value "
-          "that never advances); a known, already-deferred gap -- see "
-          "hexagon_get_sys_pcycle_count() users and the pcycle/timing "
-          "cluster tracked separately, not new to this test")
     def test_pmu(self) -> None:
         """Tests performance monitoring unit: pcycle counter reads,
         cycle counting enable/disable via SYSCFG.
@@ -120,9 +115,6 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_threads")
 
-    @skip("QTimer sub-tests pass, but pcycle_as_timer and "
-          "pcycle_timer_gate fail on the same non-incrementing PCYCLE gap "
-          "as test_pmu (see its skip reason)")
     def test_timer(self) -> None:
         """Tests system timer: QTimer version register, TIMERLO/TIMERHI
         monotonic reads, pcycle-based timing.
@@ -148,7 +140,6 @@ class ArchTestsUart(QemuSystemTest):
         raised when SSR:XE is clear.
         """
         self.run_uart_test("test_hvx_context")
-
 
 if __name__ == "__main__":
     QemuSystemTest.main()

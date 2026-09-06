@@ -407,6 +407,28 @@ static inline void gen_read_p3_0(TCGv control_reg)
     }
 }
 
+#ifndef CONFIG_USER_ONLY
+/*
+ * UPCYCLELO/UPCYCLEHI alias the system-wide PCYCLE counter, but they only
+ * read as the counter value when SSR:CE grants user access.  Otherwise they
+ * read as zero.
+ */
+static void gen_read_upcycle_reg(int reg_num, TCGv dest)
+{
+    TCGv ssr_ce = tcg_temp_new();
+    TCGv counter = tcg_temp_new();
+    int sreg = reg_num == HEX_REG_UPCYCLEHI ? HEX_SREG_PCYCLEHI
+                                           : HEX_SREG_PCYCLELO;
+
+    gen_helper_sreg_read(counter, tcg_env, tcg_constant_i32(sreg));
+    tcg_gen_extract_tl(ssr_ce, hex_t_sreg[HEX_SREG_SSR],
+                       reg_field_info[SSR_CE].offset,
+                       reg_field_info[SSR_CE].width);
+    tcg_gen_movcond_tl(TCG_COND_NE, dest, ssr_ce, tcg_constant_tl(0),
+                       counter, tcg_constant_tl(0));
+}
+#endif
+
 /*
  * Certain control registers require special handling on read
  *     HEX_REG_P3_0_ALIASED  aliased to the predicate registers
@@ -415,6 +437,8 @@ static inline void gen_read_p3_0(TCGv control_reg)
  *                           -> assign from ctx->base.pc_next
  *     HEX_REG_QEMU_*_CNT    changes in current TB in DisasContext
  *                           -> add current TB changes to existing reg value
+ *     HEX_REG_UPCYCLE*      alias of the system PCYCLE counter
+ *                           -> read it when SSR:CE allows, else zero
  */
 static inline void gen_read_ctrl_reg(DisasContext *ctx, const int reg_num,
                                      TCGv dest)
@@ -439,6 +463,8 @@ static inline void gen_read_ctrl_reg(DisasContext *ctx, const int reg_num,
     } else if (reg_num == HEX_REG_UTIMERHI) {
         gen_helper_sreg_read(dest, tcg_env,
                              tcg_constant_i32(HEX_SREG_TIMERHI));
+    } else if (reg_num == HEX_REG_UPCYCLELO || reg_num == HEX_REG_UPCYCLEHI) {
+        gen_read_upcycle_reg(reg_num, dest);
 #else
     } else if (reg_num == HEX_REG_UTIMERLO) {
         TCGv_i64 utimer = tcg_temp_new_i64();
@@ -484,6 +510,9 @@ static inline void gen_read_ctrl_reg_pair(DisasContext *ctx, const int reg_num,
         gen_helper_sreg_read(lo, tcg_env, tcg_constant_i32(HEX_SREG_TIMERLO));
         gen_helper_sreg_read(hi, tcg_env, tcg_constant_i32(HEX_SREG_TIMERHI));
         tcg_gen_concat_i32_i64(dest, lo, hi);
+    } else if (reg_num == HEX_REG_UPCYCLELO) {
+        /* One helper call, so the pair is a coherent 64-bit snapshot. */
+        gen_helper_upcycle_read_pair(dest, tcg_env);
 #else
     } else if (reg_num == HEX_REG_UTIMERLO) {
         /* One helper call, so the pair is a coherent 64-bit snapshot. */

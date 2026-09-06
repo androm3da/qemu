@@ -329,6 +329,17 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     CPUHexagonState *env = cpu_env(cs);
     vaddr pc = env->gpr[HEX_REG_PC];
     uint32_t hex_flags = 0;
+#ifndef CONFIG_USER_ONLY
+    HexagonCPU *cpu = HEXAGON_CPU(cs);
+    uint32_t syscfg = 0;
+
+    /* SYSCFG is shared globalregs state; the read needs the BQL. */
+    BQL_LOCK_GUARD();
+    if (cpu->globalregs) {
+        syscfg = hexagon_globalreg_read(cpu->globalregs, HEX_SREG_SYSCFG,
+                                        env->threadId);
+    }
+#endif
 
     if (pc == env->gpr[HEX_REG_SA0]) {
         hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, IS_TIGHT_LOOP, 1);
@@ -341,7 +352,8 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
 #ifndef CONFIG_USER_ONLY
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
-    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED,
+                           GET_SYSCFG_FIELD(SYSCFG_PCYCLEEN, syscfg));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED,
                            GET_SSR_FIELD(SSR_XE, env->t_sreg[HEX_SREG_SSR]));
 #else

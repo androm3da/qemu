@@ -1874,7 +1874,11 @@ void HELPER(setimask)(CPUHexagonState *env, uint32_t tid, uint32_t imask)
 void HELPER(sreg_write_masked)(CPUHexagonState *env, uint32_t reg, uint32_t val)
 {
     BQL_LOCK_GUARD();
-    if (reg < HEX_SREG_GLB_START) {
+    if (reg == HEX_SREG_PCYCLELO) {
+        hexagon_set_sys_pcycle_count_low(env, val);
+    } else if (reg == HEX_SREG_PCYCLEHI) {
+        hexagon_set_sys_pcycle_count_high(env, val);
+    } else if (reg < HEX_SREG_GLB_START) {
         env->t_sreg[reg] = val;
     } else {
         HexagonCPU *cpu = env_archcpu(env);
@@ -1897,6 +1901,11 @@ static inline QEMU_ALWAYS_INLINE uint32_t sreg_read(CPUHexagonState *env,
         }
         return env->t_sreg[HEX_SREG_BADVA0];
     }
+    if (reg == HEX_SREG_PCYCLELO) {
+        return hexagon_get_sys_pcycle_count_low(env);
+    } else if (reg == HEX_SREG_PCYCLEHI) {
+        return hexagon_get_sys_pcycle_count_high(env);
+    }
     if (reg < HEX_SREG_GLB_START) {
         return env->t_sreg[reg];
     }
@@ -1917,6 +1926,21 @@ uint64_t HELPER(sreg_read_pair)(CPUHexagonState *env, uint32_t reg)
 
     return deposit64((uint64_t) sreg_read(env, reg), 32, 32,
         sreg_read(env, reg + 1));
+}
+
+/*
+ * UPCYCLELO/UPCYCLEHI alias the system-wide PCYCLE counter.  Take the
+ * 64-bit count in one BQL section so the halves come from the same
+ * snapshot, rather than reading PCYCLELO and PCYCLEHI as two independent
+ * sreg reads that could straddle the counter advancing.
+ */
+uint64_t HELPER(upcycle_read_pair)(CPUHexagonState *env)
+{
+    uint64_t counter;
+
+    BQL_LOCK_GUARD();
+    counter = hexagon_get_sys_pcycle_count(env);
+    return GET_SSR_FIELD(SSR_CE, env->t_sreg[HEX_SREG_SSR]) ? counter : 0;
 }
 
 uint32_t HELPER(greg_read)(CPUHexagonState *env, uint32_t reg)
