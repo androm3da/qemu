@@ -21,8 +21,11 @@ DEF_ATTRIB(AA_DUMMY, "Dummy Zeroth Attribute", "", "")
 /* Misc */
 DEF_ATTRIB(EXTENSION, "Extension instruction", "", "")
 
+DEF_ATTRIB(NA_NT, "Non-Allocating Non-Temporal instruction", "", "")
+
 DEF_ATTRIB(PRIV, "Not available in user or guest mode", "", "")
 DEF_ATTRIB(GUEST, "Not available in user mode", "", "")
+DEF_ATTRIB(TLBPP_INSN, "Extended (64-bit VA) TLB probe instruction", "", "")
 
 DEF_ATTRIB(FPOP, "Floating Point Operation", "", "")
 
@@ -190,6 +193,15 @@ DEF_ATTRIB(NOTE_VA_UNARY, "Combined with HVX ALU op (must be unary)", "", "")
 DEF_ATTRIB(NOTE_SLOT1_AOK, "Slot 1 is allowed", "", "")
 DEF_ATTRIB(NOTE_GUEST, "Guest mode instruction", "", "")
 DEF_ATTRIB(NOTE_BADTAG_UNDEF, "Bad tag results in undefined behavior", "", "")
+DEF_ATTRIB(NOTE_STNT, "Non Temporal Data. The :nt appendix is a hint to the "
+           "microarchitecture indicating that the life of the cache line is "
+           "short. This information is used throughout the cache hierarchy "
+           "to make replacement and allocation decisions.", "", "")
+DEF_ATTRIB(NOTE_FETCHNT, "Non Temporal Data Cache Prefetch. The :nt appendix "
+           "is a hint to the microarchitecture indicating that the life of "
+           "the cache line fetched is short. This information is used "
+           "throughout the cache hierarchy to make replacement and "
+           "allocation decisions.", "", "")
 
 /* V6 MMVector Notes for Documentation */
 DEF_ATTRIB(NOTE_SHIFT_RESOURCE, "Uses the HVX shift resource.", "", "")

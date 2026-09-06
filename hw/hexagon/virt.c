@@ -18,6 +18,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/register.h"
+#include "qemu/datadir.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "qemu/units.h"
@@ -32,6 +33,8 @@ enum {
     VIRT_UART0,
     VIRT_MMIO,
     VIRT_FDT,
+    VIRT_BOOT,
+    VIRT_GPT,
 };
 
 /*
@@ -40,12 +43,18 @@ enum {
  */
 static const int VIRTIO_IRQ_BASE = 16;
 static const int VIRT_UART0_IRQ = 15;
+static const int VIRT_GPT_IRQ = 12;
 
 static const MemMapEntry base_memmap[] = {
     [VIRT_UART0] = { 0x10000000, 0x00000200 },
     [VIRT_MMIO] = { 0x11000000, 0x00001000 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
+    [VIRT_BOOT] = { 0x99c00000, 0x00000200 },
+    [VIRT_GPT] = { 0xab000000, 0x00001000 },
 };
+
+/* Default -bios image: the loadlinux bootloader for the H2 hypervisor */
+#define VIRT_DEFAULT_FIRMWARE "hexagon_loadlinux_v81"
 
 
 static void create_fdt(HexagonVirtMachineState *vms)
@@ -205,6 +214,27 @@ static void fdt_add_cpu_nodes(const HexagonVirtMachineState *vms)
     }
 }
 
+/*
+ * A DT-only node describing the always-present pcycle-based clocksource
+ * ("HVM timer"): the guest driver reads the GPCYCLE system register
+ * directly, so this needs no backing QEMU device -- only a node for the
+ * driver to bind to.
+ */
+static void fdt_add_gpt_node(const HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    g_autofree char *nodename = g_strdup_printf("/soc/gpt@%" PRIx64,
+                                                (uint64_t)base_memmap[VIRT_GPT].base);
+    const char compat[] = "qcom,h2-timer\0hvm-timer";
+
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop(ms->fdt, nodename, "compatible", compat, sizeof(compat));
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts", VIRT_GPT_IRQ, 0);
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", 0,
+                           base_memmap[VIRT_GPT].base,
+                           base_memmap[VIRT_GPT].size);
+}
+
 static void create_virtio_devices(HexagonVirtMachineState *vms,
                                   int32_t l2vic_phandle)
 {
@@ -238,10 +268,32 @@ static void create_virtio_devices(HexagonVirtMachineState *vms,
     }
 }
 
+/*
+ * Physical address at which loadlinux (the H2 hypervisor bootloader)
+ * expects to find the Linux kernel, per
+ * Documentation/arch/hexagon/qemu-boot.rst in the Linux kernel tree.
+ */
+#define HEXAGON_VIRT_KERNEL_LOAD_ADDR 0xa0000000ULL
+
+static hwaddr virt_fdt_addr(const HexagonVirtMachineState *vms)
+{
+    /*
+     * When booting through firmware, PHYS_OFFSET is
+     * HEXAGON_VIRT_KERNEL_LOAD_ADDR; the fixed low VIRT_FDT address is
+     * below that, which Linux's setup code treats as unreachable and
+     * silently replaces with its built-in DTB. Place the FDT within
+     * the kernel's mapped RAM window instead.
+     */
+    if (vms->firmware_path) {
+        return HEXAGON_VIRT_KERNEL_LOAD_ADDR + 64 * MiB;
+    }
+    return base_memmap[VIRT_FDT].base;
+}
+
 void hexagon_load_fdt(const HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
-    hwaddr fdt_addr = base_memmap[VIRT_FDT].base;
+    hwaddr fdt_addr = virt_fdt_addr(vms);
     uint32_t fdtsize = vms->fdt_size;
 
     g_assert(fdtsize <= base_memmap[VIRT_FDT].size);
@@ -253,11 +305,28 @@ void hexagon_load_fdt(const HexagonVirtMachineState *vms)
         rom_ptr_for_as(&address_space_memory, fdt_addr, fdtsize));
 }
 
+static uint64_t kernel_translate(void *opaque, uint64_t addr)
+{
+    return addr + HEXAGON_VIRT_KERNEL_LOAD_ADDR;
+}
+
 static uint64_t load_kernel(const HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
     uint64_t entry = 0;
-    if (load_elf_ram_sym(ms->kernel_filename, NULL, NULL, NULL, &entry, NULL,
+    uint64_t (*xlate)(void *, uint64_t) = NULL;
+
+    /*
+     * When booting through firmware (loadlinux), the kernel ELF's
+     * segments are translated to HEXAGON_VIRT_KERNEL_LOAD_ADDR, where
+     * the bootloader expects to find them. Without firmware, the
+     * kernel is loaded at its own ELF-specified addresses.
+     */
+    if (vms->firmware_path) {
+        xlate = kernel_translate;
+    }
+
+    if (load_elf_ram_sym(ms->kernel_filename, NULL, xlate, NULL, &entry, NULL,
                          NULL, NULL, 0, EM_HEXAGON, 0, 0, &address_space_memory,
                          false, NULL) > 0) {
         return entry;
@@ -269,17 +338,103 @@ static uint64_t load_kernel(const HexagonVirtMachineState *vms)
 static uint64_t load_bios(HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
-    uint64_t bios_addr = 0x0;  /* Load BIOS at reset vector address 0x0 */
+    uint64_t bios_entry = 0;
     int bios_size;
 
-    bios_size = load_image_targphys(ms->firmware ?: "",
-                                    bios_addr, 64 * 1024, NULL);
+    /* Try to load as ELF first (h2 prebuilt loadlinux/kernel images) */
+    if (load_elf_ram_sym(vms->firmware_path, NULL, NULL, NULL, &bios_entry,
+                         NULL, NULL, NULL, 0, EM_HEXAGON, 0, 0,
+                         &address_space_memory, false, NULL) > 0) {
+        return bios_entry;
+    }
+
+    /* Fall back to loading as raw binary at address 0x0 */
+    bios_size = load_image_targphys(vms->firmware_path, 0x0, ms->ram_size,
+                                    NULL);
     if (bios_size < 0) {
-        error_report("Could not load BIOS '%s'", ms->firmware ?: "");
+        error_report("Could not load BIOS '%s'", vms->firmware_path);
         exit(1);
     }
 
-    return bios_addr;  /* Return entry point at address 0x0 */
+    return 0x0;
+}
+
+/*
+ * Resolve the firmware image to load: -bios <file> if given, otherwise
+ * the bundled default (loadlinux, the H2 hypervisor bootloader).
+ * "-bios none" disables firmware loading, giving direct kernel boot.
+ */
+static void resolve_firmware(HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    const char *bios_name = ms->firmware ?: VIRT_DEFAULT_FIRMWARE;
+
+    if (!strcmp(bios_name, "none")) {
+        return;
+    }
+
+    vms->firmware_path = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
+    if (!vms->firmware_path) {
+        error_report("Could not find firmware '%s'", bios_name);
+        exit(1);
+    }
+}
+
+/*
+ * Bootloader stub placed at a fixed physical address: loads the FDT
+ * address (known ahead of time, since the FDT lives at a fixed
+ * base_memmap[VIRT_FDT] location) into r1:r0 and jumps to the BIOS/
+ * hypervisor entry point. Needed because a hypervisor such as loadlinux
+ * expects the FDT address in registers, not at a fixed memory location.
+ */
+static uint32_t bootloader[] = {
+    /* Load fdt_base_low value into r0: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c606, /*   r6 = ##-0x662fffd0 } */
+    0x9186c000, /* { r0 = memw(r6+#0x0) } */
+
+    /* Load fdt_base_high value into r1: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c586, /*   r6 = ##-0x662fffd4 } */
+    0x9186c001, /* { r1 = memw(r6+#0x0) } */
+
+    /* Load next_stage_entry value into r7: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c687, /*   r7 = ##-0x662fffcc } */
+    0x9187c007, /* { r7 = memw(r7+#0x0) } */
+
+    /* Jump to next_stage_entry, r1:0 now contains fdt_base: */
+    0x5287c000, /* { jumpr r7 } */
+    0x0, /* Invalid packet */
+    0x0, /* Pad for fdt_base_high */
+    0x0, /* Pad for fdt_base_low */
+    0x0, /* Pad for next_stage_entry */
+};
+
+enum {
+    FDT_HI = 11,
+    FDT_LO,
+    ENTRY_ADDR,
+};
+
+static uint64_t setup_boot_stub(const HexagonVirtMachineState *vms,
+                                uint64_t jump_entry)
+{
+    uint64_t fdt_base = virt_fdt_addr(vms);
+    uint32_t fdt_base_low = extract64(fdt_base, 0, 32);
+    uint32_t fdt_base_high = extract64(fdt_base, 32, 32);
+    uint32_t entry_addr_low = extract64(jump_entry, 0, 32);
+
+    bootloader[FDT_LO] = cpu_to_le32(fdt_base_low);
+    bootloader[FDT_HI] = cpu_to_le32(fdt_base_high);
+    bootloader[ENTRY_ADDR] = cpu_to_le32(entry_addr_low);
+
+    uint64_t bootl_base = base_memmap[VIRT_BOOT].base;
+    g_assert(sizeof(bootloader) <= base_memmap[VIRT_BOOT].size);
+    rom_add_blob_fixed_as("bootloader", bootloader, sizeof(bootloader),
+                          bootl_base, &address_space_memory);
+
+    return bootl_base;
 }
 
 static void do_cpu_reset(void *opaque)
@@ -298,6 +453,8 @@ static void virt_init(MachineState *ms)
 
     create_fdt(vms);
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs", ms->kernel_cmdline);
+
+    resolve_firmware(vms);
 
     vms->sys = get_system_memory();
 
@@ -326,10 +483,22 @@ static void virt_init(MachineState *ms)
         qemu_register_reset(do_cpu_reset, cpu);
 
         if (i == 0) {
-            if (ms->kernel_filename) {
+            if (vms->firmware_path && ms->kernel_filename) {
+                /*
+                 * Both BIOS and kernel specified: load the BIOS (e.g.
+                 * loadlinux hypervisor) and the kernel ELF, then jump
+                 * to the BIOS entry via a bootloader stub that passes
+                 * the FDT address in registers.
+                 */
+                uint64_t bios_entry = load_bios(vms);
+                load_kernel(vms);
+                uint64_t stub_entry = setup_boot_stub(vms, bios_entry);
+                qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr",
+                                     stub_entry);
+            } else if (ms->kernel_filename) {
                 uint64_t entry = load_kernel(vms);
                 qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr", entry);
-            } else if (ms->firmware) {
+            } else if (vms->firmware_path) {
                 uint64_t entry = load_bios(vms);
                 qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr", entry);
             }
@@ -349,6 +518,7 @@ static void virt_init(MachineState *ms)
     fdt_add_cpu_nodes(vms);
     clk_phandle = fdt_add_clocks(vms);
     fdt_add_uart(vms, VIRT_UART0, clk_phandle, l2vic_phandle);
+    fdt_add_gpt_node(vms);
 
     hexagon_load_fdt(vms);
 }

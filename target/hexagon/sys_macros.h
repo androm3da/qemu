@@ -177,6 +177,15 @@
                      fTLB_NONPOW2WRAP(fTLB_IDXMASK(INDEX)))
 #define fTLBP(TLBHI) \
     hex_tlb_lookup(env, ((TLBHI) >> 12), ((TLBHI) << 12))
+/*
+ * tlbpp probes with a 64-bit VA, for addressing beyond what the
+ * modelled TLB (and the DMA-integrated TLB it can probe past) covers.
+ * Not implemented yet: log and read back 0, the same "not found"
+ * value fTLBP() returns for a real miss.
+ */
+#define fTLBPP(TLBHI) ({ \
+    qemu_log_mask(LOG_UNIMP, "tlbpp (TLB Probe64) is not implemented\n"); \
+    0; })
 #define iic_flush_cache(p)
 
 #define fIN_DEBUG_MODE(TNUM) ({ \
