@@ -33,6 +33,9 @@ void cpu_loop(CPUHexagonState *env)
     target_ulong syscallnum;
     target_ulong ret;
 
+    /* env->hvx is a raw pointer memcpy()'d from the parent; repoint it. */
+    env->hvx = &HEXAGON_CPU(cs)->hvx_ctx;
+
     for (;;) {
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);

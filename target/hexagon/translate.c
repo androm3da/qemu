@@ -82,13 +82,17 @@ static const char * const hexagon_prednames[] = {
 };
 
 intptr_t ctx_future_vreg_off(DisasContext *ctx, int regnum,
-                          int num, bool alloc_ok)
+                          int num, bool alloc_ok, TCGv_ptr *base)
 {
     intptr_t offset;
 
     if (!ctx->need_commit) {
-        return offsetof(CPUHexagonState, VRegs[regnum]);
+        /* Short circuit: the write goes straight to the register file. */
+        *base = ctx->hvx_base;
+        return offsetof(HexagonHVXContext, VRegs[regnum]);
     }
+
+    *base = tcg_env;
 
     /* See if it is already allocated */
     for (int i = 0; i < ctx->future_vregs_idx; i++) {
@@ -108,9 +112,11 @@ intptr_t ctx_future_vreg_off(DisasContext *ctx, int regnum,
 }
 
 intptr_t ctx_tmp_vreg_off(DisasContext *ctx, int regnum,
-                          int num, bool alloc_ok)
+                          int num, bool alloc_ok, TCGv_ptr *base)
 {
     intptr_t offset;
+
+    *base = tcg_env;
 
     /* See if it is already allocated */
     for (int i = 0; i < ctx->tmp_vregs_idx; i++) {
@@ -691,33 +697,60 @@ static void gen_start_packet(DisasContext *ctx)
         }
     }
 
+    /*
+     * The architectural HVX register file is not at a fixed offset from
+     * env: it belongs to the extension context SSR:XA selects, which the
+     * hardware threads share.  Load the pointer to it once per packet.
+     */
+    ctx->hvx_base = NULL;
+    if (ctx->pkt.pkt_has_hvx) {
+        ctx->hvx_base = tcg_temp_new_ptr();
+        tcg_gen_ld_ptr(ctx->hvx_base, tcg_env,
+                       offsetof(CPUHexagonState, hvx));
+    }
+
     /* Preload the predicated HVX registers into future_VRegs and tmp_VRegs */
     if (!bitmap_empty(ctx->predicated_future_vregs, NUM_VREGS)) {
         i = find_first_bit(ctx->predicated_future_vregs, NUM_VREGS);
         while (i < NUM_VREGS) {
+            TCGv_ptr VdV_base;
             const intptr_t VdV_off =
-                ctx_future_vreg_off(ctx, i, 1, true);
-            intptr_t src_off = offsetof(CPUHexagonState, VRegs[i]);
-            tcg_gen_gvec_mov(MO_64, VdV_off,
-                             src_off,
-                             sizeof(MMVector),
-                             sizeof(MMVector));
+                ctx_future_vreg_off(ctx, i, 1, true, &VdV_base);
+            intptr_t src_off = offsetof(HexagonHVXContext, VRegs[i]);
+            tcg_gen_gvec_mov_var(MO_64, VdV_base, VdV_off,
+                                 ctx->hvx_base, src_off,
+                                 sizeof(MMVector),
+                                 sizeof(MMVector));
             i = find_next_bit(ctx->predicated_future_vregs, NUM_VREGS, i + 1);
         }
     }
     if (!bitmap_empty(ctx->predicated_tmp_vregs, NUM_VREGS)) {
         i = find_first_bit(ctx->predicated_tmp_vregs, NUM_VREGS);
         while (i < NUM_VREGS) {
+            TCGv_ptr VdV_base;
             const intptr_t VdV_off =
-                ctx_tmp_vreg_off(ctx, i, 1, true);
-            intptr_t src_off = offsetof(CPUHexagonState, VRegs[i]);
-            tcg_gen_gvec_mov(MO_64, VdV_off,
-                             src_off,
-                             sizeof(MMVector),
-                             sizeof(MMVector));
+                ctx_tmp_vreg_off(ctx, i, 1, true, &VdV_base);
+            intptr_t src_off = offsetof(HexagonHVXContext, VRegs[i]);
+            tcg_gen_gvec_mov_var(MO_64, VdV_base, VdV_off,
+                                 ctx->hvx_base, src_off,
+                                 sizeof(MMVector),
+                                 sizeof(MMVector));
             i = find_next_bit(ctx->predicated_tmp_vregs, NUM_VREGS, i + 1);
         }
     }
+
+#ifndef CONFIG_USER_ONLY
+    /*
+     * HVX is only usable while SSR:XE grants access to the coprocessor.
+     * SSR:XE is a TB flag, so one exception for the first HVX packet in
+     * the TB is enough.
+     */
+    if (ctx->pkt.pkt_has_hvx && !ctx->hvx_coproc_enabled &&
+        !ctx->hvx_check_emitted) {
+        gen_precise_exception(HEX_CAUSE_NO_COPROC_ENABLE, ctx->pkt.pc);
+        ctx->hvx_check_emitted = true;
+    }
+#endif
 }
 
 bool is_gather_store_insn(DisasContext *ctx)
@@ -1004,31 +1037,34 @@ static void gen_commit_hvx(DisasContext *ctx)
     /*
      *    for (i = 0; i < ctx->vreg_log_idx; i++) {
      *        int rnum = ctx->vreg_log[i];
-     *        env->VRegs[rnum] = env->future_VRegs[rnum];
+     *        env->hvx->VRegs[rnum] = env->future_VRegs[rnum];
      *    }
      */
     for (i = 0; i < ctx->vreg_log_idx; i++) {
         int rnum = ctx->vreg_log[i];
-        intptr_t dstoff = offsetof(CPUHexagonState, VRegs[rnum]);
-        intptr_t srcoff = ctx_future_vreg_off(ctx, rnum, 1, false);
+        intptr_t dstoff = offsetof(HexagonHVXContext, VRegs[rnum]);
+        TCGv_ptr srcbase;
+        intptr_t srcoff = ctx_future_vreg_off(ctx, rnum, 1, false, &srcbase);
         size_t size = sizeof(MMVector);
 
-        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+        tcg_gen_gvec_mov_var(MO_64, ctx->hvx_base, dstoff, srcbase, srcoff,
+                             size, size);
     }
 
     /*
      *    for (i = 0; i < ctx->qreg_log_idx; i++) {
      *        int rnum = ctx->qreg_log[i];
-     *        env->QRegs[rnum] = env->future_QRegs[rnum];
+     *        env->hvx->QRegs[rnum] = env->future_QRegs[rnum];
      *    }
      */
     for (i = 0; i < ctx->qreg_log_idx; i++) {
         int rnum = ctx->qreg_log[i];
-        intptr_t dstoff = offsetof(CPUHexagonState, QRegs[rnum]);
+        intptr_t dstoff = offsetof(HexagonHVXContext, QRegs[rnum]);
         intptr_t srcoff = offsetof(CPUHexagonState, future_QRegs[rnum]);
         size_t size = sizeof(MMQReg);
 
-        tcg_gen_gvec_mov(MO_64, dstoff, srcoff, size, size);
+        tcg_gen_gvec_mov_var(MO_64, ctx->hvx_base, dstoff, tcg_env, srcoff,
+                             size, size);
     }
 
     if (pkt_has_hvx_store(&ctx->pkt)) {
@@ -1235,6 +1271,9 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
 #ifndef CONFIG_USER_ONLY
     ctx->num_cycles = 0;
     ctx->pcycle_enabled = FIELD_EX32(hex_flags, TB_FLAGS, PCYCLE_ENABLED);
+    ctx->hvx_coproc_enabled =
+        FIELD_EX32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED);
+    ctx->hvx_check_emitted = false;
 #endif
 }
 

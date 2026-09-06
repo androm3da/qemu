@@ -43,6 +43,7 @@
 #include "exec/page-protection.h"
 #include "exec/target_page.h"
 #include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/hexagon/hexagon_hvx_context.h"
 #endif
 
 static ObjectClass *hexagon_cpu_class_by_name(const char *cpu_model)
@@ -191,7 +192,7 @@ static void print_vreg(FILE *f, CPUHexagonState *env, int regnum,
     if (skip_if_zero) {
         bool nonzero_found = false;
         for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) {
-            if (env->VRegs[regnum].ub[i] != 0) {
+            if (env->hvx->VRegs[regnum].ub[i] != 0) {
                 nonzero_found = true;
                 break;
             }
@@ -202,9 +203,10 @@ static void print_vreg(FILE *f, CPUHexagonState *env, int regnum,
     }
 
     qemu_fprintf(f, "  v%d = ( ", regnum);
-    qemu_fprintf(f, "0x%02x", env->VRegs[regnum].ub[MAX_VEC_SIZE_BYTES - 1]);
+    qemu_fprintf(f, "0x%02x",
+                 env->hvx->VRegs[regnum].ub[MAX_VEC_SIZE_BYTES - 1]);
     for (int i = MAX_VEC_SIZE_BYTES - 2; i >= 0; i--) {
-        qemu_fprintf(f, ", 0x%02x", env->VRegs[regnum].ub[i]);
+        qemu_fprintf(f, ", 0x%02x", env->hvx->VRegs[regnum].ub[i]);
     }
     qemu_fprintf(f, " )\n");
 }
@@ -220,7 +222,7 @@ static void print_qreg(FILE *f, CPUHexagonState *env, int regnum,
     if (skip_if_zero) {
         bool nonzero_found = false;
         for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; i++) {
-            if (env->QRegs[regnum].ub[i] != 0) {
+            if (env->hvx->QRegs[regnum].ub[i] != 0) {
                 nonzero_found = true;
                 break;
             }
@@ -232,9 +234,9 @@ static void print_qreg(FILE *f, CPUHexagonState *env, int regnum,
 
     qemu_fprintf(f, "  q%d = ( ", regnum);
     qemu_fprintf(f, "0x%02x",
-                 env->QRegs[regnum].ub[MAX_VEC_SIZE_BYTES / 8 - 1]);
+                 env->hvx->QRegs[regnum].ub[MAX_VEC_SIZE_BYTES / 8 - 1]);
     for (int i = MAX_VEC_SIZE_BYTES / 8 - 2; i >= 0; i--) {
-        qemu_fprintf(f, ", 0x%02x", env->QRegs[regnum].ub[i]);
+        qemu_fprintf(f, ", 0x%02x", env->hvx->QRegs[regnum].ub[i]);
     }
     qemu_fprintf(f, " )\n");
 }
@@ -340,6 +342,8 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, HVX_COPROC_ENABLED,
+                           GET_SSR_FIELD(SSR_XE, env->t_sreg[HEX_SREG_SSR]));
 #else
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX, MMU_USER_IDX);
 #endif
@@ -418,13 +422,18 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     CPUState *cs = CPU(obj);
     HexagonCPUClass *mcc = HEXAGON_CPU_GET_CLASS(obj);
     CPUHexagonState *env = cpu_env(cs);
-#ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(cs);
-#endif
 
     if (mcc->parent_phases.hold) {
         mcc->parent_phases.hold(obj, type);
     }
+
+    /* SSR is cleared below, so SSR:XA selects extension context 0. */
+#ifdef CONFIG_USER_ONLY
+    env->hvx = &cpu->hvx_ctx;
+#else
+    env->hvx = &cpu->hvx_ctx[0]->regs;
+#endif
 
     set_default_nan_mode(1, &env->fp_status);
     set_float_detect_tininess(float_tininess_before_rounding, &env->fp_status);
@@ -489,6 +498,11 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
                    "hexagon cpu requires 'l2vic' link property to be set");
         return;
     }
+    if (!HEXAGON_CPU(dev)->hvx_ctx[0]) {
+        error_setg(errp,
+                   "hexagon cpu requires at least one 'hvx-context' link");
+        return;
+    }
 #endif
 
     qemu_init_vcpu(cs);
@@ -551,7 +565,23 @@ static void hexagon_cpu_init(Object *obj)
 {
 #ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(obj);
+    int i;
+
     qdev_init_gpio_in(DEVICE(cpu), hexagon_cpu_set_irq, 8);
+
+    /*
+     * The context count varies per machine, so this is an array link
+     * property rather than the fixed DEFINE_PROP_LINK the sibling
+     * l2vic/global-regs links use.  STRONG since a context is shared
+     * with other CPUs, not private CPU state.
+     */
+    for (i = 0; i < HVX_CONTEXTS_MAX; i++) {
+        object_property_add_link(obj, "hvx-context[*]",
+                                 TYPE_HEXAGON_HVX_CONTEXT,
+                                 (Object **)&cpu->hvx_ctx[i],
+                                 qdev_prop_allow_set_link_before_realize,
+                                 OBJ_PROP_LINK_STRONG);
+    }
 #endif
 }
 
