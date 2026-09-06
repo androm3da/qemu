@@ -273,6 +273,7 @@ void hex_tlb_unlock(CPUHexagonState *env)
         SET_SYSCFG_FIELD(unlock_thread, SYSCFG_TLBLOCK, 1);
         cpu_interrupt(cs, CPU_INTERRUPT_TLB_UNLOCK);
         hex_interrupt_update(unlock_thread);
+        qemu_cpu_kick(cs);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_MMU)) {

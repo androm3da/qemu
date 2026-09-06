@@ -1409,6 +1409,7 @@ static void hex_k0_unlock(CPUHexagonState *env)
         SET_SYSCFG_FIELD(unlock_thread, SYSCFG_K0LOCK, 1);
         cpu_interrupt(cs, CPU_INTERRUPT_K0_UNLOCK);
         hex_interrupt_update(unlock_thread);
+        qemu_cpu_kick(cs);
     }
 
 }
