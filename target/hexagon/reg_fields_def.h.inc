@@ -114,9 +114,17 @@ DEF_REG_FIELD(IMASK_MASK, 0, 16)
 DEF_REG_FIELD(STID_PRIO, 16, 8)
 DEF_REG_FIELD(STID_STID, 0, 8)
 
-/* MODECTL fields */
-DEF_REG_FIELD(MODECTL_E, 0, 8)
-DEF_REG_FIELD(MODECTL_W, 16, 8)
+/*
+ * MODECTL fields.
+ *
+ * E and W are each 16 bits wide, covering the full register: cores with
+ * more than 8 hardware threads (e.g. V81QA_1/V81DGB_1, up to 12) need the
+ * extra bits.  Confirmed against the h2 hypervisor's own MODECTL_E_MASK
+ * (0x0000ffff) / MODECTL_W_MASK (0xffff0000) in kernel/util/max/max.h,
+ * which the guest kernel applies unconditionally regardless of ARCHV.
+ */
+DEF_REG_FIELD(MODECTL_E, 0, 16)
+DEF_REG_FIELD(MODECTL_W, 16, 16)
 
 DEF_REG_FIELD(CCR_L1ICP, 0, 2)
 DEF_REG_FIELD(CCR_L1DCP, 3, 2)
