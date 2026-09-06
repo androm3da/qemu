@@ -59,17 +59,6 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_guest_mode")
 
-    @skip("multi-context HVX (SSR.XA / extension contexts) is not "
-          "implemented: target/hexagon has no per-context vector register "
-          "file or 'hvx-contexts' CPU property, so context isolation, "
-          "switch, and handoff all fail, and no exception is raised on "
-          "HVX access with SSR.XE=0")
-    def test_hvx_context(self) -> None:
-        """Tests HVX vector register context save/restore across
-        multiple hardware threads with independent HVX state.
-        """
-        self.run_uart_test("test_hvx_context")
-
     def test_int_steering(self) -> None:
         """Tests interrupt steering via priority-based routing to
         specific threads using STID priority and iassignw.
