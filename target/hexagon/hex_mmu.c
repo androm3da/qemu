@@ -271,6 +271,14 @@ void hex_tlb_unlock(CPUHexagonState *env)
         unlock_thread->tlb_lock_state = HEX_LOCK_QUEUED;
         SET_SYSCFG_FIELD(unlock_thread, SYSCFG_TLBLOCK, 1);
         cpu_interrupt(cs, CPU_INTERRUPT_TLB_UNLOCK);
+        /*
+         * cpu_interrupt() only kicks the target vCPU's host thread when
+         * qemu_cpu_is_self() is false; under round-robin TCG every vCPU
+         * shares one host thread, so that check is always true and the
+         * halted waiter is never actually woken without an explicit kick
+         * (see hex_interrupt_update()'s identical fix for CPU_INTERRUPT_SWI).
+         */
+        qemu_cpu_kick(cs);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_MMU)) {

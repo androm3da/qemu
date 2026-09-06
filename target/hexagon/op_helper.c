@@ -1390,6 +1390,14 @@ static void hex_k0_unlock(CPUHexagonState *env)
         unlock_thread->k0_lock_state = HEX_LOCK_QUEUED;
         SET_SYSCFG_FIELD(unlock_thread, SYSCFG_K0LOCK, 1);
         cpu_interrupt(cs, CPU_INTERRUPT_K0_UNLOCK);
+        /*
+         * cpu_interrupt() only kicks the target vCPU's host thread when
+         * qemu_cpu_is_self() is false; under round-robin TCG every vCPU
+         * shares one host thread, so that check is always true and the
+         * halted waiter is never actually woken without an explicit kick
+         * (see hex_interrupt_update()'s identical fix for CPU_INTERRUPT_SWI).
+         */
+        qemu_cpu_kick(cs);
     }
 
 }
