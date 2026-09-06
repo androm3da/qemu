@@ -101,13 +101,14 @@ class SysTestsStandaloneTests(QemuSystemTest):
 
     @unittest.skip("hsv39_tlb uses tlbp with a 64-bit register pair "
                    "(Y2_tlbpp), which needs -mv81 or higher (see "
-                   "standalone_systests/CMakeLists.txt upstream). That "
-                   "encoding does not exist in target/hexagon at all yet "
-                   "(only the 32-bit-register Y2_tlbp is defined), so the "
-                   "guest hangs after printing its first test line instead "
-                   "of taking an invalid-instruction trap -- needs a new "
-                   "encoding and semantics, not just enabling an existing "
-                   "one on the v81 CPU model")
+                   "standalone_systests/CMakeLists.txt upstream). QEMU "
+                   "decodes Y2_tlbpp as an unimplemented stub "
+                   "(target/hexagon: add Y2_tlbpp as an unimplemented "
+                   "stub), but the guest still hangs after printing its "
+                   "first test line rather than taking an "
+                   "invalid-instruction trap -- confirmed still hanging "
+                   "after that stub landed, so real semantics are needed, "
+                   "not just a decode entry")
     def test_hsv39_tlb(self):
         """tlbp with a 64-bit register pair (Y2_tlbpp), v81+ only."""
         self.run_exit_zero("hsv39_tlb", "-cpu", "v81")
