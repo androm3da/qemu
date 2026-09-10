@@ -39,6 +39,15 @@ void cpu_loop(CPUHexagonState *env)
         cpu_exec_end(cs);
         qemu_process_cpu_events(cs);
 
+        /*
+         * Returning to guest code for a trap or a signal clears the
+         * load-locked reservation, so any exit other than QEMU's own
+         * atomic replay and yield paths implies this.
+         */
+        if (trapnr != EXCP_ATOMIC && trapnr != EXCP_YIELD) {
+            env->llsc_addr = ~0;
+        }
+
         switch (trapnr) {
         case EXCP_INTERRUPT:
             /* just indicate that signals should be handled asap */
