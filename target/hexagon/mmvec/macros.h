@@ -24,6 +24,8 @@
 #include "accel/tcg/getpc.h"
 #include "accel/tcg/probe.h"
 #include "mmvec/hvx_ieee_fp.h"
+#include "mmvec/mmvec_qfloat.h"
+#include <math.h>
 
 #define fBFLOAT()
 #define fCVI_VX_NO_TMP_LD()
@@ -365,5 +367,114 @@
 #define fCMPGT_BF(A, B) fCMPGT_SF((uint32_t)(A) << 16, (uint32_t)(B) << 16)
 #define fCMPEQ_SF(A, B) cmpeq_sf(A, B, &env->hvx_fp_status)
 #define fCMPEQ_HF(A, B) cmpeq_hf(A, B, &env->hvx_fp_status)
+
+/*
+ * qfloat extended-precision bits: GET/SET_VEXT access a vector element's
+ * "ext" nibble/2-bit-pair (see MMVector.ext in mmvec.h); fGETQFEXT_BIT/
+ * fSETQFEXT_BIT instead view that same storage as one raw bit per source
+ * byte, for the vgetqfext/vsetqfext instructions.
+ */
+#define GET_VEXT(VSRC, IDX, SIZE) get_extended_bits(&(VSRC), IDX, SIZE)
+#define SET_VEXT(VDEST, IDX, SIZE, VAL) \
+    set_extended_bits(&(VDEST), IDX, SIZE, VAL)
+#define GET_VEXT_PAIR(VSRC, PAIR_IDX, IDX, SIZE) \
+    get_extended_bits(&(VSRC).v[PAIR_IDX], IDX, SIZE)
+
+#define fGETQFEXT_BIT(REG, BITNO) \
+    (0x1 & ((REG).ext[(BITNO) / 4] >> ((BITNO) % 4)))
+#define fSETQFEXT_BIT(REG, BITNO, VAL) \
+    do { \
+        uint32_t __tmp = (VAL); \
+        (REG).ext[(BITNO) / 4] &= ~(1 << ((BITNO) % 4)); \
+        (REG).ext[(BITNO) / 4] |= (__tmp & 1) << ((BITNO) % 4); \
+    } while (0)
+
+#define fPARSEHF(A) parse_hf(A)
+#define fPARSESF(A) parse_sf_daz(A, is_daz_mode(env))
+#define fPARSEQF_EXT(SIZE, A, IDX) \
+    parse_extqf##SIZE((A).qf##SIZE[IDX], get_extended_bits(&(A), IDX, SIZE))
+
+#define fQF_VILOG2(TYPE, A, AEXT) qf_vilog2(TYPE, A, AEXT)
+
+#define fCONVERT_QF32_TO_SF(A, AEXT) conv_sf_extqf32(A, AEXT, CVI_QFRND_MODE)
+#define fCONVERT_QF32_TO_HF(A, AEXT) conv_hf_extqf32(A, AEXT, CVI_QFRND_MODE)
+#define fCONVERT_QF32_TO_BF(A, AEXT) conv_qf32_to_bf(A, AEXT, CVI_QFRND_MODE)
+#define fCONVERT_QF16_TO_HF(A, AEXT) conv_hf_extqf16(A, AEXT, CVI_QFRND_MODE)
+
+/*
+ * Add/multiply two qfloat operands in the extended-precision "unfloat"
+ * domain and round+pack the result (mantissa/exponent and ext nibble) back
+ * into V.qf{16,32}[i] / V's ext bits at index i.  V6_vsub is implemented by
+ * the idef bodies as fQFADD with the second operand's sign pre-flipped.
+ */
+#define fQFADD(SIZE, V, A, B) \
+    do { \
+        if ((A).inf || (A).nan || (B).inf || (B).nan) { \
+            uint64_t sig_36 = handle_infinity_nan_add((A), (B), \
+                extqf##SIZE##_pos_nan, extqf##SIZE##_neg_nan, \
+                extqf##SIZE##_pos_inf, extqf##SIZE##_neg_inf); \
+            (V).qf##SIZE[i] = sig_36 >> 4; \
+            set_extended_bits(&(V), i, SIZE, sig_36 & EXT##SIZE##_BITMASK); \
+        } else { \
+            INIT_UNFLOAT(r) \
+            int sub = is_unfloat_neg(A) ^ is_unfloat_neg(B); \
+            r.exp = get_unfloat_exp((A), (B), sub, E_MIN_EXTQF##SIZE); \
+            double sig_a = ldexp((A).sig, (A).exp - r.exp); \
+            double sig_b = ldexp((B).sig, (B).exp - r.exp); \
+            double sig_low; \
+            if ((A).sign) { \
+                sig_a = -sig_a; \
+            } \
+            if ((B).sign) { \
+                sig_b = -sig_b; \
+            } \
+            r.sig = sig_a + sig_b; \
+            if ((A).exp > (B).exp) { \
+                sig_low = (sig_a - r.sig) + sig_b; \
+            } else { \
+                sig_low = (sig_b - r.sig) + sig_a; \
+            } \
+            r.inexact = signum(sig_low); \
+            r.sign = (A).sign && (B).sign; \
+            if (r.sign) { \
+                r.sig = -r.sig; \
+                r.inexact = -r.inexact; \
+            } \
+            r.zero = is_unfloat_zero(r); \
+            uint64_t result = rnd_sat_extqf##SIZE(r, CVI_QFRND_MODE); \
+            (V).qf##SIZE[i] = (result >> (SIZE / 8)) & QF##SIZE##_BITMASK; \
+            set_extended_bits(&(V), i, SIZE, result & EXT##SIZE##_BITMASK); \
+        } \
+    } while (0)
+
+#define fQFMPY(SIZE, V, A, B) \
+    do { \
+        if ((A).inf || (A).nan || (B).inf || (B).nan) { \
+            uint64_t sig_36 = handle_infinity_nan_mpy((A), (B), \
+                extqf##SIZE##_pos_nan, extqf##SIZE##_neg_nan, \
+                extqf##SIZE##_pos_inf, extqf##SIZE##_neg_inf); \
+            (V).qf##SIZE[i] = sig_36 >> 4; \
+            set_extended_bits(&(V), i, SIZE, sig_36 & EXT##SIZE##_BITMASK); \
+        } else { \
+            INIT_UNFLOAT(r) \
+            r.exp = (A).exp + (B).exp; \
+            r.sig = (A).sig * (B).sig; \
+            if ((A).sign ^ (B).sign) { \
+                r.sig = -r.sig; \
+            } \
+            r.sign = ((A).sign ^ (B).sign) ^ is_double_neg((A).sig) ^ \
+                     is_double_neg((B).sig) ^ ((A).sig < 0 && (B).sig < 0); \
+            if (r.sign) { \
+                r.sig = -r.sig; \
+            } \
+            r.zero = is_unfloat_zero(r); \
+            if (r.zero) { \
+                r.exp = E_MIN_EXTQF##SIZE; \
+            } \
+            uint64_t result = rnd_sat_extqf##SIZE(r, CVI_QFRND_MODE); \
+            (V).qf##SIZE[i] = (result >> (SIZE / 8)) & QF##SIZE##_BITMASK; \
+            set_extended_bits(&(V), i, SIZE, result & EXT##SIZE##_BITMASK); \
+        } \
+    } while (0)
 
 #endif
