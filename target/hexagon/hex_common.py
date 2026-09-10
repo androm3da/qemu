@@ -440,6 +440,24 @@ class Hvx:
         return "void *"
     def helper_arg_name(self):
         return f"{self.reg_tcg()}_void"
+    def gen_clear_ext(self, f):
+        f.write(code_fmt(f"""\
+                tcg_gen_gvec_dup_imm(MO_8,
+                    {self.hvx_off()} + offsetof(MMVector, ext),
+                    MAX_VEC_SIZE_BYTES / 4, MAX_VEC_SIZE_BYTES / 4,
+                    V_EXTENDED_BYTEVAL);
+            """))
+    def gen_clear_ext_pair(self, f):
+        f.write(code_fmt(f"""\
+                tcg_gen_gvec_dup_imm(MO_8,
+                    {self.hvx_off()} + offsetof(MMVector, ext),
+                    MAX_VEC_SIZE_BYTES / 4, MAX_VEC_SIZE_BYTES / 4,
+                    V_EXTENDED_BYTEVAL);
+                tcg_gen_gvec_dup_imm(MO_8,
+                    {self.hvx_off()} + sizeof(MMVector) + offsetof(MMVector, ext),
+                    MAX_VEC_SIZE_BYTES / 4, MAX_VEC_SIZE_BYTES / 4,
+                    V_EXTENDED_BYTEVAL);
+            """))
 
 #
 # Every register is either Dest or OldSource or NewSource or ReadWrite
@@ -786,6 +804,7 @@ class VRegDest(Register, Hvx, Dest):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
+        self.gen_clear_ext(f)
     def gen_zero(self, f):
         f.write(code_fmt(f"""\
                 tcg_gen_gvec_dup_imm(MO_64, {self.hvx_off()},
@@ -857,6 +876,7 @@ class VRegReadWrite(Register, Hvx, ReadWrite):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
+        self.gen_clear_ext(f)
     def gen_zero(self, f):
         f.write(code_fmt(f"""\
                 tcg_gen_gvec_dup_imm(MO_64, {self.hvx_off()},
@@ -894,6 +914,7 @@ class VRegTmp(Register, Hvx, ReadWrite):
                                  vreg_src_off(ctx, {self.reg_num}),
                                  sizeof(MMVector), sizeof(MMVector));
             """))
+        self.gen_clear_ext(f)
     def gen_zero(self, f):
         f.write(code_fmt(f"""\
                 tcg_gen_gvec_dup_imm(MO_64, {self.hvx_off()},
@@ -932,6 +953,7 @@ class VRegPairDest(Register, Hvx, Dest):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
+        self.gen_clear_ext_pair(f)
     def gen_zero(self, f):
         f.write(code_fmt(f"""\
             tcg_gen_gvec_dup_imm(MO_64, {self.hvx_off()},
@@ -996,6 +1018,7 @@ class VRegPairReadWrite(Register, Hvx, ReadWrite):
                 TCGv_ptr {self.reg_tcg()} = tcg_temp_new_ptr();
                 tcg_gen_addi_ptr({self.reg_tcg()}, tcg_env, {self.hvx_off()});
             """))
+        self.gen_clear_ext_pair(f)
     def gen_zero(self, f):
         f.write(code_fmt(f"""\
             tcg_gen_gvec_dup_imm(MO_64, {self.hvx_off()},
