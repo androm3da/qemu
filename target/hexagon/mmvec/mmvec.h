@@ -46,15 +46,7 @@ typedef union {
     bfloat16 bf[MAX_VEC_SIZE_BYTES / 2];
 } MMVector;
 
-typedef union {
-    uint64_t ud[2 * MAX_VEC_SIZE_BYTES / 8];
-    int64_t   d[2 * MAX_VEC_SIZE_BYTES / 8];
-    uint32_t uw[2 * MAX_VEC_SIZE_BYTES / 4];
-    int32_t   w[2 * MAX_VEC_SIZE_BYTES / 4];
-    uint16_t uh[2 * MAX_VEC_SIZE_BYTES / 2];
-    int16_t   h[2 * MAX_VEC_SIZE_BYTES / 2];
-    uint8_t  ub[2 * MAX_VEC_SIZE_BYTES / 1];
-    int8_t    b[2 * MAX_VEC_SIZE_BYTES / 1];
+typedef struct {
     MMVector v[2];
 } MMVectorPair;
 

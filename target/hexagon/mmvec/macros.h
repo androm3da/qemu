@@ -309,8 +309,8 @@
 #endif
 #define fVFOREACH(WIDTH, VAR) for (VAR = 0; VAR < fVELEM(WIDTH); VAR++)
 #define fVARRAY_ELEMENT_ACCESS(ARRAY, TYPE, INDEX) \
-    ARRAY.v[(INDEX) / (fVECSIZE() / (sizeof(ARRAY.TYPE[0])))].TYPE[(INDEX) % \
-    (fVECSIZE() / (sizeof(ARRAY.TYPE[0])))]
+    ARRAY.v[(INDEX) / (fVECSIZE() / (sizeof(ARRAY.v[0].TYPE[0])))].TYPE[(INDEX) % \
+    (fVECSIZE() / (sizeof(ARRAY.v[0].TYPE[0])))]
 
 #define fVSATDW(U, V) fVSATW(((((long long)U) << 32) | fZXTN(32, 64, V)))
 #define fVASL_SATHI(U, V) fVSATW(((U) << 1) | ((V) >> 31))
