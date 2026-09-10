@@ -1486,9 +1486,9 @@ static void gen_vreg_load(DisasContext *ctx, intptr_t dstoff, TCGv src,
 {
     TCGv_i64 tmp = tcg_temp_new_i64();
     if (aligned) {
-        tcg_gen_andi_tl(src, src, ~((int32_t)sizeof(MMVector) - 1));
+        tcg_gen_andi_tl(src, src, ~((int32_t)MAX_VEC_SIZE_BYTES - 1));
     }
-    for (int i = 0; i < sizeof(MMVector) / 8; i++) {
+    for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; i++) {
         tcg_gen_qemu_ld_i64(tmp, src, ctx->mem_idx, MO_LE | MO_UQ);
         tcg_gen_addi_tl(src, src, 8);
         tcg_gen_st_i64(tmp, tcg_env, dstoff + i * 8);
@@ -1510,11 +1510,11 @@ static void gen_vreg_store(DisasContext *ctx, TCGv EA, intptr_t srcoff,
     tcg_gen_movi_tl(hex_vstore_pending[slot], 1);
     if (aligned) {
         tcg_gen_andi_tl(hex_vstore_addr[slot], EA,
-                        ~((int32_t)sizeof(MMVector) - 1));
+                        ~((int32_t)MAX_VEC_SIZE_BYTES - 1));
     } else {
         tcg_gen_mov_tl(hex_vstore_addr[slot], EA);
     }
-    tcg_gen_movi_tl(hex_vstore_size[slot], sizeof(MMVector));
+    tcg_gen_movi_tl(hex_vstore_size[slot], MAX_VEC_SIZE_BYTES);
 
     /* Copy the data to the vstore buffer */
     tcg_gen_gvec_mov(MO_64, dstoff, srcoff, sizeof(MMVector), sizeof(MMVector));
@@ -1530,8 +1530,8 @@ static void gen_vreg_masked_store(DisasContext *ctx, TCGv EA, intptr_t srcoff,
 
     tcg_gen_movi_tl(hex_vstore_pending[slot], 1);
     tcg_gen_andi_tl(hex_vstore_addr[slot], EA,
-                    ~((int32_t)sizeof(MMVector) - 1));
-    tcg_gen_movi_tl(hex_vstore_size[slot], sizeof(MMVector));
+                    ~((int32_t)MAX_VEC_SIZE_BYTES - 1));
+    tcg_gen_movi_tl(hex_vstore_size[slot], MAX_VEC_SIZE_BYTES);
 
     /* Copy the data to the vstore buffer */
     tcg_gen_gvec_mov(MO_64, dstoff, srcoff, sizeof(MMVector), sizeof(MMVector));
@@ -1552,7 +1552,7 @@ static void vec_to_qvec(size_t size, intptr_t dstoff, intptr_t srcoff)
     TCGv_i64 zero = tcg_constant_i64(0);
     TCGv_i64 ones = tcg_constant_i64(~0);
 
-    for (int i = 0; i < sizeof(MMVector) / 8; i++) {
+    for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; i++) {
         tcg_gen_ld_i64(tmp, tcg_env, srcoff + i * 8);
         tcg_gen_movi_i64(mask, 0);
 

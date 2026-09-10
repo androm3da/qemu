@@ -208,7 +208,7 @@
 #define SCATTER_OP_WRITE_TO_MEM(TYPE) \
     do { \
         ra = GETPC(); \
-        for (int i = 0; i < sizeof(MMVector); i += sizeof(TYPE)) { \
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES; i += sizeof(TYPE)) { \
             if (test_bit(i, env->vtcm_log.mask)) { \
                 TYPE dst = 0; \
                 TYPE inc = 0; \
@@ -230,7 +230,7 @@
     } while (0)
 #define SCATTER_OP_PROBE_MEM(TYPE, MMU_IDX, RETADDR) \
     do { \
-        for (int i = 0; i < sizeof(MMVector); i += sizeof(TYPE)) { \
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES; i += sizeof(TYPE)) { \
             if (test_bit(i, env->vtcm_log.mask)) { \
                 for (int j = 0; j < sizeof(TYPE); j++) { \
                     probe_read(env, env->vtcm_log.va[i + j], 1, \

@@ -759,12 +759,12 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
     fGEN_TCG_PRED_VEC_LOAD(fLSBOLD(PvV), \
                            fEA_REG(RxV), \
                            VdV_off, \
-                           fPM_I(RxV, siV * sizeof(MMVector)))
+                           fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 #define fGEN_TCG_PRED_VEC_LOAD_npred_pi \
     fGEN_TCG_PRED_VEC_LOAD(fLSBOLDNOT(PvV), \
                            fEA_REG(RxV), \
                            VdV_off, \
-                           fPM_I(RxV, siV * sizeof(MMVector)))
+                           fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 
 #define fGEN_TCG_V6_vL32b_pred_pi(SHORTCODE) \
     fGEN_TCG_PRED_VEC_LOAD_pred_pi
@@ -793,12 +793,12 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
 
 #define fGEN_TCG_PRED_VEC_LOAD_pred_ai \
     fGEN_TCG_PRED_VEC_LOAD(fLSBOLD(PvV), \
-                           fEA_RI(RtV, siV * sizeof(MMVector)), \
+                           fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                            VdV_off, \
                            do {} while (0))
 #define fGEN_TCG_PRED_VEC_LOAD_npred_ai \
     fGEN_TCG_PRED_VEC_LOAD(fLSBOLDNOT(PvV), \
-                           fEA_RI(RtV, siV * sizeof(MMVector)), \
+                           fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                            VdV_off, \
                            do {} while (0))
 
@@ -883,7 +883,8 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
     } while (0)
 
 #define fGEN_TCG_NEWVAL_VEC_STORE_pi \
-    fGEN_TCG_NEWVAL_VEC_STORE(fEA_REG(RxV), fPM_I(RxV, siV * sizeof(MMVector)))
+    fGEN_TCG_NEWVAL_VEC_STORE(fEA_REG(RxV), \
+                              fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 
 #define fGEN_TCG_V6_vS32b_new_pi(SHORTCODE) \
     fGEN_TCG_NEWVAL_VEC_STORE_pi
@@ -891,7 +892,7 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
     fGEN_TCG_NEWVAL_VEC_STORE_pi
 
 #define fGEN_TCG_NEWVAL_VEC_STORE_ai \
-    fGEN_TCG_NEWVAL_VEC_STORE(fEA_RI(RtV, siV * sizeof(MMVector)), \
+    fGEN_TCG_NEWVAL_VEC_STORE(fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                               do { } while (0))
 
 #define fGEN_TCG_V6_vS32b_new_ai(SHORTCODE) \
@@ -924,22 +925,22 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
     fGEN_TCG_PRED_VEC_STORE(fLSBOLD(PvV), \
                             fEA_REG(RxV), \
                             VsV_off, ALIGN, \
-                            fPM_I(RxV, siV * sizeof(MMVector)))
+                            fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 #define fGEN_TCG_PRED_VEC_STORE_npred_pi(ALIGN) \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLDNOT(PvV), \
                             fEA_REG(RxV), \
                             VsV_off, ALIGN, \
-                            fPM_I(RxV, siV * sizeof(MMVector)))
+                            fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 #define fGEN_TCG_PRED_VEC_STORE_new_pred_pi \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLD(PvV), \
                             fEA_REG(RxV), \
                             OsN_off, true, \
-                            fPM_I(RxV, siV * sizeof(MMVector)))
+                            fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 #define fGEN_TCG_PRED_VEC_STORE_new_npred_pi \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLDNOT(PvV), \
                             fEA_REG(RxV), \
                             OsN_off, true, \
-                            fPM_I(RxV, siV * sizeof(MMVector)))
+                            fPM_I(RxV, siV * MAX_VEC_SIZE_BYTES))
 
 #define fGEN_TCG_V6_vS32b_pred_pi(SHORTCODE) \
     fGEN_TCG_PRED_VEC_STORE_pred_pi(true)
@@ -964,22 +965,22 @@ static inline void assert_vhist_tmp(DisasContext *ctx)
 
 #define fGEN_TCG_PRED_VEC_STORE_pred_ai(ALIGN) \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLD(PvV), \
-                            fEA_RI(RtV, siV * sizeof(MMVector)), \
+                            fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                             VsV_off, ALIGN, \
                             do { } while (0))
 #define fGEN_TCG_PRED_VEC_STORE_npred_ai(ALIGN) \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLDNOT(PvV), \
-                            fEA_RI(RtV, siV * sizeof(MMVector)), \
+                            fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                             VsV_off, ALIGN, \
                             do { } while (0))
 #define fGEN_TCG_PRED_VEC_STORE_new_pred_ai \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLD(PvV), \
-                            fEA_RI(RtV, siV * sizeof(MMVector)), \
+                            fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                             OsN_off, true, \
                             do { } while (0))
 #define fGEN_TCG_PRED_VEC_STORE_new_npred_ai \
     fGEN_TCG_PRED_VEC_STORE(fLSBOLDNOT(PvV), \
-                            fEA_RI(RtV, siV * sizeof(MMVector)), \
+                            fEA_RI(RtV, siV * MAX_VEC_SIZE_BYTES), \
                             OsN_off, true, \
                             do { } while (0))
 
