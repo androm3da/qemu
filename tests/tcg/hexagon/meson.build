@@ -44,6 +44,8 @@ tests += {
   'fp_hvx_cmp.c': {'cflags': [cflags, '-mv73', '-mhvx', '-mhvx-ieee-fp']},
   'v81_hvx.c': {'cflags': [cflags, '-mv81', '-mhvx', '-mhvx-ieee-fp'],
                'qemu_args': ['-cpu', 'v81']},
+  'v81_hvx_ext.c': {'cflags': [cflags, '-mv81', '-mhvx', '-mhvx-ieee-fp'],
+               'qemu_args': ['-cpu', 'v81']},
   'hvx_misc.c': {'cflags': [cflags, '-mhvx', '-mv69']},
   'hvx_histogram.c': {
     'cflags': [cflags, '-mhvx', '-Wno-gnu-folding-constant',
