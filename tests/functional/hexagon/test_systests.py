@@ -102,5 +102,12 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_pcycle(self):
         self.run_exit_zero("pcycle")
 
+    def test_swi_wait(self):
+        """Interrupt-delivery test gated on pcycle_pause() busy-waits."""
+        self.run_exit_zero("swi_wait")
+
+    def test_standalone_vec(self):
+        self.run_exit_zero("standalone_vec")
+
 if __name__ == "__main__":
     QemuSystemTest.main()
