@@ -144,16 +144,6 @@ uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
     return total;
 }
 
-uint32_t hexagon_get_sys_pcycle_count_high(CPUHexagonState *env)
-{
-    return (uint32_t)(hexagon_get_sys_pcycle_count(env) >> 32);
-}
-
-uint32_t hexagon_get_sys_pcycle_count_low(CPUHexagonState *env)
-{
-    return (uint32_t)(hexagon_get_sys_pcycle_count(env));
-}
-
 /*
  * Every function in this family takes the BQL itself, so the guard below
  * holds it across the read-modify-write.  Nested guards are no-ops.
