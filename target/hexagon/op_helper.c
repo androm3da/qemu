@@ -1942,6 +1942,35 @@ uint64_t HELPER(sreg_read_pair)(CPUHexagonState *env, uint32_t reg)
         sreg_read(env, reg + 1));
 }
 
+/*
+ * UPCYCLELO/UPCYCLEHI are the user-visible alias of PCYCLELO/PCYCLEHI,
+ * readable without privilege but only once SSR[CE] is set.
+ */
+uint32_t HELPER(upcycle_read)(CPUHexagonState *env, uint32_t sreg)
+{
+    uint32_t ssr;
+
+    BQL_LOCK_GUARD();
+    ssr = env->t_sreg[HEX_SREG_SSR];
+    if (!GET_SSR_FIELD(SSR_CE, ssr)) {
+        return 0;
+    }
+    return sreg_read(env, sreg);
+}
+
+uint64_t HELPER(upcycle_read_pair)(CPUHexagonState *env)
+{
+    uint32_t ssr;
+
+    BQL_LOCK_GUARD();
+    ssr = env->t_sreg[HEX_SREG_SSR];
+    if (!GET_SSR_FIELD(SSR_CE, ssr)) {
+        return 0;
+    }
+    return deposit64((uint64_t) sreg_read(env, HEX_SREG_PCYCLELO), 32, 32,
+        sreg_read(env, HEX_SREG_PCYCLEHI));
+}
+
 uint32_t HELPER(greg_read)(CPUHexagonState *env, uint32_t reg)
 
 {
