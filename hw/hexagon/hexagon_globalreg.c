@@ -18,6 +18,7 @@
 #include "target/hexagon/cpu.h"
 #include "target/hexagon/hex_regs.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
 #include "trace.h"
 #include "qapi/error.h"
 
@@ -129,6 +130,8 @@ static const uint32_t global_sreg_immut_masks[NUM_SREGS] = {
     [HEX_SREG_ISDBEN] = 0xfffffffe,
     [HEX_SREG_TIMERLO] = IMMUTABLE,
     [HEX_SREG_TIMERHI] = IMMUTABLE,
+    [HEX_SREG_PCYCLELO] = IMMUTABLE,
+    [HEX_SREG_PCYCLEHI] = IMMUTABLE,
 };
 
 static void hexagon_globalreg_init(Object *obj)
@@ -157,6 +160,78 @@ static inline bool is_timer_reg(uint32_t reg)
     return reg == HEX_SREG_TIMERLO || reg == HEX_SREG_TIMERHI;
 }
 
+static inline bool is_pcycle_reg(uint32_t reg)
+{
+    return reg == HEX_SREG_PCYCLELO || reg == HEX_SREG_PCYCLEHI;
+}
+
+/*
+ * MODECTL packs a per-thread enabled mask in bits[0:15] (MODECTL_E) and a
+ * per-thread wait mask in bits[16:31] (MODECTL_W). A thread is RUN or DEBUG
+ * (either of which should keep PCYCLE advancing) iff its E bit is set and
+ * its W bit is clear, so "some thread is neither WAIT nor OFF" reduces to
+ * a plain bitmask check with no need to visit every CPU.
+ */
+static inline bool modectl_any_thread_running(uint32_t modectl)
+{
+    uint32_t enabled = modectl & 0xffff;
+    uint32_t waiting = modectl >> 16;
+    return (enabled & ~waiting) != 0;
+}
+
+static uint64_t pcycle_value_now(HexagonGlobalRegState *s)
+{
+    uint64_t cycles = s->g_pcycle_base;
+
+    if (s->pcycle_running) {
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        int64_t elapsed = now - s->pcycle_start_ns;
+
+        /*
+         * elapsed can go negative right after a migration/snapshot load,
+         * before the destination's virtual clock has caught up to the
+         * restored pcycle_start_ns. Treat that as "no time has passed yet"
+         * rather than feeding a negative value into muldiv64() as unsigned.
+         */
+        if (elapsed > 0) {
+            cycles += muldiv64(elapsed, s->pcycle_freq_hz,
+                               NANOSECONDS_PER_SECOND);
+        }
+    }
+    return cycles;
+}
+
+static void pcycle_fold(HexagonGlobalRegState *s)
+{
+    int64_t now;
+    int64_t elapsed;
+
+    if (!s->pcycle_running) {
+        return;
+    }
+
+    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    elapsed = now - s->pcycle_start_ns;
+    if (elapsed > 0) {
+        s->g_pcycle_base += muldiv64(elapsed, s->pcycle_freq_hz,
+                                     NANOSECONDS_PER_SECOND);
+    }
+    s->pcycle_start_ns = now;
+}
+static void pcycle_set_running(HexagonGlobalRegState *s, bool running)
+{
+    if (running == s->pcycle_running) {
+        return;
+    }
+    if (running) {
+        s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    } else {
+        s->g_pcycle_base = pcycle_value_now(s);
+    }
+    s->pcycle_running = running;
+    trace_hexagon_pcycle_run_state(s->pcycle_running, s->g_pcycle_base);
+}
+
 static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
 {
     if (is_vid_reg(reg)) {
@@ -167,6 +242,11 @@ static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
                 qct_qtimer_get_timer_lo(s->qtimer) :
                 qct_qtimer_get_timer_hi(s->qtimer);
     }
+    if (is_pcycle_reg(reg)) {
+        uint64_t value = pcycle_value_now(s);
+        return reg == HEX_SREG_PCYCLELO ?
+                (uint32_t)value : (uint32_t)(value >> 32);
+    }
     return s->regs[reg];
 }
 
@@ -176,6 +256,9 @@ static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
     s->regs[reg] = value;
     if (is_vid_reg(reg)) {
         l2vic_update_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1, value);
+    }
+    if (reg == HEX_SREG_MODECTL) {
+        pcycle_set_running(s, modectl_any_thread_running(value));
     }
 }
 
@@ -256,6 +339,7 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
     memset(s->regs, 0, sizeof(s->regs));
 
     s->g_pcycle_base = 0;
+    s->pcycle_running = false;
 
     s->regs[HEX_SREG_EVB] = s->boot_evb;
     s->regs[HEX_SREG_CFGBASE] = HEXAGON_CFG_ADDR_BASE(s->config_table_addr);
@@ -275,6 +359,8 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
     }
     s->regs[HEX_SREG_ISDBEN] = isdben_val;
     s->regs[HEX_SREG_MODECTL] = 0x1;
+    pcycle_set_running(s,
+                       modectl_any_thread_running(s->regs[HEX_SREG_MODECTL]));
 
     /*
      * These register indices are placeholders in these arrays
@@ -314,15 +400,46 @@ static void hexagon_globalreg_realize(DeviceState *dev, Error **errp)
         error_setg(errp, "hexagon_globalreg: 'qtimer' link property not set");
         return;
     }
+    if (!s->pcycle_freq_hz) {
+        error_setg(errp, "hexagon_globalreg: 'pcycle-freq-hz' must be nonzero");
+        return;
+    }
+}
+
+static int hexagon_globalreg_pre_save(void *opaque)
+{
+    HexagonGlobalRegState *s = opaque;
+
+    /* Migrate a stable value, not a timestamp from the source clock. */
+    pcycle_fold(s);
+    return 0;
+}
+
+static int hexagon_globalreg_post_load(void *opaque, int version_id)
+{
+    HexagonGlobalRegState *s = opaque;
+
+    if (version_id < 2) {
+        s->pcycle_running = modectl_any_thread_running(
+            s->regs[HEX_SREG_MODECTL]);
+    }
+    if (s->pcycle_running) {
+        s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    }
+    return 0;
 }
 
 static const VMStateDescription vmstate_hexagon_globalreg = {
     .name = "hexagon_globalreg",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
+    .pre_save = hexagon_globalreg_pre_save,
+    .post_load = hexagon_globalreg_post_load,
     .fields = (const VMStateField[]){
         VMSTATE_UINT32_ARRAY(regs, HexagonGlobalRegState, NUM_SREGS),
         VMSTATE_UINT64(g_pcycle_base, HexagonGlobalRegState),
+        VMSTATE_INT64_V(pcycle_start_ns, HexagonGlobalRegState, 2),
+        VMSTATE_BOOL_V(pcycle_running, HexagonGlobalRegState, 2),
         VMSTATE_UINT32(boot_evb, HexagonGlobalRegState),
         VMSTATE_UINT64(config_table_addr, HexagonGlobalRegState),
         VMSTATE_UINT32(dsp_rev, HexagonGlobalRegState),
@@ -351,6 +468,8 @@ static const Property hexagon_globalreg_properties[] = {
                      isdben_trusted, false),
     DEFINE_PROP_BOOL("isdben-secure", HexagonGlobalRegState,
                      isdben_secure, false),
+    DEFINE_PROP_UINT32("pcycle-freq-hz", HexagonGlobalRegState,
+                       pcycle_freq_hz, 1000000000),
 };
 
 static void hexagon_globalreg_class_init(ObjectClass *klass, const void *data)
