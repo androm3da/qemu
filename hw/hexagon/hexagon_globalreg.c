@@ -218,6 +218,23 @@ static void pcycle_fold(HexagonGlobalRegState *s)
     }
     s->pcycle_start_ns = now;
 }
+
+static bool pcycle_enabled(uint32_t syscfg)
+{
+    return extract32(syscfg, reg_field_info[SYSCFG_PCYCLEEN].offset,
+                     reg_field_info[SYSCFG_PCYCLEEN].width);
+}
+
+/*
+ * PCYCLELO/PCYCLEHI only advance and are only readable while
+ * SYSCFG.PCYCLEEN is set; reading them while disabled reads as 0.
+ */
+uint64_t hexagon_globalreg_read_pcycle(HexagonGlobalRegState *s)
+{
+    g_assert(s);
+    return pcycle_enabled(s->regs[HEX_SREG_SYSCFG]) ?
+           pcycle_value_now(s) : 0;
+}
 static void pcycle_set_running(HexagonGlobalRegState *s, bool running)
 {
     if (running == s->pcycle_running) {
@@ -243,7 +260,7 @@ static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
                 qct_qtimer_get_timer_hi(s->qtimer);
     }
     if (is_pcycle_reg(reg)) {
-        uint64_t value = pcycle_value_now(s);
+        uint64_t value = hexagon_globalreg_read_pcycle(s);
         return reg == HEX_SREG_PCYCLELO ?
                 (uint32_t)value : (uint32_t)(value >> 32);
     }
@@ -253,7 +270,23 @@ static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
 static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
                           uint32_t value)
 {
+    /*
+     * SYSCFG.PCYCLEEN is a counter *enable*, not a pause: like a normal
+     * hardware perf counter, turning it on (0->1) starts counting from 0.
+     * That's distinct from MODECTL's WAIT/OFF-driven pause in
+     * pcycle_set_running(), which suspends an already-enabled counter and
+     * preserves its accumulated value across the pause.
+     */
+    bool pcycle_enable = reg == HEX_SREG_SYSCFG &&
+        !pcycle_enabled(s->regs[reg]) && pcycle_enabled(value);
+
     s->regs[reg] = value;
+    if (pcycle_enable) {
+        s->g_pcycle_base = 0;
+        if (s->pcycle_running) {
+            s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        }
+    }
     if (is_vid_reg(reg)) {
         l2vic_update_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1, value);
     }

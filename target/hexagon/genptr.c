@@ -277,6 +277,15 @@ static void gen_log_sreg_write(DisasContext *ctx, int rnum, TCGv_i32 val)
 {
     uint32_t reg_mask = sreg_immut_masks[rnum];
 
+    /*
+     * Writes to MODECTL/SYSCFG can flip PCYCLE's run/enable state
+     * (pcycle_set_running()/PCYCLEEN edge detection in set_reg_value()),
+     * both of which timestamp against the virtual clock, so icount must
+     * be synchronized first.
+     */
+    if (rnum == HEX_SREG_MODECTL || rnum == HEX_SREG_SYSCFG) {
+        translator_io_start(&ctx->base);
+    }
     if (rnum == HEX_SREG_IMASK &&
         ctx->hex_def->hex_version < HEX_VER_V81) {
         reg_mask = 0xffff0000;
