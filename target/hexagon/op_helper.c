@@ -1934,8 +1934,18 @@ uint32_t HELPER(sreg_read)(CPUHexagonState *env, uint32_t reg)
 
 uint64_t HELPER(sreg_read_pair)(CPUHexagonState *env, uint32_t reg)
 {
+    HexagonCPU *cpu = env_archcpu(env);
+
     BQL_LOCK_GUARD();
 
+    /*
+     * Route through hexagon_globalreg_read_pcycle() for a single coherent
+     * 64-bit snapshot, rather than two separate sreg_read() calls that
+     * could otherwise tear across the clock-backed PCYCLE counter.
+     */
+    if (reg == HEX_SREG_PCYCLELO && cpu->globalregs) {
+        return hexagon_globalreg_read_pcycle(cpu->globalregs);
+    }
     return deposit64((uint64_t) sreg_read(env, reg), 32, 32,
         sreg_read(env, reg + 1));
 }
