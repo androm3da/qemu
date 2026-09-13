@@ -99,5 +99,8 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_timer_reg(self):
         self.run_exit_zero("timer_reg")
 
+    def test_pcycle(self):
+        self.run_exit_zero("pcycle")
+
 if __name__ == "__main__":
     QemuSystemTest.main()
