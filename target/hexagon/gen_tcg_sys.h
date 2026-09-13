@@ -77,21 +77,35 @@
         } \
     } while (0)
 
+/*
+ * wait/resume/start/stop all change a thread's MODECTL run state, which
+ * drives the PCYCLE clock's pause/resume timestamp (pcycle_set_running()).
+ * That timestamp needs an accurate virtual clock, so icount must be
+ * synchronized before the helper runs.
+ */
 #define fGEN_TCG_Y2_wait(SHORTCODE) \
     do { \
         RsV = RsV; \
+        translator_io_start(&ctx->base); \
         gen_helper_wait(tcg_env, tcg_constant_tl(ctx->pkt.pc)); \
     } while (0)
 
 #define fGEN_TCG_Y2_resume(SHORTCODE) \
-    gen_helper_resume(tcg_env, RsV)
+    do { \
+        translator_io_start(&ctx->base); \
+        gen_helper_resume(tcg_env, RsV); \
+    } while (0)
 
 #define fGEN_TCG_Y2_start(SHORTCODE) \
-    gen_helper_start(tcg_env, RsV)
+    do { \
+        translator_io_start(&ctx->base); \
+        gen_helper_start(tcg_env, RsV); \
+    } while (0)
 
 #define fGEN_TCG_Y2_stop(SHORTCODE) \
     do { \
         RsV = RsV; \
+        translator_io_start(&ctx->base); \
         gen_helper_stop(tcg_env); \
     } while (0)
 
