@@ -1040,7 +1040,7 @@ static void gen_commit_hvx(DisasContext *ctx)
     }
 }
 
-#define PCYCLES_PER_PACKET 1
+#define PCYCLES_PER_PACKET 3
 
 static void update_exec_counters(DisasContext *ctx)
 {

@@ -133,10 +133,12 @@ uint32_t hexagon_get_pmu_counter(CPUHexagonState *cur_env, int index)
 
 uint64_t hexagon_get_sys_pcycle_count(CPUHexagonState *env)
 {
-    uint64_t total = 0;
+    HexagonCPU *cpu = env_archcpu(env);
+    uint64_t total;
     CPUState *cs;
 
     BQL_LOCK_GUARD();
+    total = hexagon_globalreg_get_pcycle_base(cpu->globalregs);
     CPU_FOREACH(cs) {
         CPUHexagonState *thread_env = cpu_env(cs);
         total += thread_env->t_cycle_count;

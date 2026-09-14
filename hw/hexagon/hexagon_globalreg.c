@@ -168,9 +168,9 @@ static inline bool is_pcycle_reg(uint32_t reg)
 /*
  * MODECTL packs a per-thread enabled mask in bits[0:15] (MODECTL_E) and a
  * per-thread wait mask in bits[16:31] (MODECTL_W). A thread is RUN or DEBUG
- * (either of which should keep PCYCLE advancing) iff its E bit is set and
- * its W bit is clear, so "some thread is neither WAIT nor OFF" reduces to
- * a plain bitmask check with no need to visit every CPU.
+ * (either of which executes translated packets) iff its E bit is set and its
+ * W bit is clear.  Translated packets account for running time; this state is
+ * used to account for elapsed cycles while every thread is in WAIT or OFF.
  */
 static inline bool modectl_any_thread_running(uint32_t modectl)
 {
@@ -181,25 +181,13 @@ static inline bool modectl_any_thread_running(uint32_t modectl)
 
 static uint64_t pcycle_value_now(HexagonGlobalRegState *s)
 {
-    uint64_t cycles = s->g_pcycle_base;
-
-    if (s->pcycle_running) {
-        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-        cycles += muldiv64(now - s->pcycle_start_ns, s->pcycle_freq_hz,
-                           NANOSECONDS_PER_SECOND);
-    }
-    return cycles;
+    return s->g_pcycle_base;
 }
 
 static void pcycle_set_running(HexagonGlobalRegState *s, bool running)
 {
     if (running == s->pcycle_running) {
         return;
-    }
-    if (running) {
-        s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    } else {
-        s->g_pcycle_base = pcycle_value_now(s);
     }
     s->pcycle_running = running;
     trace_hexagon_pcycle_run_state(s->pcycle_running, s->g_pcycle_base);
@@ -294,7 +282,7 @@ void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
 uint64_t hexagon_globalreg_get_pcycle_base(HexagonGlobalRegState *s)
 {
     g_assert(s);
-    return s->g_pcycle_base;
+    return pcycle_value_now(s);
 }
 
 void hexagon_globalreg_set_pcycle_base(HexagonGlobalRegState *s,

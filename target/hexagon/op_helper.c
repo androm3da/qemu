@@ -1890,7 +1890,11 @@ void HELPER(setimask)(CPUHexagonState *env, uint32_t tid, uint32_t imask)
 void HELPER(sreg_write_masked)(CPUHexagonState *env, uint32_t reg, uint32_t val)
 {
     BQL_LOCK_GUARD();
-    if (reg < HEX_SREG_GLB_START) {
+    if (reg == HEX_SREG_PCYCLELO) {
+        hexagon_set_sys_pcycle_count_low(env, val);
+    } else if (reg == HEX_SREG_PCYCLEHI) {
+        hexagon_set_sys_pcycle_count_high(env, val);
+    } else if (reg < HEX_SREG_GLB_START) {
         env->t_sreg[reg] = val;
     } else {
         HexagonCPU *cpu = env_archcpu(env);
@@ -1912,6 +1916,11 @@ static inline QEMU_ALWAYS_INLINE uint32_t sreg_read(CPUHexagonState *env,
             return env->t_sreg[HEX_SREG_BADVA1];
         }
         return env->t_sreg[HEX_SREG_BADVA0];
+    }
+    if (reg == HEX_SREG_PCYCLELO) {
+        return hexagon_get_sys_pcycle_count_low(env);
+    } else if (reg == HEX_SREG_PCYCLEHI) {
+        return hexagon_get_sys_pcycle_count_high(env);
     }
     cpu = env_archcpu(env);
     if (reg == HEX_SREG_IPENDAD &&
@@ -1955,7 +1964,9 @@ uint32_t HELPER(upcycle_read)(CPUHexagonState *env, uint32_t sreg)
     if (!GET_SSR_FIELD(SSR_CE, ssr)) {
         return 0;
     }
-    return sreg_read(env, sreg);
+    return sreg == HEX_SREG_PCYCLELO ?
+        hexagon_get_sys_pcycle_count_low(env) :
+        hexagon_get_sys_pcycle_count_high(env);
 }
 
 uint64_t HELPER(upcycle_read_pair)(CPUHexagonState *env)
@@ -1967,8 +1978,7 @@ uint64_t HELPER(upcycle_read_pair)(CPUHexagonState *env)
     if (!GET_SSR_FIELD(SSR_CE, ssr)) {
         return 0;
     }
-    return deposit64((uint64_t) sreg_read(env, HEX_SREG_PCYCLELO), 32, 32,
-        sreg_read(env, HEX_SREG_PCYCLEHI));
+    return hexagon_get_sys_pcycle_count(env);
 }
 
 uint32_t HELPER(greg_read)(CPUHexagonState *env, uint32_t reg)
