@@ -766,13 +766,37 @@ static void mark_store_width(DisasContext *ctx)
 
 static void gen_insn(DisasContext *ctx)
 {
+    uint16_t opcode = ctx->insn->opcode;
+
+    if (GET_ATTRIB(opcode, A_RELEASE) ||
+        GET_ATTRIB(opcode, A_CVI_SCATTER_RELEASE)) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    }
+
     if (ctx->insn->generate) {
         ctx->insn->generate(ctx);
         mark_store_width(ctx);
     } else {
         hex_gen_exception_end_tb(ctx, HEX_CAUSE_INVALID_OPCODE);
     }
+
+    if (GET_ATTRIB(opcode, A_ACQUIRE)) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    }
+    if (opcode == Y2_barrier || opcode == Y2_syncht || opcode == Y2_isync) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
+    }
 }
+
+#ifndef CONFIG_USER_ONLY
+static bool pkt_needs_serialization(Packet *pkt)
+{
+    return check_for_opcode(pkt, Y2_barrier) ||
+           check_for_opcode(pkt, Y2_syncht) ||
+           check_for_attrib(pkt, A_RLS_ALL_THREAD) ||
+           check_for_attrib(pkt, A_CVI_SCATTER_RELEASE);
+}
+#endif
 
 /*
  * Helpers for generating the packet commit
@@ -1208,6 +1232,17 @@ static void decode_and_translate_packet(CPUHexagonState *env, DisasContext *ctx)
                                       HEX_CAUSE_REG_WRITE_CONFLICT);
             return;
         }
+#ifndef CONFIG_USER_ONLY
+        if (pkt_needs_serialization(&ctx->pkt) &&
+            (tb_cflags(ctx->base.tb) & CF_PARALLEL)) {
+            /* Replay this packet while all other vCPUs are stopped. */
+            gen_exec_counters(ctx);
+            gen_helper_exit_atomic(tcg_env);
+            ctx->base.is_jmp = DISAS_NORETURN;
+            ctx->base.pc_next += ctx->pkt.encod_pkt_size_in_bytes;
+            return;
+        }
+#endif
         gen_start_packet(ctx);
         for (i = 0; i < ctx->pkt.num_insns; i++) {
             ctx->insn = &ctx->pkt.insn[i];
