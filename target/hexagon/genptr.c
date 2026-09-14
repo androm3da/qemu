@@ -311,8 +311,11 @@ static void gen_log_sreg_write_pair(DisasContext *ctx, int rnum, TCGv_i64 val)
 }
 
 G_GNUC_UNUSED
-static void gen_read_sreg(TCGv_i32 dst, int reg_num)
+static void gen_read_sreg(DisasContext *ctx, TCGv_i32 dst, int reg_num)
 {
+    if (reg_num == HEX_SREG_TIMERLO || reg_num == HEX_SREG_TIMERHI) {
+        translator_io_start(&ctx->base);
+    }
     if (reg_num >= HEX_SREG_GLB_START || reg_num == HEX_SREG_BADVA) {
         gen_helper_sreg_read(dst, tcg_env, tcg_constant_i32(reg_num));
     } else {
@@ -321,8 +324,11 @@ static void gen_read_sreg(TCGv_i32 dst, int reg_num)
 }
 
 G_GNUC_UNUSED
-static void gen_read_sreg_pair(TCGv_i64 dst, int reg_num)
+static void gen_read_sreg_pair(DisasContext *ctx, TCGv_i64 dst, int reg_num)
 {
+    if (reg_num == HEX_SREG_TIMERLO) {
+        translator_io_start(&ctx->base);
+    }
     if (reg_num < HEX_SREG_GLB_START) {
         if (reg_num + 1 == HEX_SREG_BADVA) {
             TCGv_i32 badva = tcg_temp_new_i32();
@@ -418,9 +424,11 @@ static inline void gen_read_ctrl_reg(DisasContext *ctx, const int reg_num,
                         ctx->num_hvx_insns);
 #ifndef CONFIG_USER_ONLY
     } else if (reg_num == HEX_REG_UTIMERLO) {
+        translator_io_start(&ctx->base);
         gen_helper_sreg_read(dest, tcg_env,
                              tcg_constant_i32(HEX_SREG_TIMERLO));
     } else if (reg_num == HEX_REG_UTIMERHI) {
+        translator_io_start(&ctx->base);
         gen_helper_sreg_read(dest, tcg_env,
                              tcg_constant_i32(HEX_SREG_TIMERHI));
     } else if (reg_num == HEX_REG_UPCYCLELO) {
@@ -469,6 +477,7 @@ static inline void gen_read_ctrl_reg_pair(DisasContext *ctx, const int reg_num,
         tcg_gen_concat_i32_i64(dest, hvx_cnt, hex_gpr[reg_num + 1]);
 #ifndef CONFIG_USER_ONLY
     } else if (reg_num == HEX_REG_UTIMERLO) {
+        translator_io_start(&ctx->base);
         TCGv lo = tcg_temp_new();
         TCGv hi = tcg_temp_new();
         gen_helper_sreg_read(lo, tcg_env, tcg_constant_i32(HEX_SREG_TIMERLO));

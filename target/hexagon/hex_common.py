@@ -1220,7 +1220,7 @@ class SystemSource(Register, Single, OldSource):
         self.decl_reg_num(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i32 {self.reg_tcg()} = tcg_temp_new_i32();
-            gen_read_sreg({self.reg_tcg()}, {self.reg_num});
+            gen_read_sreg(ctx, {self.reg_tcg()}, {self.reg_num});
         """))
     def analyze_read(self, f, regno):
         pass
@@ -1249,7 +1249,7 @@ class SystemPairSource(Register, Pair, OldSource):
         self.decl_reg_num(f, regno)
         f.write(code_fmt(f"""\
             TCGv_i64 {self.reg_tcg()} = tcg_temp_new_i64();
-            gen_read_sreg_pair({self.reg_tcg()}, {self.reg_num});
+            gen_read_sreg_pair(ctx, {self.reg_tcg()}, {self.reg_num});
         """))
     def analyze_read(self, f, regno):
         pass
