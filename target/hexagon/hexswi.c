@@ -772,7 +772,7 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
                   event_name[cs->exception_index], env->cause_code,
                   env->cause_code);
 
-    env->llsc_addr = ~0;
+    hexagon_clear_llsc(env);
 
     ssr = env->t_sreg[HEX_SREG_SSR];
     if (GET_SSR_FIELD(SSR_EX, ssr) == 1) {
