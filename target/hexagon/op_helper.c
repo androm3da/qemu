@@ -472,7 +472,6 @@ int32_t HELPER(vacsh_pred)(CPUHexagonState *env,
     return PeV;
 }
 
-#ifdef CONFIG_USER_ONLY
 void HELPER(insn_cache_op)(CPUHexagonState *env, target_ulong RsV,
                            int slot, int mmu_idx, target_ulong PC)
 {
@@ -482,7 +481,6 @@ void HELPER(insn_cache_op)(CPUHexagonState *env, target_ulong RsV,
     tb_invalidate_phys_range(env_cpu(env), start, start + 31);
     mmap_unlock();
 }
-#endif
 
 int64_t HELPER(cabacdecbin_val)(int64_t RssV, int64_t RttV)
 {
