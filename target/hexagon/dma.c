@@ -10,6 +10,7 @@
 #include "dma.h"
 #include "accel/tcg/cpu-ldst.h"
 #include "hw/core/resettable.h"
+#include "trace.h"
 
 /*
  * migration/vmstate.c is system_ss-only (see migration/meson.build), so
@@ -100,6 +101,8 @@ static void dma_copy_type1(CPUHexagonState *env, target_ulong desc_va,
 void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                            target_ulong desc_va, uintptr_t ra)
 {
+    uint32_t htid = env_cpu(env)->cpu_index;
+
     dma->status = DM0_STATUS_RUN;
 
     while (desc_va != 0) {
@@ -109,6 +112,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             dma->status = DM0_STATUS_ERROR;
             dma->syndrome = DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT;
             dma->desc_ptr = desc_va;
+            trace_hexagon_dma_error(htid, desc_va, dma->syndrome);
             return;
         }
 
@@ -126,6 +130,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
         default:
             dma->status = DM0_STATUS_ERROR;
             dma->syndrome = DMA_SYNDROME_DESCRIPTOR_INVALID_TYPE;
+            trace_hexagon_dma_error(htid, desc_va, dma->syndrome);
             return;
         }
 
@@ -134,18 +139,25 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
         cpu_stl_le_data_ra(env, desc_va + DESC_OFF_CTRL, ctrl, ra);
 
         desc_va = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_NEXT, ra);
+        trace_hexagon_dma_desc(htid, dma->desc_ptr, desctype, desc_va);
     }
 
     dma->status = DM0_STATUS_IDLE;
+    trace_hexagon_dma_done(htid, dma->desc_ptr);
 }
 
 void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
                       target_ulong new_va, target_ulong tail_va, uintptr_t ra)
 {
+    uint32_t htid = env_cpu(env)->cpu_index;
+
+    trace_hexagon_dma_link(htid, new_va, tail_va);
+
     if (tail_va % DESC_ALIGNMENT != 0) {
         dma->status = DM0_STATUS_ERROR;
         dma->syndrome = DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT;
         dma->desc_ptr = tail_va;
+        trace_hexagon_dma_error(htid, tail_va, dma->syndrome);
         return;
     }
 

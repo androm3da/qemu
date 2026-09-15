@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include "dma.h"
 #include "exec/helper-proto.h"
+#include "trace.h"
 
 static HexagonDMAState *dma_of(CPUHexagonState *env)
 {
@@ -17,11 +18,13 @@ static HexagonDMAState *dma_of(CPUHexagonState *env)
 
 void HELPER(dmstart)(CPUHexagonState *env, uint32_t RsV)
 {
+    trace_hexagon_dma_start(env_cpu(env)->cpu_index, RsV);
     hexagon_dma_run_chain(env, dma_of(env), RsV, GETPC());
 }
 
 void HELPER(dmresume)(CPUHexagonState *env, uint32_t RsV)
 {
+    trace_hexagon_dma_resume(env_cpu(env)->cpu_index, RsV);
     hexagon_dma_run_chain(env, dma_of(env), RsV, GETPC());
 }
 
