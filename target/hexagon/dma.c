@@ -10,68 +10,66 @@
 #include "dma.h"
 #include "accel/tcg/cpu-ldst.h"
 #include "accel/tcg/probe.h"
-#include "hw/core/resettable.h"
 #include "trace.h"
 
-/*
- * This common source must also link into hexagon-linux-user, where migration
- * is unavailable.  System emulation migrates the embedded state as part of
- * vmstate_hexagon_cpu in machine.c rather than through dc->vmsd here.
- */
-static void hexagon_dma_reset_hold(Object *obj, ResetType type)
-{
-    HexagonDMAState *s = HEXAGON_DMA(obj);
+typedef struct HexagonDMAMemory {
+    CPUHexagonState *env;
+    int mmu_idx;
+    uintptr_t ra;
+} HexagonDMAMemory;
 
-    s->status = DM0_STATUS_IDLE;
-    s->syndrome = 0;
-    s->desc_ptr = 0;
+void hexagon_dma_reset(HexagonDMAState *dma)
+{
+    dma->status = DM0_STATUS_IDLE;
+    dma->syndrome = 0;
+    dma->desc_ptr = 0;
 }
 
-static void hexagon_dma_class_init(ObjectClass *klass, const void *data)
+static uint32_t dma_ldl(const HexagonDMAMemory *mem, target_ulong addr)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
-    ResettableClass *rc = RESETTABLE_CLASS(klass);
-
-    rc->phases.hold = hexagon_dma_reset_hold;
-    dc->user_creatable = false;
+    return cpu_ldl_le_data_ra(mem->env, addr, mem->ra);
 }
 
-static const TypeInfo hexagon_dma_info = {
-    .name = TYPE_HEXAGON_DMA,
-    .parent = TYPE_DEVICE,
-    .instance_size = sizeof(HexagonDMAState),
-    .class_init = hexagon_dma_class_init,
-};
-
-static void hexagon_dma_register_types(void)
+static void dma_stl(const HexagonDMAMemory *mem, target_ulong addr,
+                    uint32_t value)
 {
-    type_register_static(&hexagon_dma_info);
+    cpu_stl_le_data_ra(mem->env, addr, value, mem->ra);
 }
-
-type_init(hexagon_dma_register_types)
 
 /*
  * Copy one type0 (linear) descriptor's payload: length bytes, src to dst.
  */
-static void dma_copy_type0(CPUHexagonState *env, target_ulong desc_va,
-                           uint32_t ctrl, uintptr_t ra)
+static void dma_copy(const HexagonDMAMemory *mem, target_ulong dst,
+                     target_ulong src, uint32_t length)
 {
-    target_ulong src = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_SRC, ra);
-    target_ulong dst = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_DST, ra);
-    uint32_t length = ctrl & DESC_LENGTH_MASK;
+    while (length != 0) {
+        uint32_t src_page = (1u << TARGET_PAGE_BITS) -
+                            (src & ((1u << TARGET_PAGE_BITS) - 1));
+        uint32_t dst_page = (1u << TARGET_PAGE_BITS) -
+                            (dst & ((1u << TARGET_PAGE_BITS) - 1));
+        uint32_t chunk = MIN(length, MIN(src_page, dst_page));
+        void *src_host = probe_read(mem->env, src, chunk, mem->mmu_idx,
+                                    mem->ra);
+        void *dst_host = probe_write(mem->env, dst, chunk, mem->mmu_idx,
+                                     mem->ra);
 
-    for (uint32_t i = 0; i < length; i++) {
-        uint8_t byte = cpu_ldub_data_ra(env, src + i, ra);
-        cpu_stb_data_ra(env, dst + i, byte, ra);
+        if (src_host && dst_host) {
+            memmove(dst_host, src_host, chunk);
+        } else {
+            for (uint32_t i = 0; i < chunk; i++) {
+                uint8_t byte = cpu_ldub_data_ra(mem->env, src + i, mem->ra);
+                cpu_stb_data_ra(mem->env, dst + i, byte, mem->ra);
+            }
+        }
+        src += chunk;
+        dst += chunk;
+        length -= chunk;
     }
 }
 
-static bool dma_probe_range(CPUHexagonState *env, target_ulong addr,
-                            uint32_t length, MMUAccessType access_type,
-                            uintptr_t ra)
+static bool dma_probe_range(const HexagonDMAMemory *mem, target_ulong addr,
+                            uint32_t length, MMUAccessType access_type)
 {
-    int mmu_idx = cpu_mmu_index(env_cpu(env), false);
-
     if (length != 0 && addr + length - 1 < addr) {
         return false;
     }
@@ -81,7 +79,8 @@ static bool dma_probe_range(CPUHexagonState *env, target_ulong addr,
                              (addr & ((1u << TARGET_PAGE_BITS) - 1));
         uint32_t chunk = MIN(length, page_left);
 
-        probe_access(env, addr, chunk, access_type, mmu_idx, ra);
+        probe_access(mem->env, addr, chunk, access_type, mem->mmu_idx,
+                     mem->ra);
         addr += chunk;
         length -= chunk;
     }
@@ -104,13 +103,12 @@ static void dma_set_error(HexagonDMAState *dma, uint32_t htid,
  * Descriptors with nonzero srcwidthoffset/dstwidthoffset are rejected before
  * this function is called because those fields are not modeled.
  */
-static void dma_copy_type1(CPUHexagonState *env, target_ulong desc_va,
-                           uintptr_t ra)
+static void dma_copy_type1(const HexagonDMAMemory *mem, target_ulong desc_va)
 {
-    target_ulong src = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_SRC, ra);
-    target_ulong dst = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_DST, ra);
-    uint32_t roi = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_ROI, ra);
-    uint32_t stride = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_STRIDE, ra);
+    target_ulong src = dma_ldl(mem, desc_va + DESC_OFF_SRC);
+    target_ulong dst = dma_ldl(mem, desc_va + DESC_OFF_DST);
+    uint32_t roi = dma_ldl(mem, desc_va + DESC_OFF_ROI);
+    uint32_t stride = dma_ldl(mem, desc_va + DESC_OFF_STRIDE);
     uint32_t width = roi & DESC_ROIWIDTH_MASK;
     uint32_t height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
     uint32_t srcstride = stride & DESC_SRCSTRIDE_MASK;
@@ -120,16 +118,18 @@ static void dma_copy_type1(CPUHexagonState *env, target_ulong desc_va,
         target_ulong srow = src + (target_ulong)row * srcstride;
         target_ulong drow = dst + (target_ulong)row * dststride;
 
-        for (uint32_t col = 0; col < width; col++) {
-            uint8_t byte = cpu_ldub_data_ra(env, srow + col, ra);
-            cpu_stb_data_ra(env, drow + col, byte, ra);
-        }
+        dma_copy(mem, drow, srow, width);
     }
 }
 
 void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                            target_ulong desc_va, uintptr_t ra)
 {
+    HexagonDMAMemory mem = {
+        .env = env,
+        .mmu_idx = cpu_mmu_index(env_cpu(env), false),
+        .ra = ra,
+    };
     uint32_t htid = env_cpu(env)->cpu_index;
     uint32_t desc_count = 0;
     uint64_t bytes_copied = 0;
@@ -162,15 +162,15 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
         dma->status = DM0_STATUS_ERROR;
         dma->syndrome = DMA_SYNDROME_MEMORY_ACCESS;
         dma->desc_ptr = desc_va;
-        if (!dma_probe_range(env, desc_va, DESC_TYPE0_SIZE,
-                             MMU_DATA_LOAD, ra) ||
-            !dma_probe_range(env, desc_va + DESC_OFF_CTRL, sizeof(ctrl),
-                             MMU_DATA_STORE, ra)) {
+        if (!dma_probe_range(&mem, desc_va, DESC_TYPE0_SIZE,
+                             MMU_DATA_LOAD) ||
+            !dma_probe_range(&mem, desc_va + DESC_OFF_CTRL, sizeof(ctrl),
+                             MMU_DATA_STORE)) {
             return;
         }
 
         dma->desc_ptr = desc_va;
-        ctrl = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_CTRL, ra);
+        ctrl = dma_ldl(&mem, desc_va + DESC_OFF_CTRL);
         desctype = (ctrl & DESC_DESCTYPE_MASK) >> DESC_DESCTYPE_SHIFT;
 
         if (ctrl & DESC_UNSUPPORTED_CTRL_MASK) {
@@ -187,35 +187,24 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                               DMA_SYNDROME_DESCRIPTOR_CHAIN_LIMIT);
                 return;
             }
-            if (!dma_probe_range(env,
-                                 cpu_ldl_le_data_ra(env,
-                                     desc_va + DESC_OFF_SRC, ra),
-                                 length, MMU_DATA_LOAD, ra) ||
-                !dma_probe_range(env,
-                                 cpu_ldl_le_data_ra(env,
-                                     desc_va + DESC_OFF_DST, ra),
-                                 length, MMU_DATA_STORE, ra)) {
-                return;
-            }
-            dma->status = DM0_STATUS_RUN;
-            dma_copy_type0(env, desc_va, ctrl, ra);
+            dma_copy(&mem, dma_ldl(&mem, desc_va + DESC_OFF_DST),
+                     dma_ldl(&mem, desc_va + DESC_OFF_SRC), length);
             break;
         case DESC_DESCTYPE_TYPE1: {
             uint32_t roi, stride, width, height, srcstride, dststride;
             target_ulong src, dst;
 
-            if (!dma_probe_range(env, desc_va, DESC_TYPE1_SIZE,
-                                 MMU_DATA_LOAD, ra) ||
-                cpu_ldl_le_data_ra(env,
-                    desc_va + DESC_OFF_WIDTHOFFSET, ra) != 0) {
+            if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
+                                 MMU_DATA_LOAD) ||
+                dma_ldl(&mem, desc_va + DESC_OFF_WIDTHOFFSET) != 0) {
                 dma_set_error(dma, htid, desc_va,
                               DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                 return;
             }
-            src = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_SRC, ra);
-            dst = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_DST, ra);
-            roi = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_ROI, ra);
-            stride = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_STRIDE, ra);
+            src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
+            dst = dma_ldl(&mem, desc_va + DESC_OFF_DST);
+            roi = dma_ldl(&mem, desc_va + DESC_OFF_ROI);
+            stride = dma_ldl(&mem, desc_va + DESC_OFF_STRIDE);
             width = roi & DESC_ROIWIDTH_MASK;
             height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
             srcstride = stride & DESC_SRCSTRIDE_MASK;
@@ -231,14 +220,13 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 uint64_t srow = src + (uint64_t)row * srcstride;
                 uint64_t drow = dst + (uint64_t)row * dststride;
 
-                if (srow > UINT32_MAX || drow > UINT32_MAX ||
-                    !dma_probe_range(env, srow, width, MMU_DATA_LOAD, ra) ||
-                    !dma_probe_range(env, drow, width, MMU_DATA_STORE, ra)) {
+                if (srow > UINT32_MAX || drow > UINT32_MAX) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                     return;
                 }
             }
-            dma->status = DM0_STATUS_RUN;
-            dma_copy_type1(env, desc_va, ra);
+            dma_copy_type1(&mem, desc_va);
             break;
         }
         default:
@@ -250,9 +238,9 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
 
         /* Mark the descriptor complete before following the chain. */
         ctrl |= DESC_DSTATE_MASK;
-        cpu_stl_le_data_ra(env, desc_va + DESC_OFF_CTRL, ctrl, ra);
+        dma_stl(&mem, desc_va + DESC_OFF_CTRL, ctrl);
 
-        desc_va = cpu_ldl_le_data_ra(env, desc_va + DESC_OFF_NEXT, ra);
+        desc_va = dma_ldl(&mem, desc_va + DESC_OFF_NEXT);
         trace_hexagon_dma_desc(htid, dma->desc_ptr, desctype, desc_va);
     }
 
@@ -263,6 +251,11 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
 void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
                       target_ulong new_va, target_ulong tail_va, uintptr_t ra)
 {
+    HexagonDMAMemory mem = {
+        .env = env,
+        .mmu_idx = cpu_mmu_index(env_cpu(env), false),
+        .ra = ra,
+    };
     uint32_t htid = env_cpu(env)->cpu_index;
 
     trace_hexagon_dma_link(htid, new_va, tail_va);
@@ -278,11 +271,11 @@ void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
     dma->status = DM0_STATUS_ERROR;
     dma->syndrome = DMA_SYNDROME_MEMORY_ACCESS;
     dma->desc_ptr = tail_va;
-    if (!dma_probe_range(env, tail_va + DESC_OFF_NEXT, sizeof(uint32_t),
-                         MMU_DATA_STORE, ra)) {
+    if (!dma_probe_range(&mem, tail_va + DESC_OFF_NEXT, sizeof(uint32_t),
+                         MMU_DATA_STORE)) {
         return;
     }
 
-    cpu_stl_le_data_ra(env, tail_va + DESC_OFF_NEXT, new_va, ra);
+    dma_stl(&mem, tail_va + DESC_OFF_NEXT, new_va);
     dma->status = DM0_STATUS_IDLE;
 }

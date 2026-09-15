@@ -1,5 +1,5 @@
 /*
- * Hexagon User-DMA Engine QOM Object
+ * Hexagon User-DMA Engine
  *
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -18,12 +18,6 @@
 #define HEXAGON_DMA_H
 
 #include "exec/target_long.h"
-#include "hw/core/qdev.h"
-#include "qom/object.h"
-
-#define TYPE_HEXAGON_DMA "hexagon-dma"
-OBJECT_DECLARE_SIMPLE_TYPE(HexagonDMAState, HEXAGON_DMA)
-
 /* DM0 status, as observed by dmpoll/dmwait/dmpause. */
 #define DM0_STATUS_IDLE   0x00000000
 #define DM0_STATUS_RUN    0x00000001
@@ -94,16 +88,16 @@ OBJECT_DECLARE_SIMPLE_TYPE(HexagonDMAState, HEXAGON_DMA)
 #define DESC_DSTSTRIDE_MASK         0xFFFF0000
 #define DESC_DSTSTRIDE_SHIFT        16
 
-struct HexagonDMAState {
-    DeviceState parent_obj;
-
+typedef struct HexagonDMAState {
     /* DM0: idle / run / error, observed by dmpoll/dmwait/dmpause. */
     uint32_t status;
     /* DM1-shaped syndrome for the last error, valid while status is error. */
     uint32_t syndrome;
     /* Guest VA of the descriptor last started/resumed from. */
     target_ulong desc_ptr;
-};
+} HexagonDMAState;
+
+void hexagon_dma_reset(HexagonDMAState *dma);
 
 /*
  * Run the descriptor chain starting at desc_va to completion.  Updates
