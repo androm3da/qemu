@@ -242,6 +242,7 @@ hexagon_ss.add(files(
     'translate.c',
     'op_helper.c',
     'dma.c',
+    'dma-helper.c',
     'gdbstub.c',
     'genptr.c',
     'reg_fields.c',

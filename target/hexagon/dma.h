@@ -93,4 +93,18 @@ struct HexagonDMAState {
     target_ulong desc_ptr;
 };
 
+/*
+ * Run the descriptor chain starting at desc_va to completion.  Updates
+ * dma->status/syndrome/desc_ptr.  Guest memory faults during descriptor
+ * or payload access longjmp out through the normal exception path; ra is
+ * the helper's return address for that unwind.
+ */
+void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
+                           target_ulong desc_va, uintptr_t ra);
+
+/* Patch tail_va's next-descriptor field to point at new_va. */
+void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
+                      target_ulong new_va, target_ulong tail_va,
+                      uintptr_t ra);
+
 #endif /* HEXAGON_DMA_H */
