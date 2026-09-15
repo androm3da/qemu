@@ -35,6 +35,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(HexagonDMAState, HEXAGON_DMA)
  */
 #define DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT  1
 #define DMA_SYNDROME_DESCRIPTOR_INVALID_TYPE       2
+#define DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED         3
+#define DMA_SYNDROME_DESCRIPTOR_CHAIN_LIMIT         4
+#define DMA_SYNDROME_MEMORY_ACCESS                  5
+
+/* Bound synchronous helper work so a malformed chain cannot wedge QEMU. */
+#define DMA_MAX_CHAIN_DESCRIPTORS                    1024
+#define DMA_MAX_CHAIN_BYTES                          (UINT64_C(64) << 20)
 
 /*
  * Descriptor byte layout, common to both types.  Guest memory is never
@@ -71,6 +78,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(HexagonDMAState, HEXAGON_DMA)
 #define DESC_DESCTYPE_TYPE0         0
 #define DESC_DESCTYPE_TYPE1         1
 #define DESC_LENGTH_MASK            0x00FFFFFF
+#define DESC_UNSUPPORTED_CTRL_MASK  (DESC_ORDER_MASK | \
+                                     DESC_BYPASSSRC_MASK | \
+                                     DESC_BYPASSDST_MASK | \
+                                     DESC_SRCCOMP_MASK | \
+                                     DESC_DSTCOMP_MASK)
 
 /* ROI word (offset DESC_OFF_ROI), type1 only */
 #define DESC_ROIWIDTH_MASK          0x0000FFFF

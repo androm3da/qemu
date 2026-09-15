@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <setjmp.h>
+#include <signal.h>
 
 int err;
 
@@ -19,11 +21,19 @@ int err;
 
 #define DESC_DESCTYPE_TYPE0  (0u << 24)
 #define DESC_DESCTYPE_TYPE1  (1u << 24)
+#define DESC_SRCCOMP          (1u << 27)
 
 /* desc[0]=next desc[1]=ctrl desc[2]=src desc[3]=dst */
 typedef uint32_t type0_desc_t[4] __attribute__((aligned(16)));
 /* + desc[4]=alloc/padding desc[5]=roi desc[6]=stride */
-typedef uint32_t type1_desc_t[7] __attribute__((aligned(16)));
+typedef uint32_t type1_desc_t[8] __attribute__((aligned(16)));
+
+static sigjmp_buf fault_jmp;
+
+static void sigsegv_handler(int sig)
+{
+    siglongjmp(fault_jmp, sig);
+}
 
 static inline void dmstart(uint32_t desc_va)
 {
@@ -141,6 +151,7 @@ static void test_type1_box(void)
     desc[4] = 0;
     desc[5] = (height << 16) | width;
     desc[6] = (dststride << 16) | srcstride;
+    desc[7] = 0; /* dstwidthoffset:srcwidthoffset */
 
     dmstart((uint32_t)(uintptr_t)desc);
 
@@ -188,6 +199,79 @@ static void test_misaligned_descriptor(void)
     check32(dmpoll(), DM0_STATUS_ERROR);
 }
 
+static void test_unsupported_control(void)
+{
+    static type0_desc_t desc;
+    static uint8_t src[16], dst[16];
+
+    memset(src, 0x5a, sizeof(src));
+    memset(dst, 0, sizeof(dst));
+    desc[0] = 0;
+    desc[1] = DESC_SRCCOMP | sizeof(src);
+    desc[2] = (uint32_t)(uintptr_t)src;
+    desc[3] = (uint32_t)(uintptr_t)dst;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    for (int i = 0; i < sizeof(dst); i++) {
+        check32(dst[i], 0);
+    }
+}
+
+static void test_unsupported_width_offset(void)
+{
+    static type1_desc_t desc;
+    static uint8_t src[16], dst[16];
+
+    memset(src, 0x5a, sizeof(src));
+    memset(dst, 0, sizeof(dst));
+    desc[0] = 0;
+    desc[1] = DESC_DESCTYPE_TYPE1;
+    desc[2] = (uint32_t)(uintptr_t)src;
+    desc[3] = (uint32_t)(uintptr_t)dst;
+    desc[4] = 0;
+    desc[5] = (1u << 16) | sizeof(src);
+    desc[6] = (sizeof(src) << 16) | sizeof(src);
+    desc[7] = 1;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    for (int i = 0; i < sizeof(dst); i++) {
+        check32(dst[i], 0);
+    }
+}
+
+static void test_cyclic_chain(void)
+{
+    static type0_desc_t desc;
+
+    desc[0] = (uint32_t)(uintptr_t)desc;
+    desc[1] = DESC_DESCTYPE_TYPE0; /* A zero-length transfer is sufficient. */
+    desc[2] = 0;
+    desc[3] = 0;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+}
+
+static void test_descriptor_fault_status(void)
+{
+    struct sigaction act = { .sa_handler = sigsegv_handler };
+
+    sigemptyset(&act.sa_mask);
+    if (sigaction(SIGSEGV, &act, NULL) != 0) {
+        err++;
+        return;
+    }
+    if (sigsetjmp(fault_jmp, 1) == 0) {
+        /* Aligned but unmapped, so descriptor probing raises SIGSEGV. */
+        dmstart(0x10);
+        err++;
+    }
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    signal(SIGSEGV, SIG_DFL);
+}
+
 int main(void)
 {
     test_type0_single();
@@ -195,6 +279,10 @@ int main(void)
     test_type1_box();
     test_dmpause_after_completion();
     test_misaligned_descriptor();
+    test_unsupported_control();
+    test_unsupported_width_offset();
+    test_cyclic_chain();
+    test_descriptor_fault_status();
 
     puts(err ? "FAIL" : "PASS");
     return err;
