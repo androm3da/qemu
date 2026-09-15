@@ -346,7 +346,7 @@ void HELPER(commit_hvx_stores)(CPUHexagonState *env)
                 g_assert_not_reached();
             }
         } else {
-            for (int i = 0; i < sizeof(MMVector); i++) {
+            for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) {
                 if (test_bit(i, env->vtcm_log.mask)) {
                     cpu_stb_data_ra(env, env->vtcm_log.va[i],
                                     env->vtcm_log.data.ub[i], ra);
@@ -644,7 +644,7 @@ static void probe_hvx_stores(CPUHexagonState *env, int mmu_idx,
                 g_assert_not_reached();
             }
         } else {
-            for (int i = 0; i < sizeof(MMVector); i++) {
+            for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) {
                 if (test_bit(i, env->vtcm_log.mask)) {
                     probe_write(env, env->vtcm_log.va[i], 1, mmu_idx, retaddr);
                 }
@@ -1578,13 +1578,14 @@ void HELPER(vhist)(CPUHexagonState *env)
     MMVector *input = &env->tmp_VRegs[0];
 
     for (int lane = 0; lane < 8; lane++) {
-        for (int i = 0; i < sizeof(MMVector) / 8; ++i) {
-            unsigned char value = input->ub[(sizeof(MMVector) / 8) * lane + i];
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; ++i) {
+            unsigned char value =
+                input->ub[(MAX_VEC_SIZE_BYTES / 8) * lane + i];
             unsigned char regno = value >> 3;
             unsigned char element = value & 7;
 
             env->hvx->VRegs[regno]
-                .uh[(sizeof(MMVector) / 16) * lane + element]++;
+                .uh[(MAX_VEC_SIZE_BYTES / 16) * lane + element]++;
         }
     }
 }
@@ -1594,14 +1595,15 @@ void HELPER(vhistq)(CPUHexagonState *env)
     MMVector *input = &env->tmp_VRegs[0];
 
     for (int lane = 0; lane < 8; lane++) {
-        for (int i = 0; i < sizeof(MMVector) / 8; ++i) {
-            unsigned char value = input->ub[(sizeof(MMVector) / 8) * lane + i];
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES / 8; ++i) {
+            unsigned char value =
+                input->ub[(MAX_VEC_SIZE_BYTES / 8) * lane + i];
             unsigned char regno = value >> 3;
             unsigned char element = value & 7;
 
-            if (fGETQBIT(env->qtmp, sizeof(MMVector) / 8 * lane + i)) {
+            if (fGETQBIT(env->qtmp, MAX_VEC_SIZE_BYTES / 8 * lane + i)) {
                 env->hvx->VRegs[regno].uh[
-                    (sizeof(MMVector) / 16) * lane + element]++;
+                    (MAX_VEC_SIZE_BYTES / 16) * lane + element]++;
             }
         }
     }
@@ -1611,7 +1613,7 @@ void HELPER(vwhist256)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1626,7 +1628,7 @@ void HELPER(vwhist256q)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1643,7 +1645,7 @@ void HELPER(vwhist256_sat)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1658,7 +1660,7 @@ void HELPER(vwhist256q_sat)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1675,7 +1677,7 @@ void HELPER(vwhist128)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1690,7 +1692,7 @@ void HELPER(vwhist128q)(CPUHexagonState *env)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1707,7 +1709,7 @@ void HELPER(vwhist128m)(CPUHexagonState *env, int32_t uiV)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
@@ -1724,7 +1726,7 @@ void HELPER(vwhist128qm)(CPUHexagonState *env, int32_t uiV)
 {
     MMVector *input = &env->tmp_VRegs[0];
 
-    for (int i = 0; i < (sizeof(MMVector) / 2); i++) {
+    for (int i = 0; i < (MAX_VEC_SIZE_BYTES / 2); i++) {
         unsigned int bucket = fGETUBYTE(0, input->h[i]);
         unsigned int weight = fGETUBYTE(1, input->h[i]);
         unsigned int vindex = (bucket >> 3) & 0x1F;
