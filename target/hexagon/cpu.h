@@ -189,12 +189,16 @@ typedef struct HexagonCPUClass {
 } HexagonCPUClass;
 
 #include "cpu_bits.h"
+#include "target/hexagon/dma.h"
 
 struct ArchCPU {
     CPUState parent_obj;
 
     CPUHexagonState env;
     HexagonCPUConfig cfg;
+
+    /* One user-DMA engine per hardware thread, in linux-user and softmmu. */
+    HexagonDMAState dma;
 #ifndef CONFIG_USER_ONLY
     HexagonTLBState *tlb;
     uint32_t boot_addr;

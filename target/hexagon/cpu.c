@@ -23,6 +23,7 @@
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
 #include "qapi/error.h"
+#include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
 #include "fpu/softfloat-helpers.h"
 #include "hw/hexagon/hexagon_tlb.h"
@@ -426,6 +427,8 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
         mcc->parent_phases.hold(obj, type);
     }
 
+    device_cold_reset(DEVICE(&HEXAGON_CPU(obj)->dma));
+
     set_default_nan_mode(1, &env->fp_status);
     set_float_detect_tininess(float_tininess_before_rounding, &env->fp_status);
     /* Default NaN value: sign bit set, all frac bits set */
@@ -478,6 +481,10 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
                              hexagon_hvx_gdb_write_register,
                              gdb_find_static_feature("hexagon-hvx.xml"));
+
+    if (!qdev_realize(DEVICE(&cpu->dma), NULL, errp)) {
+        return;
+    }
 
 #ifndef CONFIG_USER_ONLY
     if (!HEXAGON_CPU(dev)->tlb) {
@@ -549,8 +556,10 @@ static void hexagon_cpu_set_irq(void *opaque, int irq, int level)
 
 static void hexagon_cpu_init(Object *obj)
 {
-#ifndef CONFIG_USER_ONLY
     HexagonCPU *cpu = HEXAGON_CPU(obj);
+
+    object_initialize_child(obj, "dma", &cpu->dma, TYPE_HEXAGON_DMA);
+#ifndef CONFIG_USER_ONLY
     qdev_init_gpio_in(DEVICE(cpu), hexagon_cpu_set_irq, 8);
 #endif
 }
