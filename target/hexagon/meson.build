@@ -241,6 +241,7 @@ hexagon_ss.add(files(
     'cpu.c',
     'translate.c',
     'op_helper.c',
+    'dma.c',
     'gdbstub.c',
     'genptr.c',
     'reg_fields.c',
