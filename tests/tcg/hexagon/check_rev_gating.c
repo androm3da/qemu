@@ -122,6 +122,9 @@ TRY_FUNC(v79_dczeroa_nt,
 TRY_FUNC(v79_dcfetchbo_nt,
          ".word 0x9402e000    /* dcfetch(r2+#0):nt */\n")
 
+TRY_FUNC(v79hvx_vmerge_qf,
+         ".word 0x1f01e0e2    /* v2 = vmerge(v0.x, v1.w) */\n")
+
 TRY_FUNC(v81hvx_veqhf,
          ".word 0x1f82c11c    /* q0 = vcmp.eq(v1.hf, v2.hf) */\n")
 
@@ -162,6 +165,8 @@ int main(void)
     assert(try_v79_pstorerif_pi_nt() == SIGILL);
     assert(try_v79_dczeroa_nt() == SIGILL);
     assert(try_v79_dcfetchbo_nt() == SIGILL);
+
+    assert(try_v79hvx_vmerge_qf() == SIGILL);
 
     assert(try_v81hvx_veqhf() == SIGILL);
 
