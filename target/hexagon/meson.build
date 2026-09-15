@@ -22,7 +22,6 @@ gen_tcg_h = meson.current_source_dir() / 'gen_tcg.h'
 gen_tcg_hvx_h = meson.current_source_dir() / 'gen_tcg_hvx.h'
 gen_tcg_sys_h = meson.current_source_dir() / 'gen_tcg_sys.h'
 idef_parser_dir = meson.current_source_dir() / 'idef-parser'
-
 #
 #  Step 1
 #  We use a C program to create semantics_generated.pyinc
@@ -253,6 +252,7 @@ hexagon_ss.add(files(
     'mmvec/decode_ext_mmvec.c',
     'mmvec/system_ext_mmvec.c',
     'mmvec/hvx_ieee_fp.c',
+    'mmvec/mmvec_qfloat.c',
 ))
 
 hexagon_softmmu_ss.add(files(
