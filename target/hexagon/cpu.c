@@ -340,6 +340,8 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX,
                            cpu_mmu_index(env_cpu(env), false));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PCYCLE_ENABLED, 1);
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, CPU_MODE,
+                           get_cpu_mode(env));
 #else
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, MMU_INDEX, MMU_USER_IDX);
 #endif

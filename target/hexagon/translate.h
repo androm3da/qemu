@@ -43,6 +43,7 @@ typedef struct DisasContext {
     bool pkt_ends_tb;
     bool implicit_usr_write;
 #ifndef CONFIG_USER_ONLY
+    uint32_t cpu_mode;
     int greg_log[GREG_WRITES_MAX];
     int greg_log_idx;
     int sreg_log[SREG_WRITES_MAX];
