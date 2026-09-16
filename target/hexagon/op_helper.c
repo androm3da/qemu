@@ -99,6 +99,24 @@ G_NORETURN void HELPER(raise_exception)(CPUHexagonState *env, uint32_t excp,
     hexagon_raise_exception_err(env, excp, PC);
 }
 
+void HELPER(check_privilege)(CPUHexagonState *env, uint32_t cause)
+{
+#ifdef CONFIG_USER_ONLY
+    g_assert_not_reached();
+#else
+    int cpu_mode = get_cpu_mode(env);
+
+    if ((cause == HEX_CAUSE_PRIV_USER_NO_SINSN &&
+         cpu_mode != HEX_CPU_MODE_MONITOR) ||
+        (cause == HEX_CAUSE_PRIV_USER_NO_GINSN &&
+         cpu_mode == HEX_CPU_MODE_USER)) {
+        env->cause_code = cause;
+        hexagon_raise_exception_err(env, HEX_EVENT_PRECISE,
+                                    env->gpr[HEX_REG_PC]);
+    }
+#endif
+}
+
 void log_store32(CPUHexagonState *env, target_ulong addr,
                  target_ulong val, uint32_t width, int slot)
 {
