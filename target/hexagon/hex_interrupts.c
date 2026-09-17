@@ -240,10 +240,43 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
     bool ssr_ie = get_ssr_ie(env);
     bool ssr_ex = get_ssr_ex(env);
     bool imask = get_imask_bit(env, int_num);
-    bool lock_waiting = env->k0_lock_state == HEX_LOCK_WAITING ||
-                        env->tlb_lock_state == HEX_LOCK_WAITING;
+    /*
+     * A thread with a k0/tlb lock pending in any form -- WAITING for
+     * it, QUEUED for a grant it hasn't consumed yet, or already the
+     * OWNER -- must not take a new interrupt on top of it:
+     *
+     *  - WAITING: the thread is halted with next_PC still pointing at
+     *    the lock instruction; nothing about its state supports
+     *    fielding an interrupt right now.
+     *  - QUEUED: hex_{k0,tlb}_unlock() has just handed this thread the
+     *    lock but it hasn't retried the lock instruction to consume the
+     *    grant yet (that happens on the very next dispatch of this
+     *    vCPU). Accepting an unrelated interrupt in that narrow window
+     *    routes into the ISR first; if the ISR's own k0lock/tlblock call
+     *    sees the still-QUEUED state it consumes the grant on the
+     *    interrupted thread's behalf, stranding the original waiter
+     *    with a lock nobody will ever release.
+     *  - OWNER: k0lock/tlblock have no reentrancy -- a second lock
+     *    attempt by the same thread while it already owns the lock hits
+     *    the "Double k0lock" halt in hex_k0_lock()/hex_tlb_lock() (by
+     *    design: see the k0locklock test). An ISR that runs on top of
+     *    the owning thread and itself calls k0lock()/tlblock() hits
+     *    that same self-deadlock. Unlike the standalone double-lock
+     *    test, this thread keeps getting woken by unrelated pending
+     *    interrupts, so instead of halting cleanly it spins forever
+     *    re-triggering the double-lock halt. Real hardware avoids this
+     *    by not delivering interrupts to a thread that currently owns
+     *    the lock; do the same here so the ISR only ever runs once the
+     *    owning thread has released it.
+     *
+     * Treat all three the same so the thread either falls through to
+     * retry/keep the lock instruction, or finishes its critical section
+     * and unlocks, before it can be interrupted again.
+     */
+    bool lock_pending = env->k0_lock_state != HEX_LOCK_UNLOCKED ||
+                        env->tlb_lock_state != HEX_LOCK_UNLOCKED;
 
-    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_waiting;
+    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_pending;
 }
 
 static void clear_pending_locks(CPUHexagonState *env)
