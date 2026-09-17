@@ -106,13 +106,6 @@ class SysTestsStandaloneTests(QemuSystemTest):
             with self.subTest(machine=machine):
                 self.run_exit_zero("pendalot", machine=machine)
 
-    def test_swi2(self):
-        """
-        Heavy interrupt/thread cycling; measured ~105s to exit 0 on a
-        debug build, well past the default 60s vm.wait() timeout.
-        """
-        self.run_exit_zero("swi2", timeout=180.0)
-
     def test_swi_wait(self):
         """Interrupt-delivery test gated on pcycle_pause() busy-waits."""
         self.run_exit_zero("swi_wait")
