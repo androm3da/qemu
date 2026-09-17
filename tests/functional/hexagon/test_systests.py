@@ -99,9 +99,18 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_timer_reg(self):
         self.run_exit_zero("timer_reg")
 
+    def test_pendalot(self):
+        for machine in ("V66G_1024", "V68N_1024", "V81DGB_1",
+                        "V81QA_1"):
+            with self.subTest(machine=machine):
+                self.run_exit_zero("pendalot", machine=machine)
+
     def test_swi_wait(self):
         """Interrupt-delivery test gated on pcycle_pause() busy-waits."""
         self.run_exit_zero("swi_wait")
+
+    def test_pend_wake_wait(self):
+        self.run_exit_zero("pend_wake_wait")
 
     def test_standalone_vec(self):
         self.run_exit_zero("standalone_vec")
