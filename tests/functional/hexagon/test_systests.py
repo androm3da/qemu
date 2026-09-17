@@ -34,14 +34,15 @@ class SysTestsStandaloneTests(QemuSystemTest):
         self.assertTrue(os.path.exists(path))
         return path
 
-    def run_exit_zero(self, binary_name, *extra_args, machine="sim"):
+    def run_exit_zero(self, binary_name, *extra_args, machine="sim",
+                      timeout=60.0):
         self.set_machine(machine)
         self.set_vm_arg("-display", "none")
         self.set_vm_arg("-kernel", self.binary(binary_name))
         for flag, value in zip(extra_args[::2], extra_args[1::2]):
             self.set_vm_arg(flag, value)
         self.vm.launch()
-        self.vm.wait(timeout=60.0)
+        self.vm.wait(timeout=timeout)
         self.assertEqual(self.vm.exitcode(), 0,
                          f"Test {binary_name} exited with "
                          f"code {self.vm.exitcode()}, expected 0")
@@ -106,7 +107,11 @@ class SysTestsStandaloneTests(QemuSystemTest):
                 self.run_exit_zero("pendalot", machine=machine)
 
     def test_swi2(self):
-        self.run_exit_zero("swi2")
+        """
+        Heavy interrupt/thread cycling; measured ~105s to exit 0 on a
+        debug build, well past the default 60s vm.wait() timeout.
+        """
+        self.run_exit_zero("swi2", timeout=180.0)
 
     def test_swi_wait(self):
         """Interrupt-delivery test gated on pcycle_pause() busy-waits."""

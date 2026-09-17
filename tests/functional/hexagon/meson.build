@@ -6,5 +6,5 @@ tests_hexagon_system_thorough = [
 ]
 
 test_hexagon_timeouts = {
-  'systests': 180,
+  'systests': 400,
 }
