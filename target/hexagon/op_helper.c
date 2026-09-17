@@ -1327,6 +1327,21 @@ static void hex_k0_lock(CPUHexagonState *env)
             return;
         }
         env->k0_lock_state = HEX_LOCK_WAITING;
+        /*
+         * cpu_loop_exit() (unlike cpu_loop_exit_restore()) does not
+         * recompute env->gpr[HEX_REG_PC] from the TB's per-instruction
+         * records; it leaves whatever was last written there, which can
+         * be stale (e.g. the start PC of some earlier translation block)
+         * rather than this k0lock instruction's own address. Since
+         * hexagon_get_tb_cpu_state() looks up the next TB to execute
+         * from gpr[HEX_REG_PC], a stale value here makes the vCPU
+         * resume execution at the wrong PC entirely once this lock is
+         * granted and it's kicked back to life -- silently running
+         * whatever code happens to live at the stale address instead of
+         * retrying this lock instruction. Sync it explicitly so the
+         * eventual resume lands back on the lock instruction.
+         */
+        env->gpr[HEX_REG_PC] = env->next_PC - 4;
         cpu_interrupt(cs, CPU_INTERRUPT_HALT);
         cpu_loop_exit(cs);
     } else {
