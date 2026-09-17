@@ -12,6 +12,7 @@
 #include "system/cpus.h"
 #include "internal.h"
 #include "exec/cpu-interrupt.h"
+#include "accel/tcg/cpu-loop.h"
 #include "cpu_helper.h"
 #include "exec/cputlb.h"
 #include "hex_mmu.h"
@@ -188,8 +189,15 @@ void hex_tlb_lock(CPUHexagonState *env)
             return;
         }
         env->tlb_lock_state = HEX_LOCK_WAITING;
+        /*
+         * Halt on the tlblock itself so that it is re-executed once the
+         * lock is handed over, or once an interrupt taken while waiting
+         * returns.
+         */
+        env->gpr[HEX_REG_PC] = env->next_PC - 4;
         CPUState *cs = env_cpu(env);
         cpu_interrupt(cs, CPU_INTERRUPT_HALT);
+        cpu_loop_exit(cs);
     } else {
         env->next_PC += 4;
         env->tlb_lock_count++;
