@@ -8,6 +8,7 @@
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/qemu-print.h"
+#include "accel/tcg/cpu-loop.h"
 #include "cpu.h"
 #include "system/cpus.h"
 #include "internal.h"
@@ -185,11 +186,19 @@ void hex_tlb_lock(CPUHexagonState *env)
             env->next_PC += 4;
             CPUState *cs = env_cpu(env);
             cpu_interrupt(cs, CPU_INTERRUPT_HALT);
+            cpu_loop_exit(cs);
             return;
         }
         env->tlb_lock_state = HEX_LOCK_WAITING;
+        /*
+         * As in hex_k0_lock(): cpu_loop_exit() leaves gpr[HEX_REG_PC]
+         * as it was, so point it at this tlblock to have the thread retry
+         * it, rather than run on without the lock, once it is granted.
+         */
+        env->gpr[HEX_REG_PC] = env->next_PC - 4;
         CPUState *cs = env_cpu(env);
         cpu_interrupt(cs, CPU_INTERRUPT_HALT);
+        cpu_loop_exit(cs);
     } else {
         env->next_PC += 4;
         env->tlb_lock_count++;
