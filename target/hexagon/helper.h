@@ -19,7 +19,7 @@
 #include "helper_protos_generated.h.inc"
 
 DEF_HELPER_FLAGS_3(raise_exception, TCG_CALL_NO_RETURN, noreturn, env, i32, i32)
-DEF_HELPER_2(check_privilege, void, env, i32)
+DEF_HELPER_3(check_privilege, void, env, i32, i32)
 DEF_HELPER_2(commit_store, void, env, int)
 DEF_HELPER_3(gather_store, void, env, i32, int)
 DEF_HELPER_1(commit_hvx_stores, void, env)
@@ -131,6 +131,7 @@ DEF_HELPER_2(getimask, i32, env, i32)
 DEF_HELPER_3(setimask, void, env, i32, i32)
 DEF_HELPER_2(sreg_read, i32, env, i32)
 DEF_HELPER_2(sreg_read_pair, i64, env, i32)
+DEF_HELPER_2(pcycle_write, void, env, i64)
 DEF_HELPER_2(upcycle_read, i32, env, i32)
 DEF_HELPER_1(upcycle_read_pair, i64, env)
 DEF_HELPER_2(greg_read, i32, env, i32)

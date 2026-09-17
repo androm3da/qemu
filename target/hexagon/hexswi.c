@@ -703,7 +703,7 @@ static void sim_handle_trap0(CPUHexagonState *env)
 
         BQL_LOCK_GUARD();
         pcycles = cpu->globalregs ?
-            hexagon_globalreg_read_pcycle(cpu->globalregs) : 0;
+            hexagon_globalreg_get_pcycle(cpu->globalregs) : 0;
         env->gpr[HEX_REG_R00] = (uint32_t)pcycles;
         env->gpr[HEX_REG_R01] = (uint32_t)(pcycles >> 32);
         break;
