@@ -99,7 +99,7 @@ G_NORETURN void HELPER(raise_exception)(CPUHexagonState *env, uint32_t excp,
     hexagon_raise_exception_err(env, excp, PC);
 }
 
-void HELPER(check_privilege)(CPUHexagonState *env, uint32_t cause, uint32_t pc)
+void HELPER(check_privilege)(CPUHexagonState *env, uint32_t cause)
 {
 #ifdef CONFIG_USER_ONLY
     g_assert_not_reached();
@@ -111,7 +111,8 @@ void HELPER(check_privilege)(CPUHexagonState *env, uint32_t cause, uint32_t pc)
         (cause == HEX_CAUSE_PRIV_USER_NO_GINSN &&
          cpu_mode == HEX_CPU_MODE_USER)) {
         env->cause_code = cause;
-        hexagon_raise_exception_err(env, HEX_EVENT_PRECISE, pc);
+        hexagon_raise_exception_err(env, HEX_EVENT_PRECISE,
+                                    env->gpr[HEX_REG_PC]);
     }
 #endif
 }
@@ -1913,16 +1914,6 @@ void HELPER(sreg_write_masked)(CPUHexagonState *env, uint32_t reg, uint32_t val)
         if (cpu->globalregs) {
             hexagon_globalreg_write_masked(cpu->globalregs, reg, val);
         }
-    }
-}
-
-void HELPER(pcycle_write)(CPUHexagonState *env, uint64_t value)
-{
-    HexagonCPU *cpu = env_archcpu(env);
-
-    BQL_LOCK_GUARD();
-    if (cpu->globalregs) {
-        hexagon_globalreg_set_pcycle(cpu->globalregs, value);
     }
 }
 

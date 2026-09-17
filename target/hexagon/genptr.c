@@ -278,11 +278,12 @@ static void gen_log_sreg_write(DisasContext *ctx, int rnum, TCGv_i32 val)
     uint32_t reg_mask = sreg_immut_masks[rnum];
 
     /*
-     * Writes that change or rebase PCYCLE timestamp against the virtual
-     * clock, so icount must be synchronized first.
+     * Writes to MODECTL/SYSCFG can flip PCYCLE's run/enable state
+     * (pcycle_set_running()/PCYCLEEN edge detection in set_reg_value()),
+     * both of which timestamp against the virtual clock, so icount must
+     * be synchronized first.
      */
-    if (rnum == HEX_SREG_MODECTL || rnum == HEX_SREG_SYSCFG ||
-        rnum == HEX_SREG_PCYCLELO || rnum == HEX_SREG_PCYCLEHI) {
+    if (rnum == HEX_SREG_MODECTL || rnum == HEX_SREG_SYSCFG) {
         translator_io_start(&ctx->base);
     }
     if (rnum == HEX_SREG_IMASK &&
@@ -308,12 +309,6 @@ G_GNUC_UNUSED
 static void gen_log_sreg_write_pair(DisasContext *ctx, int rnum, TCGv_i64 val)
 {
     TCGv_i32 val32 = tcg_temp_new_i32();
-
-    if (rnum == HEX_SREG_PCYCLELO) {
-        translator_io_start(&ctx->base);
-        gen_helper_pcycle_write(tcg_env, val);
-        return;
-    }
 
     /* Low word */
     tcg_gen_extrl_i64_i32(val32, val);

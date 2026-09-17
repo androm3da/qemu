@@ -77,13 +77,11 @@ def gen_tcg_func(f, tag, regs, imms):
         if "A_PRIV" in hex_common.attribdict[tag]:
             f.write("    gen_helper_check_privilege(\n"
                     "        tcg_env, tcg_constant_i32("
-                    "HEX_CAUSE_PRIV_USER_NO_SINSN), "
-                    "tcg_constant_i32(ctx->pkt.pc));\n")
+                    "HEX_CAUSE_PRIV_USER_NO_SINSN));\n")
         if "A_GUEST" in hex_common.attribdict[tag]:
             f.write("    gen_helper_check_privilege(\n"
                     "        tcg_env, tcg_constant_i32("
-                    "HEX_CAUSE_PRIV_USER_NO_GINSN), "
-                    "tcg_constant_i32(ctx->pkt.pc));\n")
+                    "HEX_CAUSE_PRIV_USER_NO_GINSN));\n")
     if hex_common.need_ea(tag):
         f.write("    TCGv EA G_GNUC_UNUSED = tcg_temp_new();\n")
 

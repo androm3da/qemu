@@ -62,7 +62,8 @@ void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
 
 /* Global performance cycle counter access */
 uint64_t hexagon_globalreg_read_pcycle(HexagonGlobalRegState *s);
-uint64_t hexagon_globalreg_get_pcycle(HexagonGlobalRegState *s);
-void hexagon_globalreg_set_pcycle(HexagonGlobalRegState *s, uint64_t value);
+uint64_t hexagon_globalreg_get_pcycle_base(HexagonGlobalRegState *s);
+void hexagon_globalreg_set_pcycle_base(HexagonGlobalRegState *s,
+                                       uint64_t value);
 
 #endif /* HEXAGON_GLOBALREG_H */

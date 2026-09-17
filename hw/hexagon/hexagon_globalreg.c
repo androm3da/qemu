@@ -130,6 +130,8 @@ static const uint32_t global_sreg_immut_masks[NUM_SREGS] = {
     [HEX_SREG_ISDBEN] = 0xfffffffe,
     [HEX_SREG_TIMERLO] = IMMUTABLE,
     [HEX_SREG_TIMERHI] = IMMUTABLE,
+    [HEX_SREG_PCYCLELO] = IMMUTABLE,
+    [HEX_SREG_PCYCLEHI] = IMMUTABLE,
 };
 
 static void hexagon_globalreg_init(Object *obj)
@@ -165,23 +167,16 @@ static inline bool is_pcycle_reg(uint32_t reg)
 
 /*
  * MODECTL packs a per-thread enabled mask in bits[0:15] (MODECTL_E) and a
- * per-thread wait mask in bits[16:31] (MODECTL_W). PCYCLE advances while at
- * least one enabled thread is neither waiting nor in debug mode.
+ * per-thread wait mask in bits[16:31] (MODECTL_W). A thread is RUN or DEBUG
+ * (either of which should keep PCYCLE advancing) iff its E bit is set and
+ * its W bit is clear, so "some thread is neither WAIT nor OFF" reduces to
+ * a plain bitmask check with no need to visit every CPU.
  */
-static bool pcycle_any_thread_running(HexagonGlobalRegState *s)
+static inline bool modectl_any_thread_running(uint32_t modectl)
 {
-    uint32_t modectl = s->regs[HEX_SREG_MODECTL];
     uint32_t enabled = modectl & 0xffff;
     uint32_t waiting = modectl >> 16;
-    uint32_t debug =
-        extract32(s->regs[HEX_SREG_ISDBST],
-                  reg_field_info[ISDBST_DEBUGMODE].offset,
-                  reg_field_info[ISDBST_DEBUGMODE].width) |
-        extract32(s->regs[HEX_SREG_ISDBST2],
-                  reg_field_info[ISDBST2_DEBUGMODE].offset,
-                  reg_field_info[ISDBST2_DEBUGMODE].width);
-
-    return (enabled & ~waiting & ~debug) != 0;
+    return (enabled & ~waiting) != 0;
 }
 
 static uint64_t pcycle_value_now(HexagonGlobalRegState *s)
@@ -258,7 +253,6 @@ static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
 static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
                           uint32_t value)
 {
-    uint64_t pcycle;
     /*
      * SYSCFG.PCYCLEEN is a counter *enable*, not a pause: like a normal
      * hardware perf counter, turning it on (0->1) starts counting from 0.
@@ -268,14 +262,6 @@ static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
      */
     bool pcycle_enable = reg == HEX_SREG_SYSCFG &&
         !pcycle_enabled(s->regs[reg]) && pcycle_enabled(value);
-
-    if (is_pcycle_reg(reg)) {
-        pcycle = pcycle_value_now(s);
-        hexagon_globalreg_set_pcycle(s, reg == HEX_SREG_PCYCLELO ?
-            deposit64(pcycle, 0, 32, value) :
-            deposit64(pcycle, 32, 32, value));
-        return;
-    }
 
     s->regs[reg] = value;
     if (pcycle_enable) {
@@ -287,9 +273,8 @@ static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
     if (is_vid_reg(reg)) {
         l2vic_update_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1, value);
     }
-    if (reg == HEX_SREG_MODECTL || reg == HEX_SREG_ISDBST ||
-        reg == HEX_SREG_ISDBST2) {
-        pcycle_set_running(s, pcycle_any_thread_running(s));
+    if (reg == HEX_SREG_MODECTL) {
+        pcycle_set_running(s, modectl_any_thread_running(value));
     }
 }
 
@@ -349,19 +334,17 @@ void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
     set_reg_value(s, reg, hexagon_globalreg_masked_value(s, reg, value));
 }
 
-uint64_t hexagon_globalreg_get_pcycle(HexagonGlobalRegState *s)
+uint64_t hexagon_globalreg_get_pcycle_base(HexagonGlobalRegState *s)
 {
     g_assert(s);
-    return pcycle_value_now(s);
+    return s->g_pcycle_base;
 }
 
-void hexagon_globalreg_set_pcycle(HexagonGlobalRegState *s, uint64_t value)
+void hexagon_globalreg_set_pcycle_base(HexagonGlobalRegState *s,
+                                       uint64_t value)
 {
     g_assert(s);
     s->g_pcycle_base = value;
-    if (s->pcycle_running) {
-        s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    }
 }
 
 static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
@@ -392,7 +375,8 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
     }
     s->regs[HEX_SREG_ISDBEN] = isdben_val;
     s->regs[HEX_SREG_MODECTL] = 0x1;
-    pcycle_set_running(s, pcycle_any_thread_running(s));
+    pcycle_set_running(s,
+                       modectl_any_thread_running(s->regs[HEX_SREG_MODECTL]));
 
     /*
      * These register indices are placeholders in these arrays
@@ -438,27 +422,15 @@ static void hexagon_globalreg_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static int hexagon_globalreg_post_load(void *opaque, int version_id)
-{
-    HexagonGlobalRegState *s = opaque;
-
-    if (version_id < 2) {
-        s->pcycle_running = pcycle_any_thread_running(s);
-        s->pcycle_start_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    }
-    return 0;
-}
-
 static const VMStateDescription vmstate_hexagon_globalreg = {
     .name = "hexagon_globalreg",
     .version_id = 2,
-    .minimum_version_id = 1,
-    .post_load = hexagon_globalreg_post_load,
+    .minimum_version_id = 2,
     .fields = (const VMStateField[]){
         VMSTATE_UINT32_ARRAY(regs, HexagonGlobalRegState, NUM_SREGS),
         VMSTATE_UINT64(g_pcycle_base, HexagonGlobalRegState),
-        VMSTATE_INT64_V(pcycle_start_ns, HexagonGlobalRegState, 2),
-        VMSTATE_BOOL_V(pcycle_running, HexagonGlobalRegState, 2),
+        VMSTATE_INT64(pcycle_start_ns, HexagonGlobalRegState),
+        VMSTATE_BOOL(pcycle_running, HexagonGlobalRegState),
         VMSTATE_UINT32(boot_evb, HexagonGlobalRegState),
         VMSTATE_UINT64(config_table_addr, HexagonGlobalRegState),
         VMSTATE_UINT32(dsp_rev, HexagonGlobalRegState),
