@@ -79,6 +79,7 @@ blobs = [
   'npcm8xx_bootrom.bin',
   'vof.bin',
   'vof-nvram.bin',
+  'hexagon_loadlinux_v81',
 ]
 
 if get_option('install_blobs')
