@@ -35,6 +35,7 @@ enum {
     VIRT_MMIO,
     VIRT_FDT,
     VIRT_BOOT,
+    VIRT_GPT,
 };
 
 /*
@@ -49,12 +50,16 @@ enum {
  */
 static const int VIRTIO_IRQ_BASE = 16;
 static const int VIRT_UART0_IRQ = 15;
+static const int VIRT_GPT_IRQ = 12;
+/* Interrupt specifiers name l2vic lines offset by the 32 per-cpu lines. */
+#define VIRT_L2VIC_SPI_BASE 32
 
 static const MemMapEntry base_memmap[] = {
-    [VIRT_UART0] = { 0x10000000, 0x00000200 },
+    [VIRT_UART0] = { 0x10000000, 0x00001000 },
     [VIRT_MMIO] = { 0x11000000, 0x00001000 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
     [VIRT_BOOT] = { 0x99c00000, 0x00000200 },
+    [VIRT_GPT] = { 0xab000000, 0x00001000 },
 };
 
 static uint32_t bootloader[] = {
@@ -129,7 +134,7 @@ static int32_t fdt_add_l2vic(HexagonVirtMachineState *vms,
 
     qemu_fdt_add_subnode(ms->fdt, nodename);
     qemu_fdt_setprop_cell(ms->fdt, nodename, "#address-cells", 0x0);
-    qemu_fdt_setprop_cell(ms->fdt, nodename, "#interrupt-cells", 0x1);
+    qemu_fdt_setprop_cell(ms->fdt, nodename, "#interrupt-cells", 0x2);
     qemu_fdt_setprop(ms->fdt, nodename, "compatible", compat, sizeof(compat));
     qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", 0,
                            m_cfg->l2vic_base, m_cfg->l2vic_size);
@@ -165,6 +170,25 @@ static void fdt_add_hvx(HexagonVirtMachineState *vms,
         qemu_fdt_setprop_cells(ms->fdt, "/soc/hvx", "qcom,hvx-vlength",
                                m_cfg->cfgtable.hvx_vec_log_length);
     }
+}
+
+/*
+ * The H2 hypervisor provides the guest timer through hypercalls, so this
+ * node only tells the kernel's timer driver which interrupt to expect.
+ */
+static void fdt_add_gpt_node(HexagonVirtMachineState *vms)
+{
+    static const char compat[] = "qcom,h2-timer\0hvm-timer";
+    MachineState *ms = MACHINE(vms);
+    g_autofree char *name = g_strdup_printf("/soc/gpt@%" PRIx64,
+                                            base_memmap[VIRT_GPT].base);
+
+    qemu_fdt_add_subnode(ms->fdt, name);
+    qemu_fdt_setprop(ms->fdt, name, "compatible", compat, sizeof(compat));
+    qemu_fdt_setprop_cells(ms->fdt, name, "interrupts", VIRT_GPT_IRQ, 0);
+    qemu_fdt_setprop_cells(ms->fdt, name, "reg", 0x0,
+                           base_memmap[VIRT_GPT].base,
+                           base_memmap[VIRT_GPT].size);
 }
 
 static int32_t fdt_add_clocks(const HexagonVirtMachineState *vms)
@@ -211,7 +235,8 @@ static void fdt_add_uart(const HexagonVirtMachineState *vms, int uart,
     /* Note that we can't use setprop_string because of the embedded NUL */
     qemu_fdt_setprop(ms->fdt, nodename, "compatible", compat, sizeof(compat));
     qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", 0, base, size);
-    qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupts", VIRT_UART0_IRQ);
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
+                           VIRT_L2VIC_SPI_BASE + VIRT_UART0_IRQ, 0);
     qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
                           l2vic_phandle);
     qemu_fdt_setprop_cells(ms->fdt, nodename, "clocks", clk_phandle,
@@ -224,6 +249,20 @@ static void fdt_add_uart(const HexagonVirtMachineState *vms, int uart,
     qemu_fdt_setprop_string(ms->fdt, "/aliases", "serial0", nodename);
 
     g_free(nodename);
+}
+
+/* The kernel maps at most 896 MiB of RAM starting at its load address. */
+static void fdt_add_memory_node(const HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+    g_autofree char *nodename = NULL;
+    hwaddr base = vms->kernel_load_addr;
+    hwaddr size = MIN(ms->ram_size - base, 896 * MiB);
+
+    nodename = g_strdup_printf("/memory@%" PRIx64, base);
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "device_type", "memory");
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", 0, base, size);
 }
 
 static void fdt_add_cpu_nodes(const HexagonVirtMachineState *vms)
@@ -270,7 +309,8 @@ static void create_virtio_devices(HexagonVirtMachineState *vms,
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible",
                                 "virtio,mmio");
         qemu_fdt_setprop_cells(ms->fdt, nodename, "reg", 0, base, size);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupts", irq);
+        qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
+                               VIRT_L2VIC_SPI_BASE + irq, 0);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
                               l2vic_phandle);
 
@@ -476,6 +516,10 @@ static void virt_init(MachineState *ms)
     }
 
     fdt_add_cpu_nodes(vms);
+    if (vms->firmware_path) {
+        fdt_add_memory_node(vms);
+        fdt_add_gpt_node(vms);
+    }
     clk_phandle = fdt_add_clocks(vms);
     fdt_add_uart(vms, VIRT_UART0, clk_phandle, l2vic_phandle);
 
