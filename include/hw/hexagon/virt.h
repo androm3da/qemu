@@ -20,6 +20,9 @@ struct HexagonVirtMachineState {
     MemoryRegion *sys;
     MemoryRegion tcm;
     MemoryRegion bios;
+    uint64_t kernel_load_addr;
+    hwaddr fdt_addr;
+    char *firmware_path;
     Clock *apb_clk;
     DeviceState *virtio_mmio[VIRTIO_DEV_COUNT];
 };

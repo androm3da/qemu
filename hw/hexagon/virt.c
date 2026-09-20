@@ -18,6 +18,8 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/register.h"
+#include "qapi/visitor.h"
+#include "qemu/datadir.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "qemu/units.h"
@@ -32,7 +34,14 @@ enum {
     VIRT_UART0,
     VIRT_MMIO,
     VIRT_FDT,
+    VIRT_BOOT,
 };
+
+/*
+ * Physical address the firmware expects to find the kernel at, unless
+ * overridden with the "kernel-addr" property.
+ */
+#define VIRT_DEFAULT_KERNEL_ADDR 0xa0000000
 
 /*
  * Virtio IRQs run from VIRTIO_IRQ_BASE to
@@ -45,6 +54,37 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_UART0] = { 0x10000000, 0x00000200 },
     [VIRT_MMIO] = { 0x11000000, 0x00001000 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
+    [VIRT_BOOT] = { 0x99c00000, 0x00000200 },
+};
+
+static uint32_t bootloader[] = {
+    /* Load fdt_base_low value into r0: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c606, /*   r6 = ##-0x662fffd0 } */
+    0x9186c000, /* { r0 = memw(r6+#0x0) } */
+
+    /* Load fdt_base_high value into r1: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c586, /*   r6 = ##-0x662fffd4 } */
+    0x9186c001, /* { r1 = memw(r6+#0x0) } */
+
+    /* Load next_stage_entry value into r7: */
+    0x099c4000, /* { immext(#0x99c00000) */
+    0x7800c687, /*   r7 = ##-0x662fffcc } */
+    0x9187c007, /* { r7 = memw(r7+#0x0) } */
+
+    /* Jump to next_stage_entry, r1:0 now contains fdt_base: */
+    0x5287c000, /* { jumpr r7 } */
+    0x0, /* Invalid packet */
+    0x0, /* Pad for fdt_base_high */
+    0x0, /* Pad for fdt_base_low */
+    0x0, /* Pad for next_stage_entry */
+};
+
+enum {
+    FDT_HI = 11,
+    FDT_LO,
+    ENTRY_ADDR,
 };
 
 
@@ -241,7 +281,7 @@ static void create_virtio_devices(HexagonVirtMachineState *vms,
 void hexagon_load_fdt(const HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
-    hwaddr fdt_addr = base_memmap[VIRT_FDT].base;
+    hwaddr fdt_addr = vms->fdt_addr;
     uint32_t fdtsize = vms->fdt_size;
 
     g_assert(fdtsize <= base_memmap[VIRT_FDT].size);
@@ -253,33 +293,109 @@ void hexagon_load_fdt(const HexagonVirtMachineState *vms)
         rom_ptr_for_as(&address_space_memory, fdt_addr, fdtsize));
 }
 
-static uint64_t load_kernel(const HexagonVirtMachineState *vms)
+static uint64_t kernel_translate(void *opaque, uint64_t addr)
+{
+    HexagonVirtMachineState *vms = opaque;
+
+    return addr + vms->kernel_load_addr;
+}
+
+/*
+ * With firmware, the kernel ELF is relocated to kernel_load_addr, where the
+ * firmware (e.g. the H2 loadlinux hypervisor) expects to find it.
+ */
+static uint64_t load_kernel(HexagonVirtMachineState *vms, hwaddr *image_high)
 {
     MachineState *ms = MACHINE(vms);
+    uint64_t (*xlate)(void *, uint64_t) = NULL;
     uint64_t entry = 0;
-    if (load_elf_ram_sym(ms->kernel_filename, NULL, NULL, NULL, &entry, NULL,
-                         NULL, NULL, 0, EM_HEXAGON, 0, 0, &address_space_memory,
-                         false, NULL) > 0) {
+    uint64_t highaddr = 0;
+
+    if (vms->firmware_path) {
+        xlate = kernel_translate;
+    }
+
+    if (load_elf_ram_sym(ms->kernel_filename, NULL, xlate, vms, &entry, NULL,
+                         &highaddr, NULL, 0, EM_HEXAGON, 0, 0,
+                         &address_space_memory, false, NULL) > 0) {
+        *image_high = highaddr;
         return entry;
     }
     error_report("error loading '%s'", ms->kernel_filename);
     exit(1);
 }
 
+/*
+ * Place the FDT after the kernel image, inside the RAM window the kernel
+ * maps.  Must be done before the boot stub is created, since it embeds the
+ * FDT address.
+ */
+static void place_fdt(HexagonVirtMachineState *vms, hwaddr image_high)
+{
+    vms->fdt_addr = QEMU_ALIGN_UP(image_high + 16 * MiB, 4 * MiB);
+}
+
+/*
+ * Create a bootloader stub that passes the FDT address in r1:r0 and jumps to
+ * the firmware entry point.
+ */
+static uint64_t setup_boot_stub(HexagonVirtMachineState *vms,
+                                uint64_t jump_entry)
+{
+    uint64_t fdt_base = vms->fdt_addr;
+    uint64_t bootl_base = base_memmap[VIRT_BOOT].base;
+
+    bootloader[FDT_LO] = cpu_to_le32(extract64(fdt_base, 0, 32));
+    bootloader[FDT_HI] = cpu_to_le32(extract64(fdt_base, 32, 32));
+    bootloader[ENTRY_ADDR] = cpu_to_le32(extract64(jump_entry, 0, 32));
+
+    g_assert(sizeof(bootloader) <= base_memmap[VIRT_BOOT].size);
+    rom_add_blob_fixed_as("bootloader", bootloader, sizeof(bootloader),
+                          bootl_base, &address_space_memory);
+
+    return bootl_base;
+}
+
 static uint64_t load_bios(HexagonVirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
-    uint64_t bios_addr = 0x0;  /* Load BIOS at reset vector address 0x0 */
+    uint64_t bios_entry = 0;
     int bios_size;
 
-    bios_size = load_image_targphys(ms->firmware ?: "",
-                                    bios_addr, 64 * 1024, NULL);
+    if (load_elf_ram_sym(vms->firmware_path, NULL, NULL, NULL, &bios_entry,
+                         NULL, NULL, NULL, 0, EM_HEXAGON, 0, 0,
+                         &address_space_memory, false, NULL) > 0) {
+        return bios_entry;
+    }
+
+    /* Not an ELF: treat it as a raw binary for the reset vector. */
+    bios_size = load_image_targphys(vms->firmware_path, 0x0, ms->ram_size,
+                                    NULL);
     if (bios_size < 0) {
-        error_report("Could not load BIOS '%s'", ms->firmware ?: "");
+        error_report("Could not load BIOS '%s'", vms->firmware_path);
         exit(1);
     }
 
-    return bios_addr;  /* Return entry point at address 0x0 */
+    return 0x0;
+}
+
+/*
+ * "-bios none" (or no -bios) boots a kernel directly; anything else is
+ * looked up as firmware.
+ */
+static void resolve_firmware(HexagonVirtMachineState *vms)
+{
+    MachineState *ms = MACHINE(vms);
+
+    if (!ms->firmware || !strcmp(ms->firmware, "none")) {
+        return;
+    }
+
+    vms->firmware_path = qemu_find_file(QEMU_FILE_TYPE_BIOS, ms->firmware);
+    if (!vms->firmware_path) {
+        error_report("Could not find firmware '%s'", ms->firmware);
+        exit(1);
+    }
 }
 
 static void do_cpu_reset(void *opaque)
@@ -296,7 +412,11 @@ static void virt_init(MachineState *ms)
     int32_t clk_phandle;
     int32_t l2vic_phandle;
 
+    hwaddr image_high = 0;
+
     create_fdt(vms);
+    resolve_firmware(vms);
+    vms->fdt_addr = base_memmap[VIRT_FDT].base;
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs", ms->kernel_cmdline);
 
     vms->sys = get_system_memory();
@@ -326,11 +446,20 @@ static void virt_init(MachineState *ms)
         qemu_register_reset(do_cpu_reset, cpu);
 
         if (i == 0) {
-            if (ms->kernel_filename) {
-                uint64_t entry = load_kernel(vms);
+            if (vms->firmware_path && ms->kernel_filename) {
+                uint64_t bios_entry = load_bios(vms);
+
+                load_kernel(vms, &image_high);
+                place_fdt(vms, image_high);
+                qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr",
+                                     setup_boot_stub(vms, bios_entry));
+            } else if (ms->kernel_filename) {
+                uint64_t entry = load_kernel(vms, &image_high);
+
                 qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr", entry);
-            } else if (ms->firmware) {
+            } else if (vms->firmware_path) {
                 uint64_t entry = load_bios(vms);
+
                 qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr", entry);
             }
         }
@@ -354,6 +483,29 @@ static void virt_init(MachineState *ms)
 }
 
 
+static void virt_get_kernel_addr(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
+    visit_type_uint64(v, name, &vms->kernel_load_addr, errp);
+}
+
+static void virt_set_kernel_addr(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
+    visit_type_uint64(v, name, &vms->kernel_load_addr, errp);
+}
+
+static void virt_instance_init(Object *obj)
+{
+    HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(obj);
+
+    vms->kernel_load_addr = VIRT_DEFAULT_KERNEL_ADDR;
+}
+
 static void virt_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -371,6 +523,13 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     mc->no_cdrom = 1;
     mc->numa_mem_supported = false;
     mc->default_nic = "virtio-mmio-bus";
+
+    object_class_property_add(oc, "kernel-addr", "uint64",
+                              virt_get_kernel_addr, virt_set_kernel_addr,
+                              NULL, NULL);
+    object_class_property_set_description(oc, "kernel-addr",
+        "Physical address offset for loading the kernel ELF "
+        "(used with -bios + -kernel)");
 }
 
 
@@ -379,6 +538,7 @@ static const TypeInfo virt_machine_types[] = { {
     .parent = TYPE_HEXAGON_COMMON_MACHINE,
     .instance_size = sizeof(HexagonVirtMachineState),
     .class_init = virt_class_init,
+    .instance_init = virt_instance_init,
 } };
 
 DEFINE_TYPES(virt_machine_types)
