@@ -118,7 +118,8 @@ def is_cond_jump(tag):
         return False
     if "A_HWLOOP0_END" in attribdict[tag] or "A_HWLOOP1_END" in attribdict[tag]:
         return False
-    return re.compile(r"(if.*fBRANCH)|(if.*fJUMPR)").search(semdict[tag]) is not None
+    jump_re = re.compile(r"(if.*fBRANCH)|(if.*fJUMPR)")
+    return jump_re.search(semdict[tag]) is not None
 
 
 def is_cond_call(tag):
