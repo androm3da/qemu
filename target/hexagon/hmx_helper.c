@@ -2120,6 +2120,56 @@ static uint16_t hmx_fp16_fixup(uint16_t fp16, int inf_prop,
     return sign | 0x77FF;       /* Mode 2/3: +/-max(emax-1) */
 }
 
+/* Round a double through binary32, then truncate it to BF16. */
+static uint16_t hmx_double_to_bf16(double d)
+{
+    union { uint32_t u; float f; } u;
+    u.f = (float)d;
+    uint32_t bits = u.u;
+    uint32_t rounding_bias = HMX_BF16_RNE_BIAS +
+        ((bits >> HMX_BF16_BINARY32_SHIFT) & 1);
+    return (uint16_t)((bits + rounding_bias) >> HMX_BF16_BINARY32_SHIFT);
+}
+
+/*
+ * Fix up a BF16 result whose exponent field is all-ones (Inf or NaN)
+ * per the USR overflow/NaN-propagation mode bits -- same structure as
+ * hmx_fp16_fixup(), BF16 encoding widths.
+ */
+static uint16_t hmx_bf16_fixup(uint16_t bf16, int inf_prop,
+                                int nan_prop, int maxnorm)
+{
+    uint16_t sign = bf16 & HMX_BF16_SIGN_MASK;
+    int is_nan = ((bf16 & HMX_BF16_EXP_MASK) == HMX_BF16_EXP_MASK) &&
+        (bf16 & HMX_BF16_FRAC_MASK);
+
+    if ((bf16 & HMX_BF16_EXP_MASK) != HMX_BF16_EXP_MASK) {
+        return bf16;            /* Finite: no fixup */
+    }
+
+    if (is_nan) {
+        if (!inf_prop) {
+            return HMX_BF16_NEG_MAX_FINITE;
+        }
+        if (!maxnorm) {
+            return HMX_BF16_CANONICAL_NAN;
+        }
+        if (nan_prop) {
+            return HMX_BF16_NEG_MAX_FINITE;
+        }
+        return HMX_BF16_NEG_MAX_EMAX_MINUS_1;
+    }
+
+    /* Inf (or overflow that became Inf) */
+    if (!inf_prop) {
+        return sign | HMX_BF16_MAX_FINITE;
+    }
+    if (!maxnorm) {
+        return bf16;            /* Mode 1: +/-Inf */
+    }
+    return sign | HMX_BF16_MAX_EMAX_MINUS_1;
+}
+
 /*
  * Split a 20-bit FP convert result (fp16 << 4) into the same lo/hi
  * cvt_future_fxp cells the FXP UH 2x1 convert uses (hmx_cvt_out_lo()/
@@ -2140,21 +2190,21 @@ static inline void hmx_fp_split_to_fxp(HmxState *hmx, int fp_s, int o,
  * path (mirrors hmx_matmul_fp_dbl()'s scoping rationale: hmx_fp_uses_xfp
  * is always false for now). Only the plain, non-F8, non-BF16-output,
  * no-feedback branch of the reference's hmx_fp_convert_dbl() is ported:
- * FP8 output, BF16 output, and the relaxed-precision feedback
- * (fb_dst/fb_limit) branches all land as follow-up overrides, mirroring
- * how the FXP convert path's UH/UH2X2 formats were added incrementally
- * after UB. relu is accepted by HELPER(hmx_cvt_rs)'s caller for parity
- * with the FXP convert dispatch, but -- as in the reference -- it is
- * not actually consumed by the FP convert math; the bias register's
- * "shape" field is what gates min/max clamping for FP.
+ * FP8 output and the relaxed-precision feedback (fb_dst/fb_limit)
+ * branches land as follow-up overrides, mirroring how the FXP convert
+ * path's UH/UH2X2 formats were added incrementally after UB. relu is
+ * accepted by HELPER(hmx_cvt_rs)'s caller for parity with the FXP
+ * convert dispatch, but -- as in the reference -- it is not actually
+ * consumed by the FP convert math; the bias register's "shape" field
+ * is what gates min/max clamping for FP.
  *
  * Result is written into the shared cvt_future_fxp pipeline via
  * hmx_fp_split_to_fxp(), so HELPER(hmx_cvt_store) needs no changes to
- * read it back.
+ * read it back -- true for either FP16 or BF16 output, both 16 bits.
  */
 static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
                                 int acc_set, int bias_sel, int maxnorm,
-                                uint32_t cur_pc)
+                                int is_bf16_out, uint32_t cur_pc)
 {
     int inf_prop = GET_USR_FIELD(USR_FPCOPROC_INFNAN);
     int nan_prop = GET_USR_FIELD(USR_FPCOPROC_NANPROP);
@@ -2212,11 +2262,19 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
             double d_scaled = d_biased * d_scale_eff;
             double d_result = d_scaled + d_out_bias;
 
-            uint16_t fp16 = hmx_double_to_fp16(d_result);
-            if ((fp16 & 0x7C00) == 0x7C00) {
-                fp16 = hmx_fp16_fixup(fp16, inf_prop, nan_prop, maxnorm);
+            if (is_bf16_out) {
+                uint16_t bf16 = hmx_double_to_bf16(d_result);
+                if ((bf16 & HMX_BF16_EXP_MASK) == HMX_BF16_EXP_MASK) {
+                    bf16 = hmx_bf16_fixup(bf16, inf_prop, nan_prop, maxnorm);
+                }
+                hmx_fp_split_to_fxp(hmx, s, o, (uint32_t)bf16 << 4);
+            } else {
+                uint16_t fp16 = hmx_double_to_fp16(d_result);
+                if ((fp16 & 0x7C00) == 0x7C00) {
+                    fp16 = hmx_fp16_fixup(fp16, inf_prop, nan_prop, maxnorm);
+                }
+                hmx_fp_split_to_fxp(hmx, s, o, (uint32_t)fp16 << 4);
             }
-            hmx_fp_split_to_fxp(hmx, s, o, (uint32_t)fp16 << 4);
         }
     }
 }
@@ -2540,13 +2598,17 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
     case HMX_CVT_RS_HF:
     {
         /*
-         * Rs[6]: maxnorm, see hmx_fp16_fixup(). fb_dst must be 0 --
+         * Rs[6]: maxnorm, see hmx_fp16_fixup()/hmx_bf16_fixup(). Rs[7]:
+         * is_bf16_out (BF16 output instead of FP16), gated the same
+         * way as the matmul's BF16 select. fb_dst must be 0 --
          * relaxed-precision feedback isn't ported for FP yet.
          */
         int maxnorm = (rs >> 6) & 1;
+        int is_bf16_out = ((rs >> HMX_CVT_RS_BF16_BIT) & 1) &&
+            (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
         g_assert(fb_dst == 0);
         hmx_fp_convert_dbl(env, hmx, hmx->current_acc_set, bias_sel,
-                           maxnorm, cur_pc);
+                           maxnorm, is_bf16_out, cur_pc);
         if (acc_clear) {
             hmx->cvt_acc_clear_pending = 1;
             hmx->cvt_acc_clear_set = hmx->current_acc_set;
