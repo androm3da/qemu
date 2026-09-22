@@ -25,6 +25,8 @@ static inline void cpu_clone_regs_child(CPUHexagonState *env,
         env->gpr[HEX_REG_SP] = newsp;
     }
     env->gpr[0] = 0;
+    /* cpu_copy() gave the new thread its parent's HMX state pointer. */
+    env->hmx_state = env_archcpu(env)->hmx;
 }
 
 static inline void cpu_clone_regs_parent(CPUHexagonState *env, unsigned flags)

@@ -36,6 +36,8 @@ typedef struct HexagonHVXContextState HexagonHVXContextState;
 #include "exec/target_long.h"
 #include "hex_regs.h"
 #include "mmvec/mmvec.h"
+#include "hmx_config.h"
+#include "hmx_state.h"
 #include "hw/core/registerfields.h"
 #include "qemu/bitmap.h"
 
@@ -197,6 +199,13 @@ typedef struct CPUArchState {
     target_ulong vstore_pending[VSTORES_MAX];
     bool vtcm_pending;
     VTCMStoreLog vtcm_log;
+
+    /*
+     * Mirrors ArchCPU's hmx for the inline TCG code; NULL on revisions
+     * without HMX.  cpu_copy() copies it along with the rest of the env,
+     * see cpu_clone_regs_child() for linux-user.
+     */
+    HmxState *hmx_state;
 } CPUHexagonState;
 
 typedef struct HexagonCPUClass {
@@ -223,6 +232,8 @@ struct ArchCPU {
     uint32_t htid;
     HexL2VicInterface *l2vic;
 #endif
+    HmxState *hmx;      /* HMX register state, NULL if HMX is absent */
+    HmxConfig hmx_cfg;  /* Immutable per-revision HMX feature/shape config */
 };
 
 static inline HexagonHVXContext *hex_hvx(CPUHexagonState *env)
