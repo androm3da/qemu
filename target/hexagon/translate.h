@@ -100,6 +100,8 @@ typedef struct DisasContext {
     bool pcycle_enabled;
     bool hvx_coproc_enabled;
     bool hvx_check_emitted;
+    bool hmx_coproc_enabled;
+    bool hmx_check_emitted;
     uint32_t num_cycles;
 } DisasContext;
 
