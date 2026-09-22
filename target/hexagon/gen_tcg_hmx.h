@@ -519,6 +519,16 @@
         tcg_constant_i32(HMX_CVT_RS_UH_2X2))
 
 /*
+ * M8_cvt_rs_hf - trigger the scoped double-accumulator FP convert (see
+ * hmx_fp_convert_dbl()), same "writes its own return value into RsV"
+ * shape as M8_cvt_rs_ub above. M8_mxmem (already overridden below)
+ * serves as its store instruction unchanged.
+ */
+#define fGEN_TCG_M8_cvt_rs_hf(SHORTCODE) \
+    gen_helper_hmx_cvt_rs(RsV, tcg_env, RsV, \
+        tcg_constant_i32(HMX_CVT_RS_HF))
+
+/*
  * M8_mxmem_2x2 - store the deferred UH2X2 convert pipeline's output.
  * HELPER(hmx_cvt_store)'s addressing already treats HMX_CVTST_2X2 the
  * same as HMX_CVTST_NORMAL (both use the 4-byte-stride SM peg store,
@@ -529,5 +539,16 @@
 #define fGEN_TCG_M8_mxmem_2x2(SHORTCODE) \
     gen_helper_hmx_cvt_store(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_2X2, HMX_CVTST_AGE0)))
+
+/*
+ * M8_mxmem_wei_hf - FP16 weight load + FP matrix multiply (double-
+ * accumulator path). Only the NORMAL modifier is here for now; the
+ * other 5 modifiers and the F8 weight type land as follow-up
+ * overrides once this path is verified, mirroring how the FXP weight
+ * types/modifiers were extended incrementally.
+ */
+#define fGEN_TCG_M8_mxmem_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_NORMAL)))
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */
