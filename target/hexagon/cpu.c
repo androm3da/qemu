@@ -489,6 +489,10 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
 
     cpu->cfg.hex_def = mcc->hex_def;
 
+    hmx_init_config(cpu);
+    cpu->hmx = g_malloc0(sizeof(HmxState));
+    cpu_env(cs)->hmx_state = cpu->hmx;
+
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
                              hexagon_hvx_gdb_write_register,
                              gdb_find_static_feature("hexagon-hvx.xml"));

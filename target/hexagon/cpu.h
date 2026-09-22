@@ -36,6 +36,8 @@ typedef struct HexagonHVXContextState HexagonHVXContextState;
 #include "exec/target_long.h"
 #include "hex_regs.h"
 #include "mmvec/mmvec.h"
+#include "hmx_config.h"
+#include "hmx_state.h"
 #include "hw/core/registerfields.h"
 #include "qemu/bitmap.h"
 
@@ -188,6 +190,9 @@ typedef struct CPUArchState {
     target_ulong vstore_pending[VSTORES_MAX];
     bool vtcm_pending;
     VTCMStoreLog vtcm_log;
+
+    /* Mirrors ArchCPU's hmx below; cached here for hot-path access. */
+    HmxState *hmx_state;
 } CPUHexagonState;
 
 typedef struct HexagonCPUClass {
@@ -214,6 +219,8 @@ struct ArchCPU {
     uint32_t htid;
     HexL2VicInterface *l2vic;
 #endif
+    HmxState *hmx;      /* HMX register state, allocated at realize */
+    HmxConfig hmx_cfg;  /* Immutable per-revision HMX feature/shape config */
 };
 
 static inline HexagonHVXContext *hex_hvx(CPUHexagonState *env)
