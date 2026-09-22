@@ -258,6 +258,7 @@ F: tests/qtest/l2vic-test.c
 F: hw/timer/qct-qtimer.c
 F: include/hw/timer/qct-qtimer.h
 F: tests/qtest/qct-qtimer-test.c
+F: tests/qtest/hexagon-hmx-test.c
 F: hw/hexagon/hex-board.c
 F: include/hw/hexagon/hex-board.h
 X: target/hexagon/idef-parser/
