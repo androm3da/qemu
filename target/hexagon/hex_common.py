@@ -76,7 +76,9 @@ def uniquify(seq):
     return [x for x in seq if x not in seen and not seen_add(x)]
 
 
-regre = re.compile(r"((?<!DUP)[MNORCPQXSGVZA])([stuvwxyzdefg]+)([.]?[LlHh]?)(\d+S?)")
+regre = re.compile(
+    r"((?<!DUP)[MNORCPQXSGVZA])([stuvwxyzdefg]+)([.]?[LlHh]?)(\d+S?)"
+)
 immre = re.compile(r"[#]([rRsSuUm])(\d+)(?:[:](\d+))?")
 reg_or_immre = re.compile(
     r"(((?<!DUP)[MNRCOPQXSGVZA])([stuvwxyzdefg]+)"
@@ -116,7 +118,7 @@ def is_cond_jump(tag):
         return False
     if "A_HWLOOP0_END" in attribdict[tag] or "A_HWLOOP1_END" in attribdict[tag]:
         return False
-    return re.compile(r"(if.*fBRANCH)|(if.*fJUMPR)").search(semdict[tag]) != None
+    return re.compile(r"(if.*fBRANCH)|(if.*fJUMPR)").search(semdict[tag]) is not None
 
 
 def is_cond_call(tag):
@@ -170,7 +172,8 @@ def SEMANTICS(tag, beh, sem):
 
 
 def ATTRIBUTES(tag, attribstring):
-    attribstring = attribstring.replace("ATTRIBS", "").replace("(", "").replace(")", "")
+    attribstring = attribstring.replace("ATTRIBS", "").replace("(", "")
+    attribstring = attribstring.replace(")", "")
     if not attribstring:
         return
     attribs = attribstring.split(",")
@@ -984,7 +987,7 @@ class VRegPairDest(Register, Hvx, Dest):
         pass
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
-            /* {self.reg_tcg()} is *(MMVectorPair *)({self.helper_arg_name()}) */
+            /* {self.reg_tcg()} is a MMVectorPair at {self.helper_arg_name()} */
         """))
     def analyze_write(self, f, tag, regno):
         newv = hvx_newv(tag)
@@ -1021,7 +1024,7 @@ class VRegPairSource(Register, Hvx, OldSource):
             self.decl_tcg_ptr(f)
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
-            /* {self.reg_tcg()} is *(MMVectorPair *)({self.helper_arg_name()}) */
+            /* {self.reg_tcg()} is a MMVectorPair at {self.helper_arg_name()} */
         """))
     def analyze_read(self, f, regno):
         f.write(code_fmt(f"""\
@@ -1067,7 +1070,7 @@ class VRegPairReadWrite(Register, Hvx, ReadWrite):
         """))
     def helper_hvx_desc(self, f):
         f.write(code_fmt(f"""\
-            /* {self.reg_tcg()} is *(MMVectorPair *)({self.helper_arg_name()}) */
+            /* {self.reg_tcg()} is a MMVectorPair at {self.helper_arg_name()} */
         """))
     def analyze_read(self, f, regno):
         f.write(code_fmt(f"""\
@@ -1485,6 +1488,7 @@ def parse_common_args(desc):
     parser.add_argument("overrides", help="overrides file")
     parser.add_argument("overrides_vec", help="vector overrides file")
     parser.add_argument("overrides_sys", help="system overrides file")
+    parser.add_argument("overrides_hmx", help="HMX overrides file")
     parser.add_argument("out", help="output file")
     parser.add_argument("--idef-parser",
                         help="file of instructions translated by idef-parser")
@@ -1493,6 +1497,7 @@ def parse_common_args(desc):
     read_overrides_file(args.overrides)
     read_overrides_file(args.overrides_vec)
     read_overrides_file(args.overrides_sys)
+    read_overrides_file(args.overrides_hmx)
     if args.idef_parser:
         read_idef_parser_enabled_file(args.idef_parser)
     calculate_attribs()
