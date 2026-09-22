@@ -1252,6 +1252,9 @@ static void gen_commit_packet(DisasContext *ctx)
     if (ctx->pkt.pkt_has_hvx) {
         gen_commit_hvx(ctx);
     }
+    if (ctx->pkt.pkt_has_hmx) {
+        gen_helper_hmx_commit_packet(tcg_env);
+    }
     update_exec_counters(ctx);
 
     if (ctx->pkt.vhist_insn != NULL) {
