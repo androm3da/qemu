@@ -142,3 +142,10 @@ DEF_HELPER_1(resched, void, env)
 DEF_HELPER_3(modify_ssr, void, env, i32, i32)
 DEF_HELPER_1(pending_interrupt, void, env)
 #endif
+
+/* HMX (matrix) coprocessor extension */
+DEF_HELPER_1(hmx_clracc, void, env)
+DEF_HELPER_1(hmx_clracc_hf, void, env)
+DEF_HELPER_1(hmx_accshl, void, env)
+DEF_HELPER_3(hmx_bias_load, void, env, i32, i32)
+DEF_HELPER_3(hmx_bias_store, void, env, i32, i32)
