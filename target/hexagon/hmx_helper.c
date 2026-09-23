@@ -116,22 +116,24 @@ void HELPER(hmx_clracc)(CPUHexagonState *env)
     memset(&hmx->acc[1].fxp_secondary, 0, sizeof(HmxAccFxp));
 }
 
-/*
- * M8_mxclracc_hf - clear both FP accumulator sets.
- *
- * hmx_fp_uses_xfp is always false for now (see hmx_config.c), so this
- * only needs the plain-double zero; the XFP true-zero path lands with
- * the rest of the XFP accumulator support.
- */
+/* M8_mxclracc_hf - clear both FP accumulator sets. */
 void HELPER(hmx_clracc_hf)(CPUHexagonState *env)
 {
     HmxState *hmx = env->hmx_state;
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
 
-    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
-    memset(&hmx->acc[0].fp_primary, 0, sizeof(HmxAccFp));
-    memset(&hmx->acc[0].fp_secondary, 0, sizeof(HmxAccFp));
-    memset(&hmx->acc[1].fp_primary, 0, sizeof(HmxAccFp));
-    memset(&hmx->acc[1].fp_secondary, 0, sizeof(HmxAccFp));
+    if (hmx_cfg->hmx_fp_uses_xfp) {
+        for (int a = 0; a < HMX_NUM_ACC_SETS; a++) {
+            hmx_fp_acc_zero(hmx_cfg, &hmx->acc[a].fp_primary);
+            hmx_fp_acc_zero(hmx_cfg, &hmx->acc[a].fp_secondary);
+        }
+        hmx_fp_mac_cache_zero(hmx);
+    } else {
+        memset(&hmx->acc[0].fp_primary, 0, sizeof(HmxAccFp));
+        memset(&hmx->acc[0].fp_secondary, 0, sizeof(HmxAccFp));
+        memset(&hmx->acc[1].fp_primary, 0, sizeof(HmxAccFp));
+        memset(&hmx->acc[1].fp_secondary, 0, sizeof(HmxAccFp));
+    }
 }
 
 /*
@@ -1247,8 +1249,7 @@ static void hmx_fp_spatial_mac_dbl(
 /*
  * M8_mxmem_wei_{hf,f8} - FP weight load + matrix multiply against the
  * activation latched by the preceding act-load instruction, double-
- * accumulator path (hmx_cfg->hmx_fp_uses_xfp is always false for now,
- * see hmx_config.c, so this is the only FP matmul path reachable).
+ * accumulator path, used when !hmx_cfg->hmx_fp_uses_xfp (v75/v79).
  *
  * Unlike the FXP path, weight-vector validity is a plain Rt-derived
  * bound (no MAC-cycle-budget/decompression-buffer clamp -- the
@@ -2930,8 +2931,8 @@ static void hmx_cvt_pipeline_begin(HmxState *hmx, int fb_dst, uint32_t cur_pc)
 
 /*
  * M8_cvt_rs_{hf,f8} - FP accumulator convert to FP16, BF16, or F8,
- * double-accumulator path (mirrors hmx_matmul_fp_dbl()'s scoping
- * rationale: hmx_fp_uses_xfp is always false for now). relu is
+ * double-accumulator path, used when !hmx_cfg->hmx_fp_uses_xfp
+ * (v75/v79; see hmx_fp_convert_xfp() for v81). relu is
  * accepted by HELPER(hmx_cvt_rs)'s caller for parity with the FXP
  * convert dispatch, but -- as in the reference -- it is not actually
  * consumed by the FP convert math; the bias register's "shape" field

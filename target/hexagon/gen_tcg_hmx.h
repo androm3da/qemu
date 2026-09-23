@@ -519,18 +519,19 @@
         tcg_constant_i32(HMX_CVT_RS_UH_2X2))
 
 /*
- * M8_cvt_rs_hf - trigger the scoped double-accumulator FP convert (see
- * hmx_fp_convert_dbl()), same "writes its own return value into RsV"
- * shape as M8_cvt_rs_ub above. M8_mxmem (already overridden below)
- * serves as its store instruction unchanged.
+ * M8_cvt_rs_hf - trigger the FP convert (hmx_fp_convert_xfp() or
+ * hmx_fp_convert_dbl(), per hmx_cfg->hmx_fp_uses_xfp), same "writes
+ * its own return value into RsV" shape as M8_cvt_rs_ub above. M8_mxmem
+ * (already overridden below) serves as its store instruction unchanged.
  */
 #define fGEN_TCG_M8_cvt_rs_hf(SHORTCODE) \
     gen_helper_hmx_cvt_rs(RsV, tcg_env, RsV, \
         tcg_constant_i32(HMX_CVT_RS_HF))
 
 /*
- * M8_cvt_rs_f8 - trigger the FP8 convert (see hmx_fp_convert_dbl()'s
- * is_f8 branch), same shape as M8_cvt_rs_hf above.
+ * M8_cvt_rs_f8 - trigger the FP8 convert (the is_f8 branch of
+ * hmx_fp_convert_xfp() or hmx_fp_convert_dbl(), per
+ * hmx_cfg->hmx_fp_uses_xfp), same shape as M8_cvt_rs_hf above.
  */
 #define fGEN_TCG_M8_cvt_rs_f8(SHORTCODE) \
     gen_helper_hmx_cvt_rs(RsV, tcg_env, RsV, \
@@ -560,8 +561,8 @@
 
 /*
  * M8_mxmem[s,dr,dp,a,di]_wei_{hf,f8} - FP weight load + FP matrix
- * multiply (double-accumulator path), every weight type/modifier
- * combination. hmx_matmul_fp_dbl()'s modifier switch and
+ * multiply, every weight type/modifier combination.
+ * hmx_matmul_fp_dbl()'s modifier switch and
  * hmx_fp_extract_weights_dbl()'s HF/F8 branches already handle every
  * combination (verified against the port, same "already-general C
  * code, just add tag overrides" pattern as the FXP breadth commit) --

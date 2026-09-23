@@ -42,9 +42,8 @@ void hmx_init_config(HexagonCPU *cpu)
     hmx_cfg->mx_fp8_en              = false;
     hmx_cfg->mx_bthenc              = false;
     /*
-     * The XFP accumulator model isn't implemented yet (hmx_state.h's
-     * HmxAccFp is still double-only); leave every revision on the
-     * native-double FP path until it lands.
+     * v75/v79 have no XFP MAC/convert path at all (see hmx_xfp.c's
+     * header comment) -- they always use the native-double FP path.
      */
     hmx_cfg->hmx_fp_uses_xfp        = false;
     hmx_cfg->hmx_present            = (ver >= HEX_VER_V75);
@@ -58,6 +57,12 @@ void hmx_init_config(HexagonCPU *cpu)
         hmx_cfg->mx_fp_acc_exp      = 9;
         hmx_cfg->mx_fp8_en          = true;
         hmx_cfg->mx_bthenc          = true;
+        /*
+         * v81 uses the bit-exact XFP MAC/convert path
+         * (hmx_matmul_fp_xfp()/hmx_fp_convert_xfp()) instead of the
+         * double path every other version uses.
+         */
+        hmx_cfg->hmx_fp_uses_xfp    = true;
     }
 
     g_assert(hmx_cfg->mx_rows <= HMX_SPATIAL_DIM_FXP);
