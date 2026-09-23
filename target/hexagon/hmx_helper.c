@@ -2323,9 +2323,26 @@ static void hmx_flush_acc_clear(CPUHexagonState *env, HmxState *hmx)
     }
     acc = &hmx->acc[hmx->cvt_acc_clear_set].fxp_primary;
     memset(acc, 0, sizeof(HmxAccFxp));
-    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
-    memset(&hmx->acc[hmx->cvt_acc_clear_set].fp_primary, 0,
-           sizeof(HmxAccFp));
+    /*
+     * Also clear the FP accumulator here, not just FXP -- clearing
+     * only the FXP set would leave stale FP sums to accumulate across
+     * layers. Dispatch by CPU revision (hmx_config.c's
+     * hmx_fp_uses_xfp): the double-based FP path's true-zero is a
+     * plain memset (all-zero bits *is* IEEE +0.0); the XFP path needs
+     * hmx_fp_acc_zero()'s non-trivial canonical-zero builder, since
+     * all-zero bits are not XFP's true-zero encoding. This branch was
+     * unreachable (and untested) until hmx_fp_uses_xfp went live for
+     * v81; a leftover g_assert(!...hmx_fp_uses_xfp) here (dating from
+     * before any XFP code existed) caught that immediately as an
+     * abort the moment it did.
+     */
+    if (hmx_cfg_from_env(env)->hmx_fp_uses_xfp) {
+        hmx_fp_acc_zero(hmx_cfg_from_env(env),
+                        &hmx->acc[hmx->cvt_acc_clear_set].fp_primary);
+    } else {
+        memset(&hmx->acc[hmx->cvt_acc_clear_set].fp_primary, 0,
+               sizeof(HmxAccFp));
+    }
     hmx->current_acc_set = hmx->cvt_acc_clear_set ^ 1;
     hmx->cvt_acc_clear_pending = 0;
 }
