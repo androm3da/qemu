@@ -494,6 +494,9 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
     hmx_init_config(cpu);
     cpu->hmx = g_malloc0(sizeof(HmxState));
     cpu_env(cs)->hmx_state = cpu->hmx;
+    if (cpu->hmx_cfg.hmx_fp_uses_xfp) {
+        hmx_init_fp_state(&cpu->hmx_cfg, cpu->hmx);
+    }
 
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
                              hexagon_hvx_gdb_write_register,
