@@ -327,6 +327,10 @@ static inline int hmx_compute_indices(int start, int stop, int inc,
 #define HMX_CVT_RS_HF      5
 #define HMX_CVT_RS_F8      6
 
+/* Relaxed-precision FP convert feedback destination (cvt Rs[3:2]) */
+#define HEXAGON_XFP_FB_OUTBIAS 1
+#define HEXAGON_XFP_FB_SCALE   2
+
 /* Macros to pack/unpack helper parameters */
 #define HMX_PACK_WEI(type, mod)   ((type) | ((mod) << 8))
 #define HMX_UNPACK_WEI_TYPE(p)    ((p) & 0xFF)

@@ -2033,6 +2033,41 @@ static double hmx_xfp16_to_double(uint16_t fp16, uint32_t extra,
     return sign ? -result : result;
 }
 
+/*
+ * Decode an "extended BF16" value: bf16<<extra_width | extra, unpacked
+ * as 1 sign bit, 8 exponent bits (bias 127), 7+extra_width mantissa
+ * bits. Sibling of hmx_xfp16_to_double() above, same structure, BF16
+ * widths. Used (via hmx_fp_feedback_to_double()) to decode the
+ * relaxed-precision convert feedback value when the convert that
+ * produced it used BF16 output.
+ */
+static double hmx_xbf16_to_double(uint16_t bf16, uint32_t extra,
+                                   int extra_width)
+{
+    uint32_t combined = ((uint32_t)bf16 << extra_width) | extra;
+    int frac_bits = 7 + extra_width;
+    int sign = (combined >> (8 + frac_bits)) & 1;
+    int exp = (combined >> frac_bits) & 0xFF;
+    uint32_t man = combined & ((1u << frac_bits) - 1);
+
+    double result;
+    if (exp == 0) {
+        if (man == 0) {
+            return 0.0;
+        }
+        result = ldexp((double)man, 1 - 127 - frac_bits);
+    } else if (exp == 255) {
+        if (man == 0) {
+            return sign ? -INFINITY : INFINITY;
+        }
+        return NAN;
+    } else {
+        result = ldexp((double)((1u << frac_bits) + man),
+                       exp - 127 - frac_bits);
+    }
+    return sign ? -result : result;
+}
+
 /* Round a double to the nearest FP16, per IEEE round-to-nearest-even. */
 static uint16_t hmx_double_to_fp16(double val)
 {
@@ -2277,52 +2312,96 @@ static inline void hmx_fp_split_to_fxp(HmxState *hmx, int fp_s, int o,
 }
 
 /*
+ * Recombine the split lo/hi cvt_future_fxp halves a prior convert pass
+ * wrote (hmx_fp_split_to_fxp()) back into one 20-bit value, inverting
+ * hmx_cvt_out_lo()/hmx_cvt_out_hi()'s split.
+ */
+static inline uint32_t hmx_cvt_combine_feedback(uint16_t hi, uint16_t lo)
+{
+    return ((uint32_t)(hi & 0xFF0) << 8) | ((uint32_t)lo & 0xFFF);
+}
+
+/*
+ * Decode a 20-bit convert-feedback value to double; same shape as the
+ * scale/out_bias bias-register fields, so hmx_xfp16_to_double()/
+ * hmx_xbf16_to_double() suffice.
+ */
+static double hmx_fp_feedback_to_double(uint32_t fb20, int is_bf16)
+{
+    if (is_bf16) {
+        return hmx_xbf16_to_double((uint16_t)(fb20 >> 4), fb20 & 0xF, 4);
+    }
+    return hmx_xfp16_to_double((uint16_t)(fb20 >> 4), fb20 & 0xF, 4);
+}
+
+/*
+ * Set up the deferred cvt_fxp pipeline aging for a convert that fills
+ * the shared buffer (FP16/BF16 output, aliased in via
+ * hmx_fp_split_to_fxp()). fb_dst==0 starts a new cycle that ages on
+ * commit; a feedback pass (fb_dst!=0) at the same PC in the same
+ * packet suppresses that aging instead of starting a new one --
+ * mirrors hmx_fxp_convert()'s identical inline logic, factored out
+ * here since both the HF and F8 convert dispatch need it.
+ */
+static void hmx_cvt_pipeline_begin(HmxState *hmx, int fb_dst, uint32_t cur_pc)
+{
+    if (fb_dst == 0) {
+        hmx_flush_cvt_fxp(hmx);
+        hmx->cvt_fxp_pending = 1;
+        hmx->cvt_fxp_pending_age = 1;
+        hmx->cvt_fxp_pending_pc = cur_pc;
+    } else if (hmx->cvt_fxp_pending && cur_pc == hmx->cvt_fxp_pending_pc) {
+        hmx->cvt_fxp_pending_age = 0;
+    } else {
+        hmx_flush_cvt_fxp(hmx);
+        hmx->cvt_fxp_pending = 1;
+        hmx->cvt_fxp_pending_age = 0;
+        hmx->cvt_fxp_pending_pc = cur_pc;
+    }
+}
+
+/*
  * M8_cvt_rs_{hf,f8} - FP accumulator convert to FP16, BF16, or F8,
  * double-accumulator path (mirrors hmx_matmul_fp_dbl()'s scoping
- * rationale: hmx_fp_uses_xfp is always false for now). The
- * relaxed-precision feedback (fb_dst/fb_limit) branch lands as a
- * follow-up override, mirroring how the FXP convert path's UH/UH2X2
- * formats were added incrementally after UB. relu is accepted by
- * HELPER(hmx_cvt_rs)'s caller for parity with the FXP convert
- * dispatch, but -- as in the reference -- it is not actually consumed
- * by the FP convert math; the bias register's "shape" field is what
- * gates min/max clamping for FP.
+ * rationale: hmx_fp_uses_xfp is always false for now). relu is
+ * accepted by HELPER(hmx_cvt_rs)'s caller for parity with the FXP
+ * convert dispatch, but -- as in the reference -- it is not actually
+ * consumed by the FP convert math; the bias register's "shape" field
+ * is what gates min/max clamping for FP.
+ *
+ * fb_dst/fb_limit implement the relaxed-precision convert feedback: a
+ * first convert at some PC with fb_dst==0 writes its result into
+ * cvt_future_fxp as usual; a second convert at the *same* PC (a
+ * hardware-loop idiom) with fb_dst!=0 recombines those split cells
+ * (hmx_cvt_combine_feedback()) and clamps either the scale or the
+ * out_bias field against the recovered value (fb_limit selects
+ * max-clamp vs min-clamp) before applying it. cvt_future_fxp is a
+ * persistent scratch buffer -- hmx_flush_cvt_fxp() only ever copies
+ * out of it, never clears it -- so the first pass's cells are still
+ * there for the second pass to read even though a packet-boundary
+ * HELPER(hmx_commit_packet) flush runs in between on real compiled
+ * code.
  *
  * FP16/BF16 output is written into the shared cvt_future_fxp pipeline
  * via hmx_fp_split_to_fxp(), so HELPER(hmx_cvt_store) needs no changes
  * to read it back. F8 output instead RMW-writes hmx->cvt_fp[0]
  * directly (one call sets only the fp8_odd_sel-selected half,
- * preserving the other -- see HmxCvtStateFp's comment in hmx_state.h)
- * and skips cvt_future_fxp entirely: the reference also mirrors an F8
- * result into cvt_future_fxp, but only for the relaxed-precision
- * feedback mechanism this port doesn't support yet, so it's omitted
- * here rather than writing dead data. F8's own age-pipeline shift
- * (cvt_fp[2]=cvt_fp[1], cvt_fp[1]=cvt_fp[0]) happens unconditionally
- * at every F8 convert, unlike FP16/BF16's deferred/flush-on-demand
- * cvt_fxp_pending scheme -- ported at the HMX_CVT_RS_F8 call site
- * below, not in here, matching the reference's own split.
+ * preserving the other -- see HmxCvtStateFp's comment in hmx_state.h),
+ * but *also* mirrors its result into cvt_future_fxp (result << 4, in
+ * the fp8_odd_sel-selected half) purely so a later fb_dst!=0 F8 pass
+ * can read it back as feedback -- F8's own store path still reads
+ * cvt_fp directly and never touches cvt_future_fxp for storage.
  */
 static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
                                 int acc_set, int bias_sel, int maxnorm,
                                 int is_f8, int fp8_odd_sel,
-                                int is_bf16_out, uint32_t cur_pc)
+                                int is_bf16_out, int fb_dst, int fb_limit)
 {
     int inf_prop = GET_USR_FIELD(USR_FPCOPROC_INFNAN);
     int nan_prop = GET_USR_FIELD(USR_FPCOPROC_NANPROP);
 
     HmxAccFp *acc_fp = &hmx->acc[acc_set & 1].fp_primary;
     const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
-
-    if (!is_f8) {
-        /*
-         * Same deferred-aging convention as hmx_fxp_convert()'s
-         * fb_dst==0 branch (the only case this scoped path supports).
-         */
-        hmx_flush_cvt_fxp(hmx);
-        hmx->cvt_fxp_pending = 1;
-        hmx->cvt_fxp_pending_age = 1;
-        hmx->cvt_fxp_pending_pc = cur_pc;
-    }
 
     for (int o = 0; o < (int)hmx_cfg->mx_fp_cols; o++) {
         uint64_t raw = hmx->bias_raw[bias_sel][o];
@@ -2351,7 +2430,28 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
 
             int abs_negate = (shape == 3 && d_biased < 0) ? 1 : 0;
             int scale_neg = negate ^ abs_negate;
+
+            /*
+             * Recombine the 20-bit convert feedback from the split
+             * low/high cells a previous convert pass wrote (see this
+             * function's doc comment above).
+             */
+            double d_feedback = 0.0;
+            if (fb_dst != 0) {
+                uint16_t fb_lo = hmx->cvt_future_fxp.data[s * 2][o];
+                uint16_t fb_hi = hmx->cvt_future_fxp.data[s * 2 + 1][o];
+                d_feedback = hmx_fp_feedback_to_double(
+                    hmx_cvt_combine_feedback(fb_hi, fb_lo), is_bf16_out);
+            }
+
+            /* Scale, with per-element negate and optional feedback clamp */
             double d_scale_eff = scale_neg ? -d_scale : d_scale;
+            if (fb_dst == HEXAGON_XFP_FB_SCALE) {
+                double d_fb = scale_neg ? -d_feedback : d_feedback;
+                d_scale_eff = (fb_limit ^ scale_neg)
+                    ? fmax(d_scale_eff, d_fb)
+                    : fmin(d_scale_eff, d_fb);
+            }
 
             switch (shape) {
             case 1:
@@ -2363,7 +2463,16 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
             }
 
             double d_scaled = d_biased * d_scale_eff;
-            double d_result = d_scaled + d_out_bias;
+
+            /* Output bias, with optional feedback clamp */
+            double d_out_bias_eff = d_out_bias;
+            if (fb_dst == HEXAGON_XFP_FB_OUTBIAS) {
+                d_out_bias_eff = fb_limit
+                    ? fmax(d_out_bias, d_feedback)
+                    : fmin(d_out_bias, d_feedback);
+            }
+
+            double d_result = d_scaled + d_out_bias_eff;
 
             if (is_f8) {
                 uint8_t f8;
@@ -2380,6 +2489,20 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
                 } else {
                     hmx->cvt_fp[0].data[s][o] =
                         (prev & 0xFF00) | (uint16_t)f8;
+                }
+                /*
+                 * Also drive cvt_future_fxp for F8 feedback: writes
+                 * (result & 0xFF) << 4 into the fp8_odd_sel-selected
+                 * half so a later fb_dst!=0 F8 pass can read it back
+                 * -- separate from F8's own storage, which always
+                 * reads cvt_fp directly and never touches
+                 * cvt_future_fxp.
+                 */
+                uint16_t fb16 = (uint16_t)((uint32_t)f8 << 4);
+                if (fp8_odd_sel) {
+                    hmx->cvt_future_fxp.data[s * 2 + 1][o] = fb16;
+                } else {
+                    hmx->cvt_future_fxp.data[s * 2][o] = fb16;
                 }
             } else if (is_bf16_out) {
                 uint16_t bf16 = hmx_double_to_bf16(d_result);
@@ -2719,16 +2842,17 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
         /*
          * Rs[6]: maxnorm, see hmx_fp16_fixup()/hmx_bf16_fixup(). Rs[7]:
          * is_bf16_out (BF16 output instead of FP16), gated the same
-         * way as the matmul's BF16 select. fb_dst must be 0 --
-         * relaxed-precision feedback isn't ported for FP yet.
+         * way as the matmul's BF16 select. fb_dst/fb_limit: relaxed-
+         * precision convert feedback, see hmx_fp_convert_dbl()'s doc
+         * comment.
          */
         int maxnorm = (rs >> 6) & 1;
         int is_bf16_out = ((rs >> HMX_CVT_RS_BF16_BIT) & 1) &&
             (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
-        g_assert(fb_dst == 0);
+        hmx_cvt_pipeline_begin(hmx, fb_dst, cur_pc);
         hmx_fp_convert_dbl(env, hmx, hmx->current_acc_set, bias_sel,
                            maxnorm, /* is_f8 */ 0, /* fp8_odd_sel */ 0,
-                           is_bf16_out, cur_pc);
+                           is_bf16_out, fb_dst, fb_limit);
         if (acc_clear) {
             hmx->cvt_acc_clear_pending = 1;
             hmx->cvt_acc_clear_set = hmx->current_acc_set;
@@ -2741,8 +2865,8 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
         /*
          * Rs[6]: maxnorm. Rs[11]: fp8_odd_sel (which half of the
          * packed cvt_fp slot this call writes -- see
-         * hmx_fp_convert_dbl()'s F8 branch). fb_dst must be 0 --
-         * relaxed-precision feedback isn't ported for FP yet.
+         * hmx_fp_convert_dbl()'s F8 branch). fb_dst/fb_limit: relaxed-
+         * precision convert feedback.
          *
          * F8's age-pipeline shift happens unconditionally on every
          * F8 convert (unlike FP16/BF16's deferred cvt_fxp_pending
@@ -2750,12 +2874,11 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
          */
         int maxnorm = (rs >> 6) & 1;
         int fp8_odd_sel = (rs >> 11) & 1;
-        g_assert(fb_dst == 0);
         hmx->cvt_fp[2] = hmx->cvt_fp[1];
         hmx->cvt_fp[1] = hmx->cvt_fp[0];
         hmx_fp_convert_dbl(env, hmx, hmx->current_acc_set, bias_sel,
                            maxnorm, /* is_f8 */ 1, fp8_odd_sel,
-                           /* is_bf16_out */ 0, cur_pc);
+                           /* is_bf16_out */ 0, fb_dst, fb_limit);
         if (acc_clear) {
             hmx->cvt_acc_clear_pending = 1;
             hmx->cvt_acc_clear_set = hmx->current_acc_set;
