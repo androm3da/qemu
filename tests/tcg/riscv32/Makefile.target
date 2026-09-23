@@ -208,6 +208,11 @@ build-xqccmi-asm-tests:
 		$(XQCCMI_INST_DIR)/qc.cm.ilut.S \
 		-o $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
 	chmod +x $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
+	$(CC_XQCCMI) --target=riscv32-unknown-linux-gnu -march=rv32imc \
+		-fuse-ld=lld -nostdlib -static -x assembler-with-cpp \
+		$(XQCCMI_INST_DIR)/qc.cm.ilut-illegal.S \
+		-o $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-illegal-rv32
+	chmod +x $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-illegal-rv32
 
 .PHONY: run-xqccmi-asm-tests
 run-xqccmi-asm-tests: $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
@@ -218,4 +223,12 @@ run-xqccmi-asm-tests: $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
 		echo "PASS $$exe"; \
 	else \
 		echo "FAIL ($${err}) $$exe"; \
+	fi
+	@exe=$(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-illegal-rv32; \
+	out=$$(timeout 5s $(QEMU) -cpu qc_iu $$exe); \
+	err=$$?; \
+	if [ $$err -eq 0 ]; then \
+		echo "PASS $$exe"; \
+	else \
+		echo "FAIL ($${err}) $$exe: $$out"; \
 	fi
