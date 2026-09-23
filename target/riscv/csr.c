@@ -188,6 +188,14 @@ static RISCVException zcmt_or_xqccmt(CPURISCVState *env, int csrno)
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException xqccmi(CPURISCVState *env, int csrno)
+{
+    if (!riscv_cpu_cfg(env)->ext_xqccmi) {
+        return RISCV_EXCP_ILLEGAL_INST;
+    }
+    return RISCV_EXCP_NONE;
+}
+
 static RISCVException cfi_ss(CPURISCVState *env, int csrno)
 {
     if (!env_archcpu(env)->cfg.ext_zicfiss) {
@@ -5805,6 +5813,36 @@ static RISCVException write_jvt(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException read_qc_itba(CPURISCVState *env, int csrno,
+                                   target_ulong *val)
+{
+    *val = env->qc_itba;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException write_qc_itba(CPURISCVState *env, int csrno,
+                                    target_ulong val, uintptr_t ra)
+{
+    env->qc_itba = val & ~0x3f;
+    tb_flush(env_cpu(env));
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_qc_itdec(CPURISCVState *env, int csrno,
+                                    target_ulong *val)
+{
+    *val = env->qc_itdec;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException write_qc_itdec(CPURISCVState *env, int csrno,
+                                     target_ulong val, uintptr_t ra)
+{
+    env->qc_itdec = val & 0x3ff8;
+    tb_flush(env_cpu(env));
+    return RISCV_EXCP_NONE;
+}
+
 /*
  * Control and Status Register function table
  * riscv_csr_operations::predicate() must be provided for an implemented CSR
@@ -5840,6 +5878,10 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
 
     /* Zcmt Extension */
     [CSR_JVT] = {"jvt", zcmt_or_xqccmt, read_jvt, write_jvt},
+
+    /* Xqccmi Extension */
+    [CSR_QC_ITBA] = {"qc_itba", xqccmi, read_qc_itba, write_qc_itba},
+    [CSR_QC_ITDEC] = {"qc_itdec", xqccmi, read_qc_itdec, write_qc_itdec},
 
     /* zicfiss Extension, shadow stack register */
     [CSR_SSP]  = { "ssp", cfi_ss, read_ssp, write_ssp },

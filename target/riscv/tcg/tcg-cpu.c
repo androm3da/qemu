@@ -880,7 +880,7 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         }
     }
 
-    /* Verify conflicts and requirements for Xqci/Xqccmp/Xqccmt extensions */
+    /* Verify conflicts and requirements for Qualcomm vendor extensions. */
 
     if (cpu->cfg.ext_xqccmp) {
         if ((riscv_has_ext(env, RVC) && riscv_has_ext(env, RVD)) || cpu->cfg.ext_zcd || cpu->cfg.ext_zcmp) {
@@ -896,6 +896,18 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         }
     }
 
+    if (cpu->cfg.ext_xqccmi && cpu->cfg.ext_zcd) {
+        error_setg(errp, "xqccmi conflicts with Zcd");
+        return;
+    }
+
+#ifndef CONFIG_USER_ONLY
+    if (cpu->cfg.ext_xqccmi) {
+        error_setg(errp, "xqccmi is only supported in user-mode emulation");
+        return;
+    }
+#endif
+
     if (cpu->cfg.ext_xqcicm || cpu->cfg.ext_xqciac) {
         if ((riscv_has_ext(env, RVC) && riscv_has_ext(env, RVD)) || cpu->cfg.ext_zcd) {
             error_setg(errp, "Any of the extensions: xqcicm,xqciac conflicts with C,D,Zcd");
@@ -903,16 +915,24 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         }
     }
 
-    if (cpu->cfg.ext_xqciac || cpu->cfg.ext_xqcilia || cpu->cfg.ext_xqcibi || cpu->cfg.ext_xqcisim || cpu->cfg.ext_xqccmp || cpu->cfg.ext_xqccmt || cpu->cfg.ext_xqcibm || cpu->cfg.ext_xqciint || cpu->cfg.ext_xqcicm || cpu->cfg.ext_xqcilb || cpu->cfg.ext_xqcili || cpu->cfg.ext_xqcisync) {
+    if (cpu->cfg.ext_xqciac || cpu->cfg.ext_xqcilia ||
+        cpu->cfg.ext_xqcibi || cpu->cfg.ext_xqcisim ||
+        cpu->cfg.ext_xqccmp || cpu->cfg.ext_xqccmi ||
+        cpu->cfg.ext_xqccmt || cpu->cfg.ext_xqcibm ||
+        cpu->cfg.ext_xqciint || cpu->cfg.ext_xqcicm ||
+        cpu->cfg.ext_xqcilb || cpu->cfg.ext_xqcili ||
+        cpu->cfg.ext_xqcisync) {
         if (!cpu->cfg.ext_zca) {
-            error_setg(errp, "Any of the extensions: xqciac,xqcilia,xqcibi,xqcisim,xqccmp,xqccmt,xqcibm,xqciint,xqcicm,xqcilb,xqcili,xqcisync requires Zca");
+            error_setg(errp, "Any of the extensions: xqciac,xqcilia,xqcibi,"
+                       "xqcisim,xqccmp,xqccmi,xqccmt,xqcibm,xqciint,xqcicm,"
+                       "xqcilb,xqcili,xqcisync requires Zca");
             return;
         }
     }
 
-    if (cpu->cfg.ext_xqccmt) {
+    if (cpu->cfg.ext_xqccmi || cpu->cfg.ext_xqccmt) {
         if (!cpu->cfg.ext_zicsr) {
-            error_setg(errp, "xqccmt requires Zicsr");
+            error_setg(errp, "xqccmi and xqccmt require Zicsr");
             return;
         }
     }

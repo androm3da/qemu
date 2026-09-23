@@ -607,6 +607,10 @@
 /* Zcmt Extension */
 #define CSR_JVT             0x017
 
+/* Xqccmi Extension */
+#define CSR_QC_ITBA         0x800
+#define CSR_QC_ITDEC        0x801
+
 /* mstatus CSR bits */
 #define MSTATUS_UIE         0x00000001
 #define MSTATUS_SIE         0x00000002

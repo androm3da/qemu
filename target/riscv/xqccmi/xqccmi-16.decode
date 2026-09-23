@@ -1,0 +1,13 @@
+# Xqccmi: Qualcomm Custom Compressed Instruction Lookup Table
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+%index      2:11
+
+&qc_cm_ilut index
+
+@qc_cm_ilut  ...  ...........  ..  &qc_cm_ilut %index
+
+qc_cm_ilut   001 ........... 00 @qc_cm_ilut

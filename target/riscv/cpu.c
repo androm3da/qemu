@@ -249,6 +249,7 @@ const RISCVIsaExtData isa_edata_arr[] = {
     ISA_EXT_DATA_ENTRY(xtheadsync, PRIV_VERSION_1_11_0, ext_xtheadsync),
     ISA_EXT_DATA_ENTRY(xventanacondops, PRIV_VERSION_1_12_0, ext_XVentanaCondOps),
     ISA_EXT_DATA_ENTRY(xqccmp, PRIV_VERSION_1_12_0, ext_xqccmp),
+    ISA_EXT_DATA_ENTRY(xqccmi, PRIV_VERSION_1_12_0, ext_xqccmi),
     ISA_EXT_DATA_ENTRY(xqccmt, PRIV_VERSION_1_12_0, ext_xqccmt),
     ISA_EXT_DATA_ENTRY(xqci, PRIV_VERSION_1_12_0, ext_xqci),
     ISA_EXT_DATA_ENTRY(xqcia, PRIV_VERSION_1_12_0, ext_xqcia),
@@ -1392,6 +1393,7 @@ const RISCVCPUMultiExtConfig riscv_cpu_vendor_exts[] = {
     MULTI_EXT_CFG_BOOL("xtheadsync", ext_xtheadsync, false),
     MULTI_EXT_CFG_BOOL("xventanacondops", ext_XVentanaCondOps, false),
     MULTI_EXT_CFG_BOOL("xqccmp", ext_xqccmp, false),
+    MULTI_EXT_CFG_BOOL("xqccmi", ext_xqccmi, false),
     MULTI_EXT_CFG_BOOL("xqccmt", ext_xqccmt, false),
     MULTI_EXT_CFG_BOOL("xqci", ext_xqci, false),
     MULTI_EXT_CFG_BOOL("xqcia", ext_xqcia, false),
@@ -3121,6 +3123,9 @@ static const TypeInfo riscv_cpu_type_infos[] = {
         .cfg.ext_zcb = true,
         .cfg.ext_xqci = true,
         .cfg.ext_xqccmp = true,
+#ifdef CONFIG_USER_ONLY
+        .cfg.ext_xqccmi = true,
+#endif
         .cfg.ext_xqccmt = true,
         .cfg.ext_smrnmi = true,
         .cfg.ext_zicsr = true,

@@ -255,6 +255,8 @@ struct CPUArchState {
     target_ulong retxh;
 
     target_ulong jvt;
+    target_ulong qc_itba;
+    target_ulong qc_itdec;
 
     /* elp state for zicfilp extension */
     bool      elp;

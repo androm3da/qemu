@@ -3,11 +3,15 @@ SRC=$(SRC_PATH)/tests/tcg/riscv32
 XQCCMT_INST_DIR=$(SRC)/Xqccmt
 XQCCMT_OUT_ASM_DIR=xqccmt-asm-tests
 
+XQCCMI_INST_DIR=$(SRC)/Xqccmi
+XQCCMI_OUT_ASM_DIR=xqccmi-asm-tests
+
 # Compiler for Xqccmt hand-written assembly tests.
 # Uses clang-14 with lld because the JVT table requires a writable data
 # segment in a separate page from .text; qcld does not support this layout
 # for riscv32.  Override CC_XQCCMT if a different clang is preferred.
 CC_XQCCMT   ?= clang-14
+CC_XQCCMI   ?= clang-14
 
 XQCI_KLEE_IO_DIR=$(SRC)/klee_io/xqci
 XQCI_OUT_ASM_DIR=xqci-asm-tests
@@ -194,4 +198,24 @@ run-xqccmt-asm-tests: $(XQCCMT_OUT_ASM_DIR)/qc.cm.jt-jalt-rv32
 		echo "PASS $$exe"; \
 	else \
 		echo "FAIL ($${err}) $${exe}"; \
+	fi
+
+.PHONY: build-xqccmi-asm-tests
+build-xqccmi-asm-tests:
+	mkdir -p $(XQCCMI_OUT_ASM_DIR)
+	$(CC_XQCCMI) --target=riscv32-unknown-linux-gnu -march=rv32imc \
+		-fuse-ld=lld -nostdlib -static -x assembler-with-cpp \
+		$(XQCCMI_INST_DIR)/qc.cm.ilut.S \
+		-o $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
+	chmod +x $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
+
+.PHONY: run-xqccmi-asm-tests
+run-xqccmi-asm-tests: $(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32
+	@exe=$(XQCCMI_OUT_ASM_DIR)/qc.cm.ilut-rv32; \
+	out=$$(timeout 5s $(QEMU) -cpu qc_iu $$exe); \
+	err=$$?; \
+	if [ $$err -eq 0 ]; then \
+		echo "PASS $$exe"; \
+	else \
+		echo "FAIL ($${err}) $$exe"; \
 	fi

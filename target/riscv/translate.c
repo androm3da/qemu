@@ -1321,6 +1321,8 @@ static uint64_t decode_xqci_48_load_bytes(DisasContext *ctx, uint64_t insn,
 
 #endif /* TARGET_RISCV32 */
 
+#include "decode-xqccmi-16.c.inc"
+
 /*
  * Xqccmt (qc.cm.jt / qc.cm.jalt) is supported on both RV32 and RV64,
  * so its decoder and translation routines are compiled unconditionally.
@@ -1328,12 +1330,80 @@ static uint64_t decode_xqci_48_load_bytes(DisasContext *ctx, uint64_t insn,
 #include "decode-xqccmt-16.c.inc"
 #include "xqccmt/xqccmt-trans-decode.c.inc"
 
+static bool decode_ilut_insn(DisasContext *ctx, uint64_t opcode)
+{
+    int len = insn_len(opcode);
+
+    ctx->opcode = opcode;
+    ctx->cur_insn_len = len;
+
+    switch (len) {
+    case 2:
+        if ((has_ext(ctx, RVC) || ctx->cfg_ptr->ext_zca) &&
+            decode_insn16(ctx, opcode)) {
+            return true;
+        }
+        if (decode_xqccmi_16(ctx, opcode) || decode_xqccmt_16(ctx, opcode)) {
+            return true;
+        }
+#ifdef TARGET_RISCV32
+        if (decode_xqci_16(ctx, opcode) || decode_xqccmp_16(ctx, opcode)) {
+            return true;
+        }
+#endif
+        break;
+    case 4:
+        if (decode_insn32(ctx, opcode) || decode_xthead(ctx, opcode) ||
+            decode_XVentanaCodeOps(ctx, opcode)) {
+            return true;
+        }
+#ifdef TARGET_RISCV32
+        if (decode_xqci_32(ctx, opcode)) {
+            return true;
+        }
+#endif
+        break;
+    case 6:
+#ifdef TARGET_RISCV32
+        if (decode_xqci_48(ctx, opcode)) {
+            return true;
+        }
+#endif
+        break;
+    }
+
+    return false;
+}
+
+static bool ilut_is_pc_referencing(uint64_t opcode, int len)
+{
+    uint32_t insn = opcode;
+    uint32_t op = insn & 0x7f;
+    uint32_t funct3 = extract32(insn, 13, 3);
+
+    if (len == 4) {
+        return op == 0x17 || op == 0x63 || op == 0x67 || op == 0x6f;
+    }
+    if (len != 2) {
+        return false;
+    }
+
+    if (funct3 == 1 || funct3 == 5 || funct3 == 6 || funct3 == 7) {
+        return true;
+    }
+    return funct3 == 4 && (insn & 3) == 2 &&
+           extract32(insn, 2, 5) == 0;
+}
+
+#include "xqccmi/xqccmi-trans-decode.c.inc"
+
 /* The specification allows for longer insns, but not supported by qemu. */
 #define MAX_INSN_LEN  8
 
 const RISCVDecoder16 decoder_table_16[] = {
     { has_xqccmt_p, decode_xqccmt_16},
 #ifdef TARGET_RISCV32
+    { has_xqccmi_p, decode_xqccmi_16},
     { has_xqci_p, decode_xqci_16},
     { has_xqccmp_p, decode_xqccmp_16},
 #endif
