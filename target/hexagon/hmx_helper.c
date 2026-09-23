@@ -2171,6 +2171,97 @@ static uint16_t hmx_bf16_fixup(uint16_t bf16, int inf_prop,
 }
 
 /*
+ * Convert a double to e4m3 FP8 format (1 sign + 4 exp + 3 mantissa).
+ * Bias = 7. Uses round-to-nearest-even.
+ *
+ * Normal: (1 + man/8) * 2^(exp-7) for exp in 1..14
+ * Denorm: (man/8) * 2^(-6) for exp=0
+ * exp=15 with man=7 is NaN; exp=15 with man<7 is valid.
+ */
+static uint8_t hmx_double_to_f8e4m3(double val)
+{
+    if (val == 0.0) {
+        return 0;
+    }
+
+    uint8_t sign = val < 0 ? 1 : 0;
+    val = fabs(val);
+
+    /*
+     * e4m3 max finite: exp=15, man=6 -> (1+6/8)*2^8 = 448.
+     * exp=15 man=7 (0x7F) is NaN, so max representable is 0x7E = 448.
+     * Values >= 448 + 32 (midpoint to NaN) saturate to max.
+     */
+    if (val >= 480.0) {
+        return (sign << 7) | 0x7E;  /* max finite */
+    }
+
+    int exp;
+    double frac = frexp(val, &exp);
+    /* frac in [0.5, 1.0), val = frac * 2^exp */
+    int biased_exp = exp + 6;  /* exp - 1 + 7 */
+
+    if (biased_exp <= 0) {
+        /* Denorm: man/8 * 2^(-6), so man = val / 2^(-9) = val * 512 */
+        int man = (int)(val * 512.0 + 0.5);
+        if (man > 7) {
+            /* Overflows to smallest normal */
+            return (sign << 7) | (1 << 3);
+        }
+        if (man <= 0) {
+            return 0;
+        }
+        return (sign << 7) | (man & 0x7);
+    }
+
+    if (biased_exp > 15) {
+        return (sign << 7) | 0x7E;  /* max finite */
+    }
+
+    int man = (int)((frac * 2.0 - 1.0) * 8.0 + 0.5);
+    if (man >= 8) {
+        man = 0;
+        biased_exp++;
+    }
+    if (biased_exp > 15 || (biased_exp == 15 && man >= 7)) {
+        return (sign << 7) | 0x7E;  /* max finite (exp=15 man=7 is NaN) */
+    }
+    return (sign << 7) | (biased_exp << 3) | (man & 0x7);
+}
+
+/*
+ * Fix up an out-of-[-448,448]/NaN F8 result per the USR overflow/
+ * NaN-propagation mode bits -- same mode table as hmx_fp16_fixup(),
+ * but F8 has no Inf encoding (exp=15 man=7 is NaN, every other
+ * exp=15 pattern is finite), so an Inf/overflow input maps to
+ * max_finite in every mode rather than passing through unchanged.
+ */
+static uint8_t hmx_f8_fixup(double val, int inf_prop,
+                             int nan_prop, int maxnorm)
+{
+    uint8_t sign = signbit(val) ? 0x80 : 0;
+
+    if (isnan(val)) {
+        if (!inf_prop) {
+            return 0xFE;        /* Mode 0: -max_finite */
+        }
+        if (!maxnorm) {
+            return 0xFF;        /* Mode 1: canonical NaN */
+        }
+        if (nan_prop) {
+            return 0xFE;        /* Mode 3: -max_finite */
+        }
+        return 0xF7;            /* Mode 2: -max(emax-1) */
+    }
+
+    /* Inf or overflow */
+    if (!inf_prop || !maxnorm) {
+        return sign | 0x7E;     /* Mode 0/1: +/-max_finite */
+    }
+    return sign | 0x77;         /* Mode 2/3: +/-max(emax-1) */
+}
+
+/*
  * Split a 20-bit FP convert result (fp16 << 4) into the same lo/hi
  * cvt_future_fxp cells the FXP UH 2x1 convert uses (hmx_cvt_out_lo()/
  * hmx_cvt_out_hi()): byte at fp_s*2 = FP16 low byte, byte at
@@ -2186,24 +2277,34 @@ static inline void hmx_fp_split_to_fxp(HmxState *hmx, int fp_s, int o,
 }
 
 /*
- * M8_cvt_rs_hf - FP accumulator convert to FP16, double-accumulator
- * path (mirrors hmx_matmul_fp_dbl()'s scoping rationale: hmx_fp_uses_xfp
- * is always false for now). Only the plain, non-F8, non-BF16-output,
- * no-feedback branch of the reference's hmx_fp_convert_dbl() is ported:
- * FP8 output and the relaxed-precision feedback (fb_dst/fb_limit)
- * branches land as follow-up overrides, mirroring how the FXP convert
- * path's UH/UH2X2 formats were added incrementally after UB. relu is
- * accepted by HELPER(hmx_cvt_rs)'s caller for parity with the FXP
- * convert dispatch, but -- as in the reference -- it is not actually
- * consumed by the FP convert math; the bias register's "shape" field
- * is what gates min/max clamping for FP.
+ * M8_cvt_rs_{hf,f8} - FP accumulator convert to FP16, BF16, or F8,
+ * double-accumulator path (mirrors hmx_matmul_fp_dbl()'s scoping
+ * rationale: hmx_fp_uses_xfp is always false for now). The
+ * relaxed-precision feedback (fb_dst/fb_limit) branch lands as a
+ * follow-up override, mirroring how the FXP convert path's UH/UH2X2
+ * formats were added incrementally after UB. relu is accepted by
+ * HELPER(hmx_cvt_rs)'s caller for parity with the FXP convert
+ * dispatch, but -- as in the reference -- it is not actually consumed
+ * by the FP convert math; the bias register's "shape" field is what
+ * gates min/max clamping for FP.
  *
- * Result is written into the shared cvt_future_fxp pipeline via
- * hmx_fp_split_to_fxp(), so HELPER(hmx_cvt_store) needs no changes to
- * read it back -- true for either FP16 or BF16 output, both 16 bits.
+ * FP16/BF16 output is written into the shared cvt_future_fxp pipeline
+ * via hmx_fp_split_to_fxp(), so HELPER(hmx_cvt_store) needs no changes
+ * to read it back. F8 output instead RMW-writes hmx->cvt_fp[0]
+ * directly (one call sets only the fp8_odd_sel-selected half,
+ * preserving the other -- see HmxCvtStateFp's comment in hmx_state.h)
+ * and skips cvt_future_fxp entirely: the reference also mirrors an F8
+ * result into cvt_future_fxp, but only for the relaxed-precision
+ * feedback mechanism this port doesn't support yet, so it's omitted
+ * here rather than writing dead data. F8's own age-pipeline shift
+ * (cvt_fp[2]=cvt_fp[1], cvt_fp[1]=cvt_fp[0]) happens unconditionally
+ * at every F8 convert, unlike FP16/BF16's deferred/flush-on-demand
+ * cvt_fxp_pending scheme -- ported at the HMX_CVT_RS_F8 call site
+ * below, not in here, matching the reference's own split.
  */
 static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
                                 int acc_set, int bias_sel, int maxnorm,
+                                int is_f8, int fp8_odd_sel,
                                 int is_bf16_out, uint32_t cur_pc)
 {
     int inf_prop = GET_USR_FIELD(USR_FPCOPROC_INFNAN);
@@ -2212,14 +2313,16 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
     HmxAccFp *acc_fp = &hmx->acc[acc_set & 1].fp_primary;
     const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
 
-    /*
-     * Same deferred-aging convention as hmx_fxp_convert()'s fb_dst==0
-     * branch (the only case this scoped path supports).
-     */
-    hmx_flush_cvt_fxp(hmx);
-    hmx->cvt_fxp_pending = 1;
-    hmx->cvt_fxp_pending_age = 1;
-    hmx->cvt_fxp_pending_pc = cur_pc;
+    if (!is_f8) {
+        /*
+         * Same deferred-aging convention as hmx_fxp_convert()'s
+         * fb_dst==0 branch (the only case this scoped path supports).
+         */
+        hmx_flush_cvt_fxp(hmx);
+        hmx->cvt_fxp_pending = 1;
+        hmx->cvt_fxp_pending_age = 1;
+        hmx->cvt_fxp_pending_pc = cur_pc;
+    }
 
     for (int o = 0; o < (int)hmx_cfg->mx_fp_cols; o++) {
         uint64_t raw = hmx->bias_raw[bias_sel][o];
@@ -2262,7 +2365,23 @@ static void hmx_fp_convert_dbl(CPUHexagonState *env, HmxState *hmx,
             double d_scaled = d_biased * d_scale_eff;
             double d_result = d_scaled + d_out_bias;
 
-            if (is_bf16_out) {
+            if (is_f8) {
+                uint8_t f8;
+                if (isnan(d_result) || isinf(d_result) ||
+                    fabs(d_result) > 448.0) {
+                    f8 = hmx_f8_fixup(d_result, inf_prop, nan_prop, maxnorm);
+                } else {
+                    f8 = hmx_double_to_f8e4m3(d_result);
+                }
+                uint16_t prev = hmx->cvt_fp[0].data[s][o];
+                if (fp8_odd_sel) {
+                    hmx->cvt_fp[0].data[s][o] =
+                        (prev & 0x00FF) | ((uint16_t)f8 << 8);
+                } else {
+                    hmx->cvt_fp[0].data[s][o] =
+                        (prev & 0xFF00) | (uint16_t)f8;
+                }
+            } else if (is_bf16_out) {
                 uint16_t bf16 = hmx_double_to_bf16(d_result);
                 if ((bf16 & HMX_BF16_EXP_MASK) == HMX_BF16_EXP_MASK) {
                     bf16 = hmx_bf16_fixup(bf16, inf_prop, nan_prop, maxnorm);
@@ -2608,7 +2727,35 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
             (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
         g_assert(fb_dst == 0);
         hmx_fp_convert_dbl(env, hmx, hmx->current_acc_set, bias_sel,
-                           maxnorm, is_bf16_out, cur_pc);
+                           maxnorm, /* is_f8 */ 0, /* fp8_odd_sel */ 0,
+                           is_bf16_out, cur_pc);
+        if (acc_clear) {
+            hmx->cvt_acc_clear_pending = 1;
+            hmx->cvt_acc_clear_set = hmx->current_acc_set;
+            hmx->cvt_acc_clear_pc = cur_pc;
+        }
+        return 0;
+    }
+    case HMX_CVT_RS_F8:
+    {
+        /*
+         * Rs[6]: maxnorm. Rs[11]: fp8_odd_sel (which half of the
+         * packed cvt_fp slot this call writes -- see
+         * hmx_fp_convert_dbl()'s F8 branch). fb_dst must be 0 --
+         * relaxed-precision feedback isn't ported for FP yet.
+         *
+         * F8's age-pipeline shift happens unconditionally on every
+         * F8 convert (unlike FP16/BF16's deferred cvt_fxp_pending
+         * scheme), matching the reference's own call-site placement.
+         */
+        int maxnorm = (rs >> 6) & 1;
+        int fp8_odd_sel = (rs >> 11) & 1;
+        g_assert(fb_dst == 0);
+        hmx->cvt_fp[2] = hmx->cvt_fp[1];
+        hmx->cvt_fp[1] = hmx->cvt_fp[0];
+        hmx_fp_convert_dbl(env, hmx, hmx->current_acc_set, bias_sel,
+                           maxnorm, /* is_f8 */ 1, fp8_odd_sel,
+                           /* is_bf16_out */ 0, cur_pc);
         if (acc_clear) {
             hmx->cvt_acc_clear_pending = 1;
             hmx->cvt_acc_clear_set = hmx->current_acc_set;
@@ -2735,7 +2882,10 @@ static void hmx_store_x_row(CPUHexagonState *env,
  * before/after spatial split at (y_offset, x_offset) derived from Rs/Rt
  * (see the reference's HELPER(hmx_cvt_store) for the full row-rotation
  * rationale, ported unchanged here). Only the FXP (CM/SM/2x2) formats
- * are implemented; F8 needs the FP convert path, not written yet.
+ * use that row-rotation logic; F8 is a separate, unconditional
+ * full-buffer store (see the reference: F8 has no store-time spatial
+ * select, only the convert-time fp8_odd_sel half-select), handled
+ * before it.
  */
 void HELPER(hmx_cvt_store)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
                            uint32_t params)
@@ -2746,7 +2896,6 @@ void HELPER(hmx_cvt_store)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
     int age = HMX_UNPACK_CVTST_AGE(params);
     uintptr_t ra = GETPC();
 
-    g_assert(fmt != HMX_CVTST_F8);
     g_assert(age < HMX_NUM_CVT_AGES);
 
     uint32_t base_addr = rs & 0xFFFFF800;
@@ -2754,6 +2903,32 @@ void HELPER(hmx_cvt_store)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
     /* Flush the pending conversion before reading the aged pipeline. */
     hmx_flush_cvt_fxp(hmx);
     hmx_flush_acc_clear(env, hmx);
+
+    if (fmt == HMX_CVTST_F8) {
+        /*
+         * FP8 store: each cvt_fp slot packs two FP8 results (see
+         * HmxCvtStateFp's comment in hmx_state.h): low byte = even
+         * spatial (crouton 2s), high byte = odd spatial (crouton
+         * 2s+1). The even/odd half selection happens at convert time
+         * via fp8_odd_sel (Rs[11] on cvt.f8); the store unconditionally
+         * emits both halves to the two adjacent crouton positions, no
+         * store-time spatial select or row-rotation split.
+         */
+        HmxCvtStateFp *cvt = &hmx->cvt_fp[age];
+
+        for (int s = 0; s < HMX_SPATIAL_DIM_FP; s++) {
+            for (int o = 0; o < (int)hmx_cfg->mx_fp_cols; o++) {
+                uint16_t packed = cvt->data[s][o];
+                uint8_t f8_even = packed & 0xFF;
+                uint8_t f8_odd = (packed >> 8) & 0xFF;
+                int offset_even = hmx_act_offset_sm(s * 2, o);
+                int offset_odd = hmx_act_offset_sm(s * 2 + 1, o);
+                cpu_stb_data_ra(env, base_addr + offset_even, f8_even, ra);
+                cpu_stb_data_ra(env, base_addr + offset_odd, f8_odd, ra);
+            }
+        }
+        return;
+    }
 
     int is_cm = (fmt == HMX_CVTST_CM);
     uint32_t sp_mask = is_cm ? HMX_SPATIAL_MASK_BITS_CM

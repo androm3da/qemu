@@ -529,6 +529,24 @@
         tcg_constant_i32(HMX_CVT_RS_HF))
 
 /*
+ * M8_cvt_rs_f8 - trigger the FP8 convert (see hmx_fp_convert_dbl()'s
+ * is_f8 branch), same shape as M8_cvt_rs_hf above.
+ */
+#define fGEN_TCG_M8_cvt_rs_f8(SHORTCODE) \
+    gen_helper_hmx_cvt_rs(RsV, tcg_env, RsV, \
+        tcg_constant_i32(HMX_CVT_RS_F8))
+
+/*
+ * M8_mxmem_f8 - store the FP8 convert pipeline's output. A dedicated
+ * tag (distinct opcode from the generic M8_mxmem), matching real
+ * hardware's separate F8 store addressing (see
+ * HELPER(hmx_cvt_store)'s HMX_CVTST_F8 branch).
+ */
+#define fGEN_TCG_M8_mxmem_f8(SHORTCODE) \
+    gen_helper_hmx_cvt_store(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_F8, HMX_CVTST_AGE0)))
+
+/*
  * M8_mxmem_2x2 - store the deferred UH2X2 convert pipeline's output.
  * HELPER(hmx_cvt_store)'s addressing already treats HMX_CVTST_2X2 the
  * same as HMX_CVTST_NORMAL (both use the 4-byte-stride SM peg store,
