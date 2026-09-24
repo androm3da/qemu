@@ -15,7 +15,18 @@
     .global _start
 _start:
     lla t0, ilut
+    ori t0, t0, 63
     csrw 0x800, t0
+    csrr t1, 0x800
+    lla t2, ilut
+    bne t1, t2, fail
+
+    li t0, -1
+    csrw 0x801, t0
+    csrr t1, 0x801
+    li t2, 0x3ff8
+    bne t1, t2, fail
+
     li t0, 8
     csrw 0x801, t0
 
