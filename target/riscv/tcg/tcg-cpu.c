@@ -860,7 +860,8 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         return;
     }
 
-    if (cpu->cfg.ext_zilsd && riscv_has_ext(env, RVC)) {
+    if (cpu->cfg.ext_zilsd && riscv_has_ext(env, RVC) &&
+        !riscv_has_ext(env, RVF)) {
         cpu_cfg_ext_auto_update(cpu, CPU_CFG_OFFSET(ext_zclsd), true);
     }
 
@@ -1703,6 +1704,7 @@ static void riscv_init_max_cpu_extensions(Object *obj)
     isa_ext_update_enabled(cpu, CPU_CFG_OFFSET(ext_zce), false);
     isa_ext_update_enabled(cpu, CPU_CFG_OFFSET(ext_zcmp), false);
     isa_ext_update_enabled(cpu, CPU_CFG_OFFSET(ext_zcmt), false);
+    isa_ext_update_enabled(cpu, CPU_CFG_OFFSET(ext_zclsd), false);
 
     if (env->misa_mxl != MXL_RV32) {
         isa_ext_update_enabled(cpu, CPU_CFG_OFFSET(ext_zcf), false);
