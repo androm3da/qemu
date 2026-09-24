@@ -27,18 +27,23 @@ _start:
     li t2, 0x3ff8
     bne t1, t2, fail
 
-    li t0, 8
+    li t0, 24
     csrw 0x801, t0
 
-    /* Entry 0 is a 64-bit two-instruction entry. */
+    /* Entry 0 reads a CSR, forcing a TB exit before its second instruction. */
     QC_CM_ILUT(0)
     li t0, 42
     bne s0, t0, fail
 
-    /* Entry 1 follows the double-entry region and is 32 bits wide. */
-    QC_CM_ILUT(1)
+    /* Entry 2 contains a 16-bit instruction and a 48-bit instruction. */
+    QC_CM_ILUT(2)
     li t0, 7
     bne s1, t0, fail
+
+    /* Entry 3 follows the double-entry region and is 32 bits wide. */
+    QC_CM_ILUT(3)
+    li t0, 7
+    bne s2, t0, fail
 
     li a0, 0
     li a7, 93
@@ -51,8 +56,14 @@ fail:
 
     .balign 64
 ilut:
-    /* addi s0, zero, 40; addi s0, s0, 2 */
-    .4byte 0x02800413
-    .4byte 0x00240413
-    /* addi s1, zero, 7 */
-    .4byte 0x00700493
+    /* csrrs x0, qc.itba, x0; addi s0, zero, 42 */
+    .4byte 0x80002073
+    .4byte 0x02a00413
+    /* c.nop; c.nop; c.nop; c.nop */
+    .4byte 0x00010001
+    .4byte 0x00010001
+    /* c.nop; qc.e.li s1, 7 */
+    .4byte 0x049f0001
+    .4byte 0x00000007
+    /* addi s2, zero, 7 */
+    .4byte 0x00700913

@@ -22,8 +22,12 @@ static bool trans_qc_cm_ilut(DisasContext *ctx, arg_qc_cm_ilut *a)
     int second_len;
     bool is_double;
     bool has_second = false;
+    bool resume;
 
     REQUIRE_XQCCMI(ctx);
+
+    resume = ctx->ilut_resume;
+    ctx->ilut_resume = false;
 
     dec = extract32(env->qc_itdec, 3, 11);
     is_double = a->index < dec;
@@ -41,7 +45,7 @@ static bool trans_qc_cm_ilut(DisasContext *ctx, arg_qc_cm_ilut *a)
         return true;
     }
 
-    if (first_len == 2 && extract16(entry, 16, 16) != 1) {
+    if (first_len == 2 && extract16(entry >> 16, 0, 16) != 1) {
         second = entry >> 16;
         has_second = true;
     } else if (first_len == 4 && is_double &&
@@ -63,15 +67,31 @@ static bool trans_qc_cm_ilut(DisasContext *ctx, arg_qc_cm_ilut *a)
         return true;
     }
 
-    if (!decode_ilut_insn(ctx, entry)) {
+    ctx->ilut = true;
+    ctx->ilut_has_second = has_second;
+    ctx->ilut_second = false;
+    if (!resume && !decode_ilut_insn(ctx, entry)) {
         gen_exception_illegal(ctx);
+        ctx->ilut = false;
         return true;
+    }
+    if (ctx->base.is_jmp != DISAS_NEXT) {
+        ctx->cur_insn_len = 2;
+        ctx->ilut = false;
+        return true;
+    }
+    if (has_second) {
+        ctx->ilut_second = true;
+        gen_pc_plus_diff(cpu_pc, ctx, 1);
+        ctx->insn_start_updated = false;
     }
     if (has_second && !decode_ilut_insn(ctx, second)) {
         gen_exception_illegal(ctx);
+        ctx->ilut = false;
         return true;
     }
 
     ctx->cur_insn_len = 2;
+    ctx->ilut = false;
     return true;
 }

@@ -860,8 +860,7 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         return;
     }
 
-    if (cpu->cfg.ext_zilsd && riscv_has_ext(env, RVC) &&
-        !riscv_has_ext(env, RVF)) {
+    if (cpu->cfg.ext_zilsd && riscv_has_ext(env, RVC)) {
         cpu_cfg_ext_auto_update(cpu, CPU_CFG_OFFSET(ext_zclsd), true);
     }
 
@@ -897,8 +896,10 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         }
     }
 
-    if (cpu->cfg.ext_xqccmi && cpu->cfg.ext_zcd) {
-        error_setg(errp, "xqccmi conflicts with Zcd");
+    if (cpu->cfg.ext_xqccmi &&
+        ((riscv_has_ext(env, RVC) && riscv_has_ext(env, RVD)) ||
+         cpu->cfg.ext_zcd)) {
+        error_setg(errp, "xqccmi conflicts with C,D,Zcd");
         return;
     }
 

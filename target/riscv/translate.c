@@ -113,6 +113,10 @@ typedef struct DisasContext {
     /* FRM is known to contain a valid value. */
     bool frm_valid;
     bool insn_start_updated;
+    bool ilut;
+    bool ilut_has_second;
+    bool ilut_second;
+    bool ilut_resume;
     const GPtrArray *decoders_16;
     const GPtrArray *decoders_32;
     const GPtrArray *decoders_48;
@@ -223,6 +227,10 @@ static void gen_pc_plus_diff(TCGv target, DisasContext *ctx,
                              target_long diff)
 {
     target_ulong dest = ctx->base.pc_next + diff;
+
+    if (ctx->ilut && ctx->ilut_second && diff == 0) {
+        dest |= 1;
+    }
 
     assert(ctx->pc_save != -1);
     if (tb_cflags(ctx->base.tb) & CF_PCREL) {
@@ -1172,6 +1180,21 @@ static uint32_t opcode_at(DisasContextBase *dcbase, target_ulong pc)
     return cpu_ldl_code(env, pc);
 }
 
+static bool gen_ilut_exit(DisasContext *ctx)
+{
+    target_long diff;
+
+    if (!ctx->ilut) {
+        return false;
+    }
+
+    diff = ctx->ilut_has_second && !ctx->ilut_second ? 1 : 2;
+    gen_pc_plus_diff(cpu_pc, ctx, diff);
+    exit_tb(ctx);
+    ctx->base.is_jmp = DISAS_NORETURN;
+    return true;
+}
+
 #define SS_MMU_INDEX(ctx) (ctx->mem_idx | MMU_IDX_SS_WRITE)
 
 /* Include insn module translation function */
@@ -1365,7 +1388,8 @@ static bool decode_ilut_insn(DisasContext *ctx, uint64_t opcode)
         break;
     case 6:
 #ifdef TARGET_RISCV32
-        if (decode_xqci_48(ctx, opcode)) {
+        ctx->opcode = opcode << 16;
+        if (decode_xqci_48(ctx, ctx->opcode)) {
             return true;
         }
 #endif
@@ -1382,13 +1406,17 @@ static bool ilut_is_pc_referencing(uint64_t opcode, int len)
     uint32_t funct3 = extract32(insn, 13, 3);
 
     if (len == 4) {
-        return op == 0x17 || op == 0x63 || op == 0x67 || op == 0x6f;
+        return op == 0x17 || op == 0x63 || op == 0x67 || op == 0x6f ||
+               (op == 0x7b && funct3 != 2 && funct3 != 3);
+    }
+    if (len == 6) {
+        return op == 0x1f && funct3 == 4;
     }
     if (len != 2) {
         return false;
     }
-
-    if (funct3 == 1 || funct3 == 5 || funct3 == 6 || funct3 == 7) {
+    if (funct3 == 1 || funct3 == 5 || funct3 == 6 || funct3 == 7 ||
+        (insn & 0xff03) == 0xbe02 || (insn & 0xff03) == 0xbc02) {
         return true;
     }
     return funct3 == 4 && (insn & 3) == 2 &&
@@ -1434,6 +1462,18 @@ static void decode_opc(CPURISCVState *env, DisasContext *ctx)
     bool pc_is_4byte_align = ((ctx->base.pc_next % 4) == 0);
 
     ctx->virt_inst_excp = false;
+    ctx->ol = ctx->xl;
+    if ((ctx->base.pc_next & 1) && ctx->cfg_ptr->ext_xqccmi) {
+        ctx->base.pc_next &= ~1;
+        ctx->cur_insn_len = 2;
+        ctx->opcode = translator_lduw(env, &ctx->base, ctx->base.pc_next);
+        ctx->ilut_resume = true;
+        if (decode_xqccmi_16(ctx, ctx->opcode)) {
+            return;
+        }
+        gen_exception_illegal(ctx);
+        return;
+    }
     if (pc_is_4byte_align) {
         /*
          * Load 4 bytes at once to make instruction fetch atomically.
@@ -1451,8 +1491,6 @@ static void decode_opc(CPURISCVState *env, DisasContext *ctx)
          */
         opcode = (uint32_t) translator_lduw(env, &ctx->base, ctx->base.pc_next);
     }
-    ctx->ol = ctx->xl;
-
     ctx->cur_insn_len = insn_len((uint16_t)opcode);
     /* Check for compressed insn */
     if (ctx->cur_insn_len == 2) {
@@ -1521,7 +1559,7 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     RISCVCPU *cpu = RISCV_CPU(cs);
     uint32_t tb_flags = ctx->base.tb->flags;
 
-    ctx->pc_save = ctx->base.pc_first;
+    ctx->pc_save = ctx->base.pc_first & ~1;
     ctx->priv = FIELD_EX32(tb_flags, TB_FLAGS, PRIV);
     ctx->mem_idx = FIELD_EX32(tb_flags, TB_FLAGS, MEM_IDX);
     ctx->mstatus_fs = FIELD_EX32(tb_flags, TB_FLAGS, FS);
@@ -1558,6 +1596,10 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     ctx->fcfi_enabled = FIELD_EX32(tb_flags, TB_FLAGS, FCFI_ENABLED);
     ctx->zero = tcg_constant_tl(0);
     ctx->virt_inst_excp = false;
+    ctx->ilut = false;
+    ctx->ilut_has_second = false;
+    ctx->ilut_second = false;
+    ctx->ilut_resume = false;
     ctx->decoders_16 = cpu->decoders_16;
     ctx->decoders_32 = cpu->decoders_32;
     ctx->decoders_48 = cpu->decoders_48;

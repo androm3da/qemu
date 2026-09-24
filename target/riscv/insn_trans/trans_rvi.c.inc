@@ -955,6 +955,10 @@ static bool trans_fence_i(DisasContext *ctx, arg_fence_i *a)
         return false;
     }
 
+    if (gen_ilut_exit(ctx)) {
+        return true;
+    }
+
     /*
      * FENCE_I is a no-op in QEMU,
      * however we need to end the translation block
@@ -967,6 +971,10 @@ static bool trans_fence_i(DisasContext *ctx, arg_fence_i *a)
 
 static bool do_csr_post(DisasContext *ctx)
 {
+    if (gen_ilut_exit(ctx)) {
+        return true;
+    }
+
     /* The helper may raise ILLEGAL_INSN -- record binv for unwind. */
     decode_save_opc(ctx, 0);
     /* We may have changed important cpu state -- exit to main loop. */

@@ -55,8 +55,12 @@ resume_5:
     sw t0, 0(t1)
     QC_CM_ILUT(6)
 resume_6:
+    lla t0, resume_7
+    sw t0, 0(t1)
+    QC_CM_ILUT(7)
+resume_7:
     lw t0, signals
-    li t1, 7
+    li t1, 8
     bne t0, t1, fail
 
     li a0, 0
@@ -97,6 +101,8 @@ ilut:
     .4byte 0x0001c001
     /* c.jr ra; c.nop */
     .4byte 0x00018082
+    /* qc.beqi x0, 0, 0 */
+    .4byte 0x0000007b
 
     .section .data
     .balign 4
