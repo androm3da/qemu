@@ -16,3 +16,11 @@ config HEX_VIRT
     select PL011
     select VIRTIO_BLK
     select VIRTIO_SCSI
+
+config HEX_QCS6490_CDSP
+    bool
+    default y
+    depends on HEX_DSP && FDT
+    select DEVICE_TREE
+    select PL011
+    select UNIMP

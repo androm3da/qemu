@@ -102,4 +102,5 @@ Hexagon Features
 .. toctree::
    hexagon/emulation
    hexagon/cdsp
+   hexagon/qcs6490-cdsp
 
