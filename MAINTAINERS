@@ -258,6 +258,7 @@ F: include/hw/timer/qct-qtimer.h
 F: tests/qtest/qct-qtimer-test.c
 F: hw/hexagon/qcs6490_cdsp.c
 F: hw/hexagon/machine_cfg_qcs6490_cdsp.h.inc
+F: tests/qtest/qcs6490-cdsp-test.c
 X: target/hexagon/idef-parser/
 X: target/hexagon/gen_idef_parser_funcs.py
 F: linux-user/hexagon/
