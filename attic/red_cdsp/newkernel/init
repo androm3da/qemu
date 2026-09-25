@@ -1,0 +1,42 @@
+#!/bin/busybox sh
+# Init for the physical CDSP, which has no console: progress is reported
+# through /dev/kmsg into the kernel log, and sshd listens on the GLINK network
+# link to the application processor.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /var/run/dropbear /var/log
+mount -t devpts devpts /dev/pts
+klog() { echo "cdsp-init: $*" > /dev/kmsg; }
+dumpf() { while IFS= read -r l; do klog "$1: $l"; done < "$2"; }
+klog "userspace is up, pid $$"
+klog "$(uname -a)"
+dumpf cpuinfo /proc/cpuinfo
+dumpf interrupts /proc/interrupts
+dumpf clocksource /sys/devices/system/clocksource/clocksource0/current_clocksource
+
+hostname qcs6490-cdsp
+# dsp0 is the rpmsg_net device: it appears once the APPS side has attached to
+# the GLINK edge and the IP_BRIDGE channel is open, so wait for it in the
+# background rather than holding up sshd.
+(
+	i=0
+	while [ ! -d /sys/class/net/dsp0 ] && [ $i -lt 600 ]; do
+		i=$((i + 1)); sleep 1
+	done
+	if ifconfig dsp0 10.42.0.2 pointopoint 10.42.0.1 up; then
+		klog "dsp0 up after ${i}s: $(ifconfig dsp0 | tr '\n' ' ')"
+	else
+		klog "no dsp0 after ${i}s"
+	fi
+) &
+dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key 2> /dev/kmsg >/dev/null
+dropbear -R -E 2> /dev/kmsg && klog "dropbear started" || klog "dropbear failed"
+
+n=0
+while :; do
+	n=$((n + 1))
+	klog "alive $n: $(cat /proc/uptime) load $(cat /proc/loadavg)"
+	sleep 30
+done

@@ -1,0 +1,557 @@
+slink /lib32 lib 777 0 0
+file /init /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/init 755 0 0
+slink /linuxrc bin/busybox 777 0 0
+dir /bin 755 0 0
+slink /bin/arch busybox 777 0 0
+slink /bin/ash busybox 777 0 0
+slink /bin/base32 busybox 777 0 0
+slink /bin/base64 ../usr/bin/coreutils 777 0 0
+file /bin/bash /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/bin/bash 755 0 0
+file /bin/busybox /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/bin/busybox 4755 0 0
+slink /bin/cat ../usr/bin/coreutils 777 0 0
+slink /bin/chattr busybox 777 0 0
+slink /bin/chgrp ../usr/bin/coreutils 777 0 0
+slink /bin/chmod ../usr/bin/coreutils 777 0 0
+slink /bin/chown ../usr/bin/coreutils 777 0 0
+slink /bin/cp ../usr/bin/coreutils 777 0 0
+slink /bin/cpio busybox 777 0 0
+slink /bin/date ../usr/bin/coreutils 777 0 0
+slink /bin/dd ../usr/bin/coreutils 777 0 0
+slink /bin/df ../usr/bin/coreutils 777 0 0
+slink /bin/dir ../usr/bin/coreutils 777 0 0
+slink /bin/dmesg busybox 777 0 0
+slink /bin/dnsdomainname busybox 777 0 0
+slink /bin/dumpkmap busybox 777 0 0
+slink /bin/echo ../usr/bin/coreutils 777 0 0
+slink /bin/egrep busybox 777 0 0
+slink /bin/false ../usr/bin/coreutils 777 0 0
+slink /bin/fdflush busybox 777 0 0
+slink /bin/fgrep busybox 777 0 0
+slink /bin/getopt busybox 777 0 0
+slink /bin/grep busybox 777 0 0
+slink /bin/gunzip busybox 777 0 0
+slink /bin/gzip busybox 777 0 0
+slink /bin/hostname busybox 777 0 0
+slink /bin/join ../usr/bin/coreutils 777 0 0
+slink /bin/kill ../usr/bin/coreutils 777 0 0
+slink /bin/link ../usr/bin/coreutils 777 0 0
+slink /bin/linux32 busybox 777 0 0
+slink /bin/linux64 busybox 777 0 0
+slink /bin/ln ../usr/bin/coreutils 777 0 0
+slink /bin/login busybox 777 0 0
+slink /bin/ls ../usr/bin/coreutils 777 0 0
+slink /bin/lsattr busybox 777 0 0
+slink /bin/mkdir ../usr/bin/coreutils 777 0 0
+slink /bin/mknod ../usr/bin/coreutils 777 0 0
+slink /bin/mktemp ../usr/bin/coreutils 777 0 0
+slink /bin/more busybox 777 0 0
+slink /bin/mount busybox 777 0 0
+slink /bin/mountpoint busybox 777 0 0
+slink /bin/mt busybox 777 0 0
+slink /bin/mv ../usr/bin/coreutils 777 0 0
+slink /bin/netstat busybox 777 0 0
+slink /bin/nice ../usr/bin/coreutils 777 0 0
+slink /bin/nuke busybox 777 0 0
+slink /bin/pidof busybox 777 0 0
+slink /bin/ping busybox 777 0 0
+slink /bin/pipe_progress busybox 777 0 0
+slink /bin/printenv ../usr/bin/coreutils 777 0 0
+slink /bin/ps busybox 777 0 0
+slink /bin/pwd ../usr/bin/coreutils 777 0 0
+slink /bin/resume busybox 777 0 0
+slink /bin/rm ../usr/bin/coreutils 777 0 0
+slink /bin/rmdir ../usr/bin/coreutils 777 0 0
+slink /bin/run-parts busybox 777 0 0
+slink /bin/sed busybox 777 0 0
+slink /bin/setarch busybox 777 0 0
+slink /bin/setpriv busybox 777 0 0
+slink /bin/setserial busybox 777 0 0
+slink /bin/sh busybox 777 0 0
+slink /bin/sleep ../usr/bin/coreutils 777 0 0
+slink /bin/stty ../usr/bin/coreutils 777 0 0
+slink /bin/su busybox 777 0 0
+slink /bin/sync ../usr/bin/coreutils 777 0 0
+slink /bin/tar busybox 777 0 0
+slink /bin/touch ../usr/bin/coreutils 777 0 0
+slink /bin/true ../usr/bin/coreutils 777 0 0
+slink /bin/umount busybox 777 0 0
+slink /bin/uname ../usr/bin/coreutils 777 0 0
+slink /bin/usleep busybox 777 0 0
+slink /bin/vdir ../usr/bin/coreutils 777 0 0
+slink /bin/vi busybox 777 0 0
+slink /bin/watch busybox 777 0 0
+slink /bin/zcat busybox 777 0 0
+file /bin/zsh /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/bin/zsh 755 0 0
+dir /dev 755 0 0
+dir /etc 755 0 0
+slink /etc/dropbear /var/run/dropbear 777 0 0
+file /etc/fstab /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/fstab 644 0 0
+file /etc/group /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/group 644 0 0
+file /etc/hostname /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/hostname 644 0 0
+file /etc/hosts /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/hosts 644 0 0
+file /etc/inittab /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/inittab 644 0 0
+file /etc/inputrc /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/inputrc 644 0 0
+file /etc/issue /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/issue 644 0 0
+slink /etc/mtab ../proc/self/mounts 777 0 0
+slink /etc/os-release ../usr/lib/os-release 777 0 0
+file /etc/passwd /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/passwd 644 0 0
+file /etc/profile /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/profile 644 0 0
+file /etc/protocols /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/protocols 644 0 0
+slink /etc/resolv.conf ../tmp/resolv.conf 777 0 0
+file /etc/services /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/services 644 0 0
+file /etc/shadow /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/shadow 600 0 0
+file /etc/shells /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/shells 644 0 0
+dir /etc/cron 755 0 0
+dir /etc/cron/crontabs 755 0 0
+dir /etc/init.d 755 0 0
+file /etc/init.d/S01seedrng /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S01seedrng 755 0 0
+file /etc/init.d/S01syslogd /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S01syslogd 755 0 0
+file /etc/init.d/S02klogd /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S02klogd 755 0 0
+file /etc/init.d/S02sysctl /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S02sysctl 755 0 0
+file /etc/init.d/S40network /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S40network 755 0 0
+file /etc/init.d/S50crond /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S50crond 755 0 0
+file /etc/init.d/S50dropbear /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/S50dropbear 755 0 0
+file /etc/init.d/rcK /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/rcK 755 0 0
+file /etc/init.d/rcS /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/init.d/rcS 755 0 0
+dir /etc/network 755 0 0
+file /etc/network/interfaces /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/network/interfaces 644 0 0
+file /etc/network/nfs_check /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/network/nfs_check 755 0 0
+dir /etc/network/if-down.d 755 0 0
+dir /etc/network/if-post-down.d 755 0 0
+dir /etc/network/if-pre-up.d 755 0 0
+file /etc/network/if-pre-up.d/wait_iface /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/network/if-pre-up.d/wait_iface 755 0 0
+dir /etc/network/if-up.d 755 0 0
+dir /etc/profile.d 755 0 0
+file /etc/profile.d/umask.sh /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/etc/profile.d/umask.sh 644 0 0
+dir /lib 755 0 0
+file /lib/ld-musl-hexagon.so.1 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/ld-musl-hexagon.so.1 755 0 0
+dir /lib/lib 755 0 0
+file /lib/lib/ld-musl-hexagon.so.1 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/lib/ld-musl-hexagon.so.1 755 0 0
+dir /lib/modules 755 0 0
+dir /lib/modules/6.11.0-smp 755 0 0
+file /lib/modules/6.11.0-smp/modules.alias /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.alias 644 0 0
+file /lib/modules/6.11.0-smp/modules.alias.bin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.alias.bin 644 0 0
+file /lib/modules/6.11.0-smp/modules.builtin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.builtin 644 0 0
+file /lib/modules/6.11.0-smp/modules.builtin.alias.bin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.builtin.alias.bin 644 0 0
+file /lib/modules/6.11.0-smp/modules.builtin.bin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.builtin.bin 644 0 0
+file /lib/modules/6.11.0-smp/modules.builtin.modinfo /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.builtin.modinfo 644 0 0
+file /lib/modules/6.11.0-smp/modules.dep /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.dep 644 0 0
+file /lib/modules/6.11.0-smp/modules.dep.bin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.dep.bin 644 0 0
+file /lib/modules/6.11.0-smp/modules.devname /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.devname 644 0 0
+file /lib/modules/6.11.0-smp/modules.order /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.order 644 0 0
+file /lib/modules/6.11.0-smp/modules.softdep /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.softdep 644 0 0
+file /lib/modules/6.11.0-smp/modules.symbols /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.symbols 644 0 0
+file /lib/modules/6.11.0-smp/modules.symbols.bin /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.symbols.bin 644 0 0
+file /lib/modules/6.11.0-smp/modules.weakdep /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/modules/6.11.0-smp/modules.weakdep 644 0 0
+dir /lib/usr 755 0 0
+dir /lib/usr/lib 755 0 0
+file /lib/usr/lib/ld-musl-hexagon.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/ld-musl-hexagon.so 755 0 0
+file /lib/usr/lib/ld-musl-hexagon.so.1 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/ld-musl-hexagon.so.1 755 0 0
+file /lib/usr/lib/libc++.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/libc++.so 755 0 0
+slink /lib/usr/lib/libc++.so.1 libc++.so.1.0 777 0 0
+file /lib/usr/lib/libc++.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/libc++.so.1.0 755 0 0
+slink /lib/usr/lib/libc++abi.so libc++abi.so.1 777 0 0
+slink /lib/usr/lib/libc++abi.so.1 libc++abi.so.1.0 777 0 0
+file /lib/usr/lib/libc++abi.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/libc++abi.so.1.0 755 0 0
+file /lib/usr/lib/libc.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/libc.so 755 0 0
+slink /lib/usr/lib/libunwind.so libunwind.so.1 777 0 0
+slink /lib/usr/lib/libunwind.so.1 libunwind.so.1.0 777 0 0
+file /lib/usr/lib/libunwind.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/lib/usr/lib/libunwind.so.1.0 755 0 0
+dir /media 755 0 0
+dir /mnt 755 0 0
+dir /opt 755 0 0
+dir /proc 755 0 0
+dir /root 700 0 0
+dir /root/.ssh 700 0 0
+file /root/.ssh/authorized_keys /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/root/.ssh/authorized_keys 600 0 0
+dir /run 755 0 0
+dir /sbin 755 0 0
+slink /sbin/arp ../bin/busybox 777 0 0
+slink /sbin/blkid ../bin/busybox 777 0 0
+slink /sbin/devmem ../bin/busybox 777 0 0
+slink /sbin/fdisk ../bin/busybox 777 0 0
+slink /sbin/freeramdisk ../bin/busybox 777 0 0
+slink /sbin/fsck ../bin/busybox 777 0 0
+slink /sbin/fstrim ../bin/busybox 777 0 0
+slink /sbin/getty ../bin/busybox 777 0 0
+slink /sbin/halt ../bin/busybox 777 0 0
+slink /sbin/hdparm ../bin/busybox 777 0 0
+slink /sbin/hwclock ../bin/busybox 777 0 0
+slink /sbin/ifconfig ../bin/busybox 777 0 0
+slink /sbin/ifdown ../bin/busybox 777 0 0
+slink /sbin/ifup ../bin/busybox 777 0 0
+slink /sbin/init ../bin/busybox 777 0 0
+slink /sbin/insmod ../bin/busybox 777 0 0
+slink /sbin/ip ../bin/busybox 777 0 0
+slink /sbin/ipaddr ../bin/busybox 777 0 0
+slink /sbin/iplink ../bin/busybox 777 0 0
+slink /sbin/ipneigh ../bin/busybox 777 0 0
+slink /sbin/iproute ../bin/busybox 777 0 0
+slink /sbin/iprule ../bin/busybox 777 0 0
+slink /sbin/iptunnel ../bin/busybox 777 0 0
+slink /sbin/klogd ../bin/busybox 777 0 0
+slink /sbin/loadkmap ../bin/busybox 777 0 0
+slink /sbin/losetup ../bin/busybox 777 0 0
+slink /sbin/lsmod ../bin/busybox 777 0 0
+slink /sbin/makedevs ../bin/busybox 777 0 0
+slink /sbin/mdev ../bin/busybox 777 0 0
+slink /sbin/mkdosfs ../bin/busybox 777 0 0
+slink /sbin/mke2fs ../bin/busybox 777 0 0
+slink /sbin/mkswap ../bin/busybox 777 0 0
+slink /sbin/modprobe ../bin/busybox 777 0 0
+slink /sbin/nameif ../bin/busybox 777 0 0
+slink /sbin/pivot_root ../bin/busybox 777 0 0
+slink /sbin/poweroff ../bin/busybox 777 0 0
+slink /sbin/reboot ../bin/busybox 777 0 0
+slink /sbin/rmmod ../bin/busybox 777 0 0
+slink /sbin/route ../bin/busybox 777 0 0
+slink /sbin/run-init ../bin/busybox 777 0 0
+slink /sbin/runlevel ../bin/busybox 777 0 0
+slink /sbin/setconsole ../bin/busybox 777 0 0
+slink /sbin/start-stop-daemon ../bin/busybox 777 0 0
+slink /sbin/sulogin ../bin/busybox 777 0 0
+slink /sbin/swapoff ../bin/busybox 777 0 0
+slink /sbin/swapon ../bin/busybox 777 0 0
+slink /sbin/switch_root ../bin/busybox 777 0 0
+slink /sbin/sysctl ../bin/busybox 777 0 0
+slink /sbin/syslogd ../bin/busybox 777 0 0
+slink /sbin/udhcpc ../bin/busybox 777 0 0
+slink /sbin/uevent ../bin/busybox 777 0 0
+slink /sbin/vconfig ../bin/busybox 777 0 0
+slink /sbin/watchdog ../bin/busybox 777 0 0
+dir /sys 755 0 0
+dir /tmp 1777 0 0
+dir /usr 755 0 0
+slink /usr/lib32 lib 777 0 0
+dir /usr/bin 755 0 0
+slink /usr/bin/[ test 777 0 0
+slink /usr/bin/[[ ../../bin/busybox 777 0 0
+slink /usr/bin/ar ../../bin/busybox 777 0 0
+slink /usr/bin/ascii ../../bin/busybox 777 0 0
+slink /usr/bin/awk ../../bin/busybox 777 0 0
+slink /usr/bin/b2sum coreutils 777 0 0
+slink /usr/bin/base32 coreutils 777 0 0
+slink /usr/bin/basename coreutils 777 0 0
+slink /usr/bin/basenc coreutils 777 0 0
+slink /usr/bin/bc ../../bin/busybox 777 0 0
+file /usr/bin/bunzip2 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bunzip2 755 0 0
+file /usr/bin/bzcat /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzcat 755 0 0
+slink /usr/bin/bzcmp bzdiff 777 0 0
+file /usr/bin/bzdiff /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzdiff 755 0 0
+slink /usr/bin/bzegrep bzgrep 777 0 0
+slink /usr/bin/bzfgrep bzgrep 777 0 0
+file /usr/bin/bzgrep /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzgrep 755 0 0
+file /usr/bin/bzip2 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzip2 755 0 0
+file /usr/bin/bzip2recover /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzip2recover 755 0 0
+slink /usr/bin/bzless bzmore 777 0 0
+file /usr/bin/bzmore /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/bzmore 755 0 0
+slink /usr/bin/chcon coreutils 777 0 0
+slink /usr/bin/chrt ../../bin/busybox 777 0 0
+slink /usr/bin/chvt ../../bin/busybox 777 0 0
+slink /usr/bin/cksum coreutils 777 0 0
+slink /usr/bin/clear ../../bin/busybox 777 0 0
+slink /usr/bin/cmp ../../bin/busybox 777 0 0
+slink /usr/bin/comm coreutils 777 0 0
+file /usr/bin/coreutils /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/coreutils 755 0 0
+slink /usr/bin/crc32 ../../bin/busybox 777 0 0
+slink /usr/bin/crontab ../../bin/busybox 777 0 0
+slink /usr/bin/csplit coreutils 777 0 0
+slink /usr/bin/cut coreutils 777 0 0
+slink /usr/bin/dbclient ../sbin/dropbear 777 0 0
+slink /usr/bin/dc ../../bin/busybox 777 0 0
+slink /usr/bin/deallocvt ../../bin/busybox 777 0 0
+slink /usr/bin/diff ../../bin/busybox 777 0 0
+slink /usr/bin/dircolors coreutils 777 0 0
+slink /usr/bin/dirname coreutils 777 0 0
+slink /usr/bin/dos2unix ../../bin/busybox 777 0 0
+slink /usr/bin/dropbearconvert ../sbin/dropbear 777 0 0
+slink /usr/bin/dropbearkey ../sbin/dropbear 777 0 0
+slink /usr/bin/du coreutils 777 0 0
+slink /usr/bin/eject ../../bin/busybox 777 0 0
+slink /usr/bin/env coreutils 777 0 0
+slink /usr/bin/expand coreutils 777 0 0
+slink /usr/bin/expr coreutils 777 0 0
+slink /usr/bin/factor coreutils 777 0 0
+slink /usr/bin/fallocate ../../bin/busybox 777 0 0
+slink /usr/bin/find ../../bin/busybox 777 0 0
+slink /usr/bin/flock ../../bin/busybox 777 0 0
+slink /usr/bin/fmt coreutils 777 0 0
+slink /usr/bin/fold coreutils 777 0 0
+slink /usr/bin/free ../../bin/busybox 777 0 0
+slink /usr/bin/fuser ../../bin/busybox 777 0 0
+slink /usr/bin/getfattr ../../bin/busybox 777 0 0
+slink /usr/bin/groups coreutils 777 0 0
+slink /usr/bin/head coreutils 777 0 0
+slink /usr/bin/hexdump ../../bin/busybox 777 0 0
+slink /usr/bin/hexedit ../../bin/busybox 777 0 0
+slink /usr/bin/hostid coreutils 777 0 0
+slink /usr/bin/id coreutils 777 0 0
+slink /usr/bin/install coreutils 777 0 0
+slink /usr/bin/ipcrm ../../bin/busybox 777 0 0
+slink /usr/bin/ipcs ../../bin/busybox 777 0 0
+slink /usr/bin/killall ../../bin/busybox 777 0 0
+slink /usr/bin/last ../../bin/busybox 777 0 0
+slink /usr/bin/less ../../bin/busybox 777 0 0
+slink /usr/bin/logger ../../bin/busybox 777 0 0
+slink /usr/bin/logname coreutils 777 0 0
+slink /usr/bin/lsof ../../bin/busybox 777 0 0
+slink /usr/bin/lspci ../../bin/busybox 777 0 0
+slink /usr/bin/lsscsi ../../bin/busybox 777 0 0
+slink /usr/bin/lsusb ../../bin/busybox 777 0 0
+file /usr/bin/lua /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/lua 755 0 0
+file /usr/bin/luac /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/bin/luac 755 0 0
+slink /usr/bin/lzcat ../../bin/busybox 777 0 0
+slink /usr/bin/lzma ../../bin/busybox 777 0 0
+slink /usr/bin/lzopcat ../../bin/busybox 777 0 0
+slink /usr/bin/md5sum coreutils 777 0 0
+slink /usr/bin/mesg ../../bin/busybox 777 0 0
+slink /usr/bin/microcom ../../bin/busybox 777 0 0
+slink /usr/bin/mkfifo coreutils 777 0 0
+slink /usr/bin/mkpasswd ../../bin/busybox 777 0 0
+slink /usr/bin/nl coreutils 777 0 0
+slink /usr/bin/nohup coreutils 777 0 0
+slink /usr/bin/nproc coreutils 777 0 0
+slink /usr/bin/nslookup ../../bin/busybox 777 0 0
+slink /usr/bin/numfmt coreutils 777 0 0
+slink /usr/bin/od coreutils 777 0 0
+slink /usr/bin/openvt ../../bin/busybox 777 0 0
+slink /usr/bin/passwd ../../bin/busybox 777 0 0
+slink /usr/bin/paste coreutils 777 0 0
+slink /usr/bin/patch ../../bin/busybox 777 0 0
+slink /usr/bin/pathchk coreutils 777 0 0
+slink /usr/bin/pinky coreutils 777 0 0
+slink /usr/bin/pr coreutils 777 0 0
+slink /usr/bin/printf coreutils 777 0 0
+slink /usr/bin/ptx coreutils 777 0 0
+slink /usr/bin/readlink coreutils 777 0 0
+slink /usr/bin/realpath coreutils 777 0 0
+slink /usr/bin/renice ../../bin/busybox 777 0 0
+slink /usr/bin/reset ../../bin/busybox 777 0 0
+slink /usr/bin/resize ../../bin/busybox 777 0 0
+slink /usr/bin/runcon coreutils 777 0 0
+slink /usr/bin/scp ../sbin/dropbear 777 0 0
+slink /usr/bin/seq coreutils 777 0 0
+slink /usr/bin/setfattr ../../bin/busybox 777 0 0
+slink /usr/bin/setkeycodes ../../bin/busybox 777 0 0
+slink /usr/bin/setsid ../../bin/busybox 777 0 0
+slink /usr/bin/sha1sum coreutils 777 0 0
+slink /usr/bin/sha224sum coreutils 777 0 0
+slink /usr/bin/sha256sum coreutils 777 0 0
+slink /usr/bin/sha384sum coreutils 777 0 0
+slink /usr/bin/sha3sum ../../bin/busybox 777 0 0
+slink /usr/bin/sha512sum coreutils 777 0 0
+slink /usr/bin/shred coreutils 777 0 0
+slink /usr/bin/shuf coreutils 777 0 0
+slink /usr/bin/sort coreutils 777 0 0
+slink /usr/bin/split coreutils 777 0 0
+slink /usr/bin/ssh ../sbin/dropbear 777 0 0
+slink /usr/bin/stat coreutils 777 0 0
+slink /usr/bin/stdbuf coreutils 777 0 0
+slink /usr/bin/strings ../../bin/busybox 777 0 0
+slink /usr/bin/sum coreutils 777 0 0
+slink /usr/bin/svc ../../bin/busybox 777 0 0
+slink /usr/bin/svok ../../bin/busybox 777 0 0
+slink /usr/bin/tac coreutils 777 0 0
+slink /usr/bin/tail coreutils 777 0 0
+slink /usr/bin/tee coreutils 777 0 0
+slink /usr/bin/telnet ../../bin/busybox 777 0 0
+slink /usr/bin/test coreutils 777 0 0
+slink /usr/bin/tftp ../../bin/busybox 777 0 0
+slink /usr/bin/time ../../bin/busybox 777 0 0
+slink /usr/bin/timeout coreutils 777 0 0
+slink /usr/bin/top ../../bin/busybox 777 0 0
+slink /usr/bin/tr coreutils 777 0 0
+slink /usr/bin/traceroute ../../bin/busybox 777 0 0
+slink /usr/bin/tree ../../bin/busybox 777 0 0
+slink /usr/bin/truncate coreutils 777 0 0
+slink /usr/bin/ts ../../bin/busybox 777 0 0
+slink /usr/bin/tsort coreutils 777 0 0
+slink /usr/bin/tty coreutils 777 0 0
+slink /usr/bin/unexpand coreutils 777 0 0
+slink /usr/bin/uniq coreutils 777 0 0
+slink /usr/bin/unix2dos ../../bin/busybox 777 0 0
+slink /usr/bin/unlink coreutils 777 0 0
+slink /usr/bin/unlzma ../../bin/busybox 777 0 0
+slink /usr/bin/unlzop ../../bin/busybox 777 0 0
+slink /usr/bin/unxz ../../bin/busybox 777 0 0
+slink /usr/bin/unzip ../../bin/busybox 777 0 0
+slink /usr/bin/uptime coreutils 777 0 0
+slink /usr/bin/users coreutils 777 0 0
+slink /usr/bin/uudecode ../../bin/busybox 777 0 0
+slink /usr/bin/uuencode ../../bin/busybox 777 0 0
+slink /usr/bin/vlock ../../bin/busybox 777 0 0
+slink /usr/bin/w ../../bin/busybox 777 0 0
+slink /usr/bin/wc coreutils 777 0 0
+slink /usr/bin/wget ../../bin/busybox 777 0 0
+slink /usr/bin/which ../../bin/busybox 777 0 0
+slink /usr/bin/who coreutils 777 0 0
+slink /usr/bin/whoami coreutils 777 0 0
+slink /usr/bin/xargs ../../bin/busybox 777 0 0
+slink /usr/bin/xxd ../../bin/busybox 777 0 0
+slink /usr/bin/xz ../../bin/busybox 777 0 0
+slink /usr/bin/xzcat ../../bin/busybox 777 0 0
+slink /usr/bin/yes coreutils 777 0 0
+dir /usr/lib 755 0 0
+slink /usr/lib/terminfo ../share/terminfo 777 0 0
+file /usr/lib/ld-musl-hexagon.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/ld-musl-hexagon.so 755 0 0
+file /usr/lib/ld-musl-hexagon.so.1 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/ld-musl-hexagon.so.1 755 0 0
+slink /usr/lib/libbz2.so libbz2.so.1.0.8 777 0 0
+slink /usr/lib/libbz2.so.1.0 libbz2.so.1.0.8 777 0 0
+file /usr/lib/libbz2.so.1.0.8 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libbz2.so.1.0.8 755 0 0
+file /usr/lib/libc++.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libc++.so 755 0 0
+slink /usr/lib/libc++.so.1 libc++.so.1.0 777 0 0
+file /usr/lib/libc++.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libc++.so.1.0 755 0 0
+slink /usr/lib/libc++abi.so libc++abi.so.1 777 0 0
+slink /usr/lib/libc++abi.so.1 libc++abi.so.1.0 777 0 0
+file /usr/lib/libc++abi.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libc++abi.so.1.0 755 0 0
+file /usr/lib/libc.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libc.so 755 0 0
+slink /usr/lib/libcurses.so libncurses.so.6.4 777 0 0
+slink /usr/lib/libdav1d.so libdav1d.so.7 777 0 0
+slink /usr/lib/libdav1d.so.7 libdav1d.so.7.0.0 777 0 0
+file /usr/lib/libdav1d.so.7.0.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libdav1d.so.7.0.0 755 0 0
+slink /usr/lib/libform.so libform.so.6 777 0 0
+slink /usr/lib/libform.so.6 libform.so.6.4 777 0 0
+file /usr/lib/libform.so.6.4 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libform.so.6.4 755 0 0
+slink /usr/lib/libhistory.so libhistory.so.8 777 0 0
+slink /usr/lib/libhistory.so.8 libhistory.so.8.2 777 0 0
+file /usr/lib/libhistory.so.8.2 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libhistory.so.8.2 755 0 0
+slink /usr/lib/libliquid.so libliquid.so.1.6 777 0 0
+slink /usr/lib/libliquid.so.1 libliquid.so.1.6 777 0 0
+file /usr/lib/libliquid.so.1.6 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libliquid.so.1.6 644 0 0
+slink /usr/lib/liblua.so liblua.so.5.4.7 777 0 0
+file /usr/lib/liblua.so.5.4.7 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/liblua.so.5.4.7 755 0 0
+slink /usr/lib/libmenu.so libmenu.so.6 777 0 0
+slink /usr/lib/libmenu.so.6 libmenu.so.6.4 777 0 0
+file /usr/lib/libmenu.so.6.4 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libmenu.so.6.4 755 0 0
+slink /usr/lib/libncurses.so libncurses.so.6 777 0 0
+slink /usr/lib/libncurses.so.6 libncurses.so.6.4 777 0 0
+file /usr/lib/libncurses.so.6.4 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libncurses.so.6.4 755 0 0
+slink /usr/lib/libpanel.so libpanel.so.6 777 0 0
+slink /usr/lib/libpanel.so.6 libpanel.so.6.4 777 0 0
+file /usr/lib/libpanel.so.6.4 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libpanel.so.6.4 755 0 0
+slink /usr/lib/libreadline.so libreadline.so.8 777 0 0
+slink /usr/lib/libreadline.so.8 libreadline.so.8.2 777 0 0
+file /usr/lib/libreadline.so.8.2 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libreadline.so.8.2 755 0 0
+slink /usr/lib/libunwind.so libunwind.so.1 777 0 0
+slink /usr/lib/libunwind.so.1 libunwind.so.1.0 777 0 0
+file /usr/lib/libunwind.so.1.0 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/libunwind.so.1.0 755 0 0
+file /usr/lib/os-release /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/os-release 644 0 0
+dir /usr/lib/lua 755 0 0
+dir /usr/lib/lua/5.4 755 0 0
+dir /usr/lib/zsh 755 0 0
+dir /usr/lib/zsh/5.9 755 0 0
+dir /usr/lib/zsh/5.9/zsh 755 0 0
+file /usr/lib/zsh/5.9/zsh/attr.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/attr.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/cap.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/cap.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/clone.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/clone.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/compctl.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/compctl.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/complete.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/complete.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/complist.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/complist.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/computil.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/computil.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/curses.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/curses.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/datetime.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/datetime.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/deltochar.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/deltochar.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/example.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/example.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/files.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/files.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/langinfo.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/langinfo.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/mapfile.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/mapfile.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/mathfunc.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/mathfunc.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/nearcolor.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/nearcolor.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/newuser.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/newuser.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/parameter.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/parameter.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/rlimits.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/rlimits.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/sched.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/sched.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/stat.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/stat.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/system.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/system.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/termcap.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/termcap.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/terminfo.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/terminfo.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/watch.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/watch.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zftp.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zftp.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zle.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zle.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zleparameter.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zleparameter.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zprof.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zprof.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zpty.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zpty.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zselect.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zselect.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/zutil.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/zutil.so 755 0 0
+dir /usr/lib/zsh/5.9/zsh/net 755 0 0
+file /usr/lib/zsh/5.9/zsh/net/socket.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/net/socket.so 755 0 0
+file /usr/lib/zsh/5.9/zsh/net/tcp.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/net/tcp.so 755 0 0
+dir /usr/lib/zsh/5.9/zsh/param 755 0 0
+file /usr/lib/zsh/5.9/zsh/param/private.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/lib/zsh/5.9/zsh/param/private.so 755 0 0
+dir /usr/libexec 755 0 0
+dir /usr/libexec/coreutils 755 0 0
+file /usr/libexec/coreutils/libstdbuf.so /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/libexec/coreutils/libstdbuf.so 755 0 0
+dir /usr/sbin 755 0 0
+slink /usr/sbin/addgroup ../../bin/busybox 777 0 0
+slink /usr/sbin/adduser ../../bin/busybox 777 0 0
+slink /usr/sbin/arping ../../bin/busybox 777 0 0
+slink /usr/sbin/chroot ../bin/coreutils 777 0 0
+slink /usr/sbin/crond ../../bin/busybox 777 0 0
+slink /usr/sbin/delgroup ../../bin/busybox 777 0 0
+slink /usr/sbin/deluser ../../bin/busybox 777 0 0
+slink /usr/sbin/dnsd ../../bin/busybox 777 0 0
+file /usr/sbin/dropbear /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/sbin/dropbear 755 0 0
+slink /usr/sbin/ether-wake ../../bin/busybox 777 0 0
+slink /usr/sbin/fbset ../../bin/busybox 777 0 0
+slink /usr/sbin/fdformat ../../bin/busybox 777 0 0
+slink /usr/sbin/fsfreeze ../../bin/busybox 777 0 0
+slink /usr/sbin/i2cdetect ../../bin/busybox 777 0 0
+slink /usr/sbin/i2cdump ../../bin/busybox 777 0 0
+slink /usr/sbin/i2cget ../../bin/busybox 777 0 0
+slink /usr/sbin/i2cset ../../bin/busybox 777 0 0
+slink /usr/sbin/i2ctransfer ../../bin/busybox 777 0 0
+slink /usr/sbin/inetd ../../bin/busybox 777 0 0
+slink /usr/sbin/killall5 ../../bin/busybox 777 0 0
+slink /usr/sbin/loadfont ../../bin/busybox 777 0 0
+slink /usr/sbin/mim ../../bin/busybox 777 0 0
+slink /usr/sbin/nologin ../../bin/busybox 777 0 0
+slink /usr/sbin/partprobe ../../bin/busybox 777 0 0
+slink /usr/sbin/rdate ../../bin/busybox 777 0 0
+slink /usr/sbin/readprofile ../../bin/busybox 777 0 0
+slink /usr/sbin/seedrng ../../bin/busybox 777 0 0
+slink /usr/sbin/setlogcons ../../bin/busybox 777 0 0
+slink /usr/sbin/ubirename ../../bin/busybox 777 0 0
+dir /usr/share 755 0 0
+dir /usr/share/lua 755 0 0
+dir /usr/share/lua/5.4 755 0 0
+dir /usr/share/terminfo 755 0 0
+dir /usr/share/terminfo/a 755 0 0
+file /usr/share/terminfo/a/ansi /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/a/ansi 644 0 0
+dir /usr/share/terminfo/d 755 0 0
+file /usr/share/terminfo/d/dumb /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/d/dumb 644 0 0
+dir /usr/share/terminfo/l 755 0 0
+file /usr/share/terminfo/l/linux /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/l/linux 644 0 0
+dir /usr/share/terminfo/p 755 0 0
+file /usr/share/terminfo/p/putty /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/p/putty 644 0 0
+file /usr/share/terminfo/p/putty-256color /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/p/putty-256color 644 0 0
+file /usr/share/terminfo/p/putty-vt100 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/p/putty-vt100 644 0 0
+dir /usr/share/terminfo/s 755 0 0
+file /usr/share/terminfo/s/screen /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/s/screen 644 0 0
+file /usr/share/terminfo/s/screen-256color /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/s/screen-256color 644 0 0
+dir /usr/share/terminfo/v 755 0 0
+file /usr/share/terminfo/v/vt100 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/v/vt100 644 0 0
+file /usr/share/terminfo/v/vt100-putty /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/v/vt100-putty 644 0 0
+file /usr/share/terminfo/v/vt102 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/v/vt102 644 0 0
+file /usr/share/terminfo/v/vt200 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/v/vt200 644 0 0
+file /usr/share/terminfo/v/vt220 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/v/vt220 644 0 0
+dir /usr/share/terminfo/x 755 0 0
+file /usr/share/terminfo/x/xterm /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/x/xterm 644 0 0
+file /usr/share/terminfo/x/xterm+256color /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/x/xterm+256color 644 0 0
+file /usr/share/terminfo/x/xterm-256color /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/x/xterm-256color 644 0 0
+file /usr/share/terminfo/x/xterm-color /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/x/xterm-color 644 0 0
+file /usr/share/terminfo/x/xterm-xfree86 /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/terminfo/x/xterm-xfree86 644 0 0
+dir /usr/share/udhcpc 755 0 0
+file /usr/share/udhcpc/default.script /tmp/claude-1000/-home-brian-src-qemu/447866c9-a019-4c06-bd73-d713a270e957/scratchpad/rootfs/usr/share/udhcpc/default.script 755 0 0
+dir /usr/share/udhcpc/default.script.d 755 0 0
+dir /var 755 0 0
+slink /var/cache ../tmp 777 0 0
+slink /var/log ../tmp 777 0 0
+slink /var/run ../run 777 0 0
+slink /var/spool ../tmp 777 0 0
+slink /var/tmp ../tmp 777 0 0
+slink /var/lock ../run/lock 777 0 0
+dir /var/lib 755 0 0
+slink /var/lib/misc ../../tmp 777 0 0
+dir /var/www 755 0 0
+nod /dev/console 600 0 0 c 5 1
+nod /dev/null 666 0 0 c 1 3

@@ -1,0 +1,12 @@
+[Unit]
+Description=IP link to the Linux running on the CDSP
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=600
+ExecStart=/opt/cdsp/cdsp-net-up.sh
+
+[Install]
+WantedBy=multi-user.target
