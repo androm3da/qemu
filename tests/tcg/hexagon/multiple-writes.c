@@ -223,6 +223,56 @@ static int test_vreg_legal_predicated(void)
     return sig;
 }
 
+/* Complementary predicated writes to the same V-register pair are legal. */
+static int test_vreg_pair_legal_predicated(void)
+{
+    int sig;
+
+    asm volatile(
+        "r0 = #0\n"
+        "r1 = ##1f\n"
+        "memw(%[resume_pc]) = r1\n"
+        "p0 = cmp.eq(r0, r0)\n"
+        "{\n"
+        "    if (p0) v15:14 = vcombine(v21, v16)\n"
+        "    if (!p0) v15:14 = vcombine(v23, v22)\n"
+        "}\n"
+        "1:\n"
+        "%[sig] = #23\n"
+        : [sig] "=r"(sig)
+        : [resume_pc] "r"(&resume_pc)
+        : "r0", "r1", "p0", "v14", "v15", "v16", "v21", "v22", "v23",
+          "memory");
+
+    return sig;
+}
+
+/* A future write may consume a temporary value from the same V-register. */
+static int test_vreg_legal_tmp(void)
+{
+    long long buf[16] __attribute__((aligned(128)));
+    int sig;
+
+    asm volatile(
+        "r0 = #0\n"
+        "r1 = ##1f\n"
+        "memw(%[resume_pc]) = r1\n"
+        "r2 = %[buf]\n"
+        "r3 = #1\n"
+        "v1 = vsplat(r3)\n"
+        "{\n"
+        "    v0.tmp = vmem(r2 + #0)\n"
+        "    v0.w = vadd(v0.w, v1.w)\n"
+        "}\n"
+        "1:\n"
+        "%[sig] = #23\n"
+        : [sig] "=r"(sig)
+        : [resume_pc] "r"(&resume_pc), [buf] "r"(buf)
+        : "r0", "r1", "r2", "r3", "v0", "v1", "memory");
+
+    return sig;
+}
+
 static int test_vreg_illegal_mixed(void)
 {
     int sig;
@@ -237,6 +287,26 @@ static int test_vreg_illegal_mixed(void)
         "%0 = r0\n"
         : "=r"(sig)
         : "r"(&resume_pc)
+        : "r0", "r1", "memory");
+
+    return sig;
+}
+
+/* A pair write and a single write to either pair member are illegal. */
+static int test_vreg_illegal_pair_overlap(void)
+{
+    int sig;
+
+    asm volatile(
+        "r0 = #0\n"
+        "r1 = ##1f\n"
+        "memw(%[resume_pc]) = r1\n"
+        ".word 0x1f5055ee    /* { v15:14 = vcombine(v21, v16) */\n"
+        ".word 0x1e03e5ee    /*   v14 = v5 } */\n"
+        "1:\n"
+        "%[sig] = r0\n"
+        : [sig] "=r"(sig)
+        : [resume_pc] "r"(&resume_pc)
         : "r0", "r1", "memory");
 
     return sig;
@@ -308,7 +378,10 @@ int main()
     assert(test_post_increment3() == SIGILL);
 
     assert(test_vreg_legal_predicated() == 23);
+    assert(test_vreg_pair_legal_predicated() == 23);
+    assert(test_vreg_legal_tmp() == 23);
     assert(test_vreg_illegal_mixed() == SIGILL);
+    assert(test_vreg_illegal_pair_overlap() == SIGILL);
     assert(test_vreg_illegal_uncond() == SIGILL);
 
     assert(test_qreg_illegal() == SIGILL);
