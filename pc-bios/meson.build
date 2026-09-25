@@ -80,6 +80,7 @@ blobs = [
   'vof.bin',
   'vof-nvram.bin',
   'hexagon_loadlinux_v81',
+  'hexagon_loadlinux_qcs6490_cdsp',
 ]
 
 if get_option('install_blobs')
