@@ -17,7 +17,8 @@ if [ "${COMPRESS:-}" = zstd ]; then
 	zstd -19 -q -f $CPIO -o $OUT/initramfs.cpio.zst
 	IMG=$OUT/initramfs.cpio.zst
 fi
-python3 $L/scripts/hexagon/mkheximg -o $OUT/cdsp_fw.elf --region-end 0x8a700000 \
+# The shared-memory windows of the GLINK link outlive a reboot; clear them before the DSP starts
+python3 $L/scripts/hexagon/mkheximg -o $OUT/cdsp_fw.elf --region-end 0x8a700000 --zero 0xd7c00000:0x20000 \
 	--h2 ${H2:-$Q/pc-bios/hexagon_loadlinux_qcs6490_cdsp} --linux $O/vmlinux \
 	--dtb $O/arch/hexagon/boot/dts/qcs6490-cdsp.dtb --linux-addr 0xa1000000 ${DTBARGS:-} \
 	--initramfs $IMG --initramfs-addr 0xa8000000 | tail -3

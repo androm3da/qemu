@@ -1,0 +1,95 @@
++ perf --version
+perf version 7.3.rc1.gdcceb4b3e78d
++ ls /sys/bus/event_source/devices
+hexagon
+software
++ perf list
++ grep -a -E 'hexagon|cpu-clock|task-clock|context-switches'
+  hexagon/committed_insts/                           [Kernel PMU event]
+  hexagon/committed_loads/                           [Kernel PMU event]
+  hexagon/committed_packets/                         [Kernel PMU event]
+  hexagon/committed_stores/                          [Kernel PMU event]
+  hexagon/dcache_misses/                             [Kernel PMU event]
+  hexagon/endloop_packets/                           [Kernel PMU event]
+  hexagon/running_cycles/                            [Kernel PMU event]
+  context-switches
+  cpu-clock
+        context-switches]. Unit: software]
+  task-clock
+  hexagon/event=0..255/modifier                      [Raw event descriptor]
++ perf stat -e task-clock,context-switches,page-faults -- pmuwork 0 20
+pmuwork mode 0: 20000000 iterations (20000000 19999999 0)
+
+ Performance counter stats for 'pmuwork 0 20':
+
+             40.00 msec task-clock                                                            
+                 0      context-switches                                                      
+                 6      page-faults                                                           
+
+       0.044237081 seconds time elapsed
+
+       0.040000000 seconds user
+       0.000000000 seconds sys
+
+
++ perf stat -a -e hexagon/committed_packets/,hexagon/committed_insts/,hexagon/committed_loads/,hexagon/committed_stores/ -- pmuwork 0 20
+pmuwork mode 0: 20000000 iterations (20000000 19999999 0)
+
+ Performance counter stats for 'system wide':
+
+          40519619      hexagon/committed_packets/                                            
+          60773377      hexagon/committed_insts/                                              
+          20196294      hexagon/committed_loads/                                              
+          20128554      hexagon/committed_stores/                                             
+
+       0.044355988 seconds time elapsed
+
++ perf stat -a -e hexagon/committed_packets/,hexagon/committed_insts/,hexagon/committed_loads/,hexagon/committed_stores/ -- pmuwork 1 20
+pmuwork mode 1: 20000000 iterations (0 0 0)
+
+ Performance counter stats for 'system wide':
+
+          40628937      hexagon/committed_packets/                                            
+          40923344      hexagon/committed_insts/                                              
+          40235637      hexagon/committed_loads/                                              
+            148439      hexagon/committed_stores/                                             
+
+       0.086778278 seconds time elapsed
+
++ perf stat -a -e hexagon/committed_packets/,hexagon/committed_insts/,hexagon/committed_loads/,hexagon/committed_stores/ -- pmuwork 2 20
+pmuwork mode 2: 20000000 iterations (0 0 0)
+
+ Performance counter stats for 'system wide':
+
+          40517734      hexagon/committed_packets/                                            
+          40770293      hexagon/committed_insts/                                              
+            195998      hexagon/committed_loads/                                              
+          40128227      hexagon/committed_stores/                                             
+
+       0.044250258 seconds time elapsed
+
++ perf stat -a -e hexagon/dcache_misses/,hexagon/running_cycles/,hexagon/committed_loads/ -- pmuwork 4 20
+pmuwork mode 4: 20000000 iterations (0 156250 0)
+
+ Performance counter stats for 'system wide':
+
+          21319091      hexagon/dcache_misses/                                                
+         128957881      hexagon/running_cycles/                                               
+          30382170      hexagon/committed_loads/                                              
+
+       5.720635328 seconds time elapsed
+
++ perf stat -a -I 100 -e 'hexagon/event=0x13/,hexagon/event=0x34/' -- pmuwork 4 20
++ head -12
+#           time             counts unit events
+     0.109251923             492235      hexagon/event=0x13/                                                   
+     0.109251923           11406177      hexagon/event=0x34/                                                   
+     0.219247857             406172      hexagon/event=0x13/                                                   
+     0.219247857            2537227      hexagon/event=0x34/                                                   
+     0.329260197             409070      hexagon/event=0x13/                                                   
+     0.329260197            2409745      hexagon/event=0x34/                                                   
+     0.439259516             407506      hexagon/event=0x13/                                                   
+     0.439259516            2365965      hexagon/event=0x34/                                                   
+     0.549256961             407236      hexagon/event=0x13/                                                   
+     0.549256961            2303121      hexagon/event=0x34/                                                   
+     0.659258415             405101      hexagon/event=0x13/                                                   

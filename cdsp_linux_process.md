@@ -165,3 +165,38 @@ The guest kernel manages the coprocessors' per-thread state (kernel branch `bcai
   the thread events to reach the modules (see the kernel commits "add a notifier for the events in a thread's life").
 - The DSP is at `hwtests.cpio`: `attic/red_cdsp/hwtests/pack.sh` packs the tests into the initramfs, `runtests` runs them
   (`ssh cdsp runtests /tests/hvx`).
+
+## 10. perf and the performance counters
+
+`perf` for the DSP is built from the kernel tree (`tools/perf`, static, 2.5 MB stripped):
+
+```
+make -C tools/perf ARCH=hexagon CROSS_COMPILE=hexagon-unknown-linux-musl- \
+     CC=hexagon-unknown-linux-musl-clang LD=hexagon-unknown-linux-musl-ld.lld HOSTCC=cc \
+     O=/tmp/perf_hex LDFLAGS=-static NO_RUST=1 NO_LIBELF=1 NO_LIBPYTHON=1 NO_LIBPERL=1 NO_LIBUNWIND=1 \
+     NO_LIBTRACEEVENT=1 NO_SLANG=1 NO_GTK2=1 NO_LIBNUMA=1 NO_LIBBPF=1 NO_LIBCRYPTO=1 NO_LIBCAP=1 NO_ZLIB=1 \
+     NO_LZMA=1 NO_ZSTD=1 NO_JVMTI=1 NO_DEMANGLE=1 NO_LIBBABELTRACE=1 NO_SDT=1 NO_LIBPFM4=1 NO_JEVENTS=1 \
+     NO_LIBLLVM=1 NO_CAPSTONE=1 NO_LIBDW=1 NO_LIBAUDIT=1 NO_LIBOPENCSD=1 NO_BPF_SKEL=1 -j16
+```
+
+(the tree change needed is the commit "perf tools: build for hexagon").  The kernel has `CONFIG_PERF_EVENTS` and a PMU named
+`hexagon` (`arch/hexagon/kernel/perf_event.c`): the core's four counters, through the hypervisor (counters read as global
+registers g26-g29, PMUEVTCFG written with the hypervisor's PMU call), counting the whole core on behalf of CPU 0, no sampling.
+Run on the board (`attic/red_cdsp/perf/perf-demo.sh`, output in `demo-output.txt`), `pmuwork 0 20` (20M iterations of two packets:
+a load and an add, then a store) counts:
+
+```
+     40531783      hexagon/committed_packets/
+     60793792      hexagon/committed_insts/
+     20202290      hexagon/committed_loads/
+     20131726      hexagon/committed_stores/
+```
+
+that is 2, 3, 1 and 1 per iteration; the loops of two loads or two stores give 40.2M loads and 40.1M stores, and a load of a new
+cache line each iteration gives 21.2M `dcache_misses`.  Software events work too (`task-clock`, `page-faults`, ...) and
+`perf stat -I` gives intervals.  The event numbers were identified by sweeping 1..128 over the loops (`perf/EVENTS.md`).
+Other events can be counted by number, `hexagon/event=0x40/`.  Only four fit at once.
+
+Two things learned: writing PMUEVTCFG does *not* clear the counters here (the driver clears them itself), and the shared-memory
+windows of the GLINK link survive a reboot, so an APPS that attached to stale ones after the first boot of a new image got no
+`dsp0`: the image's loader now zeroes the windows (`mkheximg --zero`).

@@ -115,3 +115,8 @@ thread-event hooks it lacked: nothing raised the coprocessor fault, and the swit
 is gone).  loadlinux now lets the Linux VM make the hwconfig trap (h2 51a0c10d), without which HVX faults for ever.  QEMU's
 qcs6490-cdsp /soc needed `compatible = "simple-bus"` for the drivers to probe.  HVX tests pass on the board; **HMX
 instructions hang the whole DSP** (see ../../../cdsp_linux_process.md, section 9).  Tests: `../hwtests/`.
+
+### perf (2026-09-26)
+tools/perf built for hexagon and a PMU driver for the core's counters (see ../../../cdsp_linux_process.md section 10, ../perf/).
+The first boot after installing a new image used to fail to bring up dsp0 (stale GLINK windows in DDR): mkfw.sh now passes
+`--zero 0xd7c00000:0x20000` to mkheximg.
