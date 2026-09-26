@@ -336,3 +336,4 @@ slink /bin/wc busybox 777 0 0
 slink /bin/who busybox 777 0 0
 slink /bin/whoami busybox 777 0 0
 slink /bin/yes busybox 777 0 0
+file /bin/dspinfo /home/brian/src/qemu/attic/red_cdsp/newkernel/dspinfo 755 0 0

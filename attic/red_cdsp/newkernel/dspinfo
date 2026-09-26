@@ -1,0 +1,35 @@
+#!/bin/sh
+# Everything the DSP's Linux exports about itself, for debugging: the core clock and PLL, the
+# hypervisor's and the core's information, the PMU, the coprocessors, the GLINK link to the APPS.
+mountpoint -q /sys/kernel/debug || mount -t debugfs debugfs /sys/kernel/debug
+D=/sys/kernel/debug
+show() { # show <title> <dir>: every file of a sysfs directory as name = value
+	echo "== $1"
+	for f in $2/*; do [ -f $f ] && printf '%-22s %s\n' ${f##*/} "$(cat $f 2>&1 | tr '\n' ' ')"; done
+}
+echo "== kernel"; uname -a; cat /proc/cmdline
+echo "== cpus"; cat $D/hexagon/cpus; echo "online: $(cat /sys/devices/system/cpu/online)"
+for c in /sys/devices/platform/soc/*.clock-controller /sys/devices/platform/*.clock-controller; do
+	[ -d $c ] || continue
+	show "core clock and PLL ($c)" $c
+	echo "-- $D/${c##*/}/state"; cat $D/${c##*/}/state
+	echo "-- registers"; cat $D/${c##*/}/regs
+done
+echo "-- clk_summary"; cat $D/clk/clk_summary 2>&1
+show "hexagon" /sys/kernel/hexagon
+show "hypervisor info" /sys/kernel/hexagon/info
+echo "== hypervisor info, debugfs"; cat $D/hexagon/info
+show "pmu registers" /sys/kernel/hexagon/pmu
+echo "== pmu"; cat $D/hexagon/pmu
+echo "== tlb counters"; cat $D/hexagon/tlb
+[ -d /sys/class/hvx ] && show "hvx" /sys/class/hvx
+[ -d /sys/class/hmx ] && show "hmx" /sys/class/hmx
+for g in /sys/bus/platform/drivers/qcom_glink_shmem/*.*; do
+	[ -d $g ] || continue
+	show "glink shared-memory link ($g)" $g
+	echo "-- $D/${g##*/}/state"; cat $D/${g##*/}/state
+done
+echo "== perf pmus"; ls /sys/bus/event_source/devices
+echo "== interrupts"; cat /proc/interrupts
+echo "== memory"; head -5 /proc/meminfo
+echo "== net"; cat /proc/net/dev

@@ -200,3 +200,25 @@ Other events can be counted by number, `hexagon/event=0x40/`.  Only four fit at 
 Two things learned: writing PMUEVTCFG does *not* clear the counters here (the driver clears them itself), and the shared-memory
 windows of the GLINK link survive a reboot, so an APPS that attached to stale ones after the first boot of a new image got no
 `dsp0`: the image's loader now zeroes the windows (`mkheximg --zero`).
+
+## 11. Debug information exported by the DSP's Linux
+
+`dspinfo` (in the DSP's rootfs; `attic/red_cdsp/newkernel/dspinfo`, a sample output from the board in `dspinfo-output.txt`) prints
+all of it.  debugfs is mounted by `/init`.
+
+| what | sysfs | debugfs |
+|---|---|---|
+| core clock and PLL | `/sys/devices/platform/soc/a340000.clock-controller/{core_rate_hz,core_source,pll_rate_hz,pll_locked,pll_mode,pll_l_val,pll_cal_l_val,pll_alpha_val}` | `a340000.clock-controller/{regs,state}`: every register of the block, and a decoded summary; `clk/clk_summary` shows `cdsp_core` at the rate the registers give (940.8 MHz) |
+| hypervisor and core | `/sys/kernel/hexagon/{arch,vm_version,hthreads,timer_freq_hz}`, `info/<name>` for each code of the hypervisor's info call (build id, revision, TLB/cache sizes, base addresses, coprocessors), `cpus/cpuN` | `hexagon/{info,cpus}` |
+| PMU | `/sys/kernel/hexagon/pmu/{evtcfg,evtcfg1,cfg,stid0,stid1}` | `hexagon/pmu` (with the four counters), `hexagon/tlb` (the hypervisor's TLB miss counters: not counted by this build) |
+| HVX, HMX | `/sys/class/{hvx,hmx}/` | |
+| GLINK link to the APPS | `/sys/bus/platform/drivers/qcom_glink_shmem/d7c00000.glink-edge/{rx_head,rx_tail,tx_head,tx_tail,irqs,kicks}` | `d7c00000.glink-edge/state` |
+
+The ABI is documented in `Documentation/ABI/testing/`.  On the board the PLL shows locked, `PLL_MODE` 0xd8000005, L 49 (= 940.8 MHz
+from the 19.2 MHz reference), core source `pll`.  The info call gives the core as v68 with 6 hardware threads, 128-byte HVX vectors
+and 2 HVX contexts, 1 MB of L2 with 128-byte lines, a 128 entry TLB and a 2 MB VTCM at 0x09c00000.
+
+A bug found on the way: the GLINK transport drained its FIFO from `probe` after it had enabled the interrupt, and the drain and the
+interrupt handler could then both run the GLINK receive code, skipping a message between them: the peer's `OPEN` for `IP_BRIDGE`
+was half consumed, the DSP timed out (`failed to auto-open channel IP_BRIDGE: -110`) and `dsp0` never appeared, on some boots.
+It now drains before enabling the interrupt.  (Three boots in a row bring the link up.)

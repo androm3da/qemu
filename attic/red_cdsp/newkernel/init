@@ -6,6 +6,7 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 /bin/busybox mount -t proc proc /proc
 /bin/busybox mount -t sysfs sysfs /sys
 /bin/busybox mount -t devtmpfs devtmpfs /dev
+mount -t debugfs debugfs /sys/kernel/debug
 mkdir -p /dev/pts /var/run/dropbear /var/log
 mount -t devpts devpts /dev/pts
 klog() { echo "cdsp-init: $*" > /dev/kmsg; }

@@ -1,0 +1,233 @@
+== kernel
+Linux qcs6490-cdsp 7.3.0-rc1-00050-g524368947bbf-dirty #37 SMP Sat Sep 26 09:54:04 CDT 2026 hexagon GNU/Linux
+mem=240M lpj=89124080 rdinit=/init
+== cpus
+cpu0  vpid 0x8001400 online
+cpu1  vpid 0x8001000 online
+cpu2  vpid 0x8000c00 online
+cpu3  vpid 0x8000800 online
+cpu4  vpid 0x8000400 online
+cpu5  vpid 0x8000000 online
+online: 0-5
+== core clock and PLL (/sys/devices/platform/soc/a340000.clock-controller)
+core_rate_hz           940800000 
+core_source            pll 
+driver_override        (null) 
+modalias               of:Nclock-controllerT(null)Cqcom,qcs6490-cdsp-q6cc 
+pll_alpha_val          0 
+pll_cal_l_val          68 
+pll_l_val              49 
+pll_locked             1 
+pll_mode               0xd8000005 
+pll_rate_hz            940800000 
+uevent                 DRIVER=qcs6490-cdsp-q6cc OF_NAME=clock-controller OF_FULLNAME=/soc/clock-controller@a340000 OF_COMPATIBLE_0=qcom,qcs6490-cdsp-q6cc OF_COMPATIBLE_N=1 MODALIAS=of:Nclock-controllerT(null)Cqcom,qcs6490-cdsp-q6cc 
+-- /sys/kernel/debug/a340000.clock-controller/state
+xo:            19200000 Hz
+pll mode:      0xd8000005 (out enabled, reset released, lock detected)
+pll opmode:    0x1 (run)
+pll L/CAL_L:   49 / 68, alpha 0
+pll rate:      940800000 Hz
+core cfg:      0x201 (source pll, divider field 1)
+core update:   done
+core clock:    940800000 Hz
+-- registers
+PLL_MODE = 0xd8000005
+PLL_L_VAL = 0x00000031
+PLL_CAL_L_VAL = 0x00000044
+PLL_USER_CTL = 0x00000001
+PLL_USER_CTL_U = 0x00000805
+PLL_USER_CTL_U1 = 0x00000000
+PLL_CONFIG_CTL = 0x20485699
+PLL_CONFIG_CTL_U = 0x00002261
+PLL_CONFIG_CTL_U1 = 0x329a299c
+PLL_TEST_CTL = 0x00000000
+PLL_TEST_CTL_U = 0x00000000
+PLL_TEST_CTL_U1 = 0x00000000
+PLL_STATUS = 0x00000000
+PLL_OPMODE = 0x00000001
+PLL_STATE = 0x00000007
+PLL_ALPHA_VAL = 0x00000000
+CORE_CMD_RCGR = 0x00000000
+CORE_CFG_RCGR = 0x00000201
+CORE_CBCR = 0x00000003
+-- clk_summary
+                                 enable  prepare  protect                                duty  hardware                            connection
+   clock                          count    count    count        rate   accuracy phase  cycle    enable   consumer                         id
+---------------------------------------------------------------------------------------------------------------------------------------------
+ cdsp_core                           0       0        0        940800000   0          0     50000      Y   deviceless                      no_connection_id         
+== hexagon
+arch                   v68 
+hthreads               6 (mask 0x3f) 
+timer_freq_hz          998400000 
+vm_version             0x800 
+== hypervisor info
+audio_ext              0x0 
+boot_flags             0x3e 
+boot_r0                0xa1850000 
+boot_r1                0x0 
+build_id               0x51a0c10d 
+cfgbase                0x998 
+clade_base             0x99d0000 
+coproc_contexts        0x2 
+core_count             0x0 
+core_id                0x0 
+corecfg_base           0x9990000 
+ecc_base               0x99f0000 
+error                  0x0 
+h2k_npages             0x3 
+h2k_pgsize             0x40000 
+hlx_contexts           0x0 
+hmx_instances          0x1 
+hthreads               0x3f 
+hvx_switch             0x0 
+hvx_vlength            0x80 
+l1d_size               0x4000 
+l2_line_sz             0x80 
+l2cfg_base             0x99a0000 
+l2mem_size             0x100000 
+l2tag_size             0x100000 
+l2vic_base             0xa390000 
+livelock               0x0 
+max_cluster_coproc     0x2 
+noc_mbase              0x0 
+noc_sbase              0x0 
+physaddr               0x88f00000 
+rev                    0x8a68 
+shift                  0x0 
+ssbase                 0xa380000 
+stlb                   0x8002040b 
+syscfg                 0x8d837f 
+tcm_base               0x9800000 
+tcm_offset             0x0 
+tcm_size               0x0 
+timer_base             0xa3a0000 
+timer_int              0x22 
+tlb_free               0x7c 
+tlb_size               0x80 
+unit_start             0x0 
+vtcm_bank_width        0x40 
+vtcm_base              0x9c00000 
+vtcm_size              0x800 
+== hypervisor info, debugfs
+ 0 build_id             = 0x51a0c10d
+ 1 boot_flags           = 0x0000003e
+ 2 stlb                 = 0x8002040b
+ 3 syscfg               = 0x008d837f
+ 4 livelock             = 0x00000000
+ 5 rev                  = 0x00008a68
+ 6 ssbase               = 0x0a380000
+ 7 tlb_free             = 0x0000007c
+ 8 tlb_size             = 0x00000080
+ 9 physaddr             = 0x88f00000
+10 tcm_base             = 0x09800000
+11 l2mem_size           = 0x00100000
+12 tcm_size             = 0x00000000
+13 h2k_pgsize           = 0x00040000
+14 h2k_npages           = 0x00000003
+15 l2vic_base           = 0x0a390000
+16 timer_base           = 0x0a3a0000
+17 timer_int            = 0x00000022
+18 error                = 0x00000000
+19 hthreads             = 0x0000003f
+20 l2tag_size           = 0x00100000
+21 l2cfg_base           = 0x099a0000
+22 clade_base           = 0x099d0000
+23 cfgbase              = 0x00000998
+24 hvx_vlength          = 0x00000080
+25 coproc_contexts      = 0x00000002
+26 hvx_switch           = 0x00000000
+27 vtcm_base            = 0x09c00000
+28 vtcm_size            = 0x00000800
+29 ecc_base             = 0x099f0000
+30 l2_line_sz           = 0x00000080
+31 audio_ext            = 0x00000000
+32 vtcm_bank_width      = 0x00000040
+33 l1d_size             = 0x00004000
+34 max_cluster_coproc   = 0x00000002
+35 hmx_instances        = 0x00000001
+36 corecfg_base         = 0x09990000
+37 hlx_contexts         = 0x00000000
+38 unit_start           = 0x00000000
+40 core_id              = 0x00000000
+41 core_count           = 0x00000000
+42 shift                = 0x00000000
+43 tcm_offset           = 0x00000000
+44 noc_mbase            = 0x00000000
+45 noc_sbase            = 0x00000000
+46 boot_r0              = 0xa1850000
+47 boot_r1              = 0x00000000
+== pmu registers
+cfg                    0x0 
+evtcfg                 0x0 
+evtcfg1                0x0 
+stid0                  0x0 
+stid1                  0x0 
+== pmu
+evtcfg   = 0x00000000
+evtcfg1  = 0x00000000
+cfg      = 0x00000000
+stid0    = 0x00000000
+stid1    = 0x00000000
+pmucnt0  = 0
+pmucnt1  = 0
+pmucnt2  = 0
+pmucnt3  = 0
+== tlb counters
+tlb_miss_exec_lo   n/a (not counted by this hypervisor)
+tlb_miss_exec_hi   n/a (not counted by this hypervisor)
+tlb_miss_rw_lo     n/a (not counted by this hypervisor)
+tlb_miss_rw_hi     n/a (not counted by this hypervisor)
+stlb_miss_lo       n/a (not counted by this hypervisor)
+stlb_miss_hi       n/a (not counted by this hypervisor)
+== hvx
+debug                  0 
+max_ctxts              2 
+refcount               0 
+vlength                7 
+== hmx
+debug                  0 
+refcount               0 
+release                cat: can't open '/sys/class/hmx/release': Permission denied 
+== glink shared-memory link (/sys/bus/platform/drivers/qcom_glink_shmem/d7c00000.glink-edge)
+driver_override        (null) 
+irqs                   342 
+kicks                  312 
+modalias               of:Nglink-edgeT(null)Cqcom,glink-shmem-edge 
+rpmsg_name             glink-edge 
+rx_head                43576 
+rx_tail                43648 
+tx_head                64872 
+tx_tail                65008 
+uevent                 DRIVER=qcom_glink_shmem OF_NAME=glink-edge OF_FULLNAME=/soc/glink-edge@d7c00000 OF_COMPATIBLE_0=qcom,glink-shmem-edge OF_COMPATIBLE_N=1 MODALIAS=of:Nglink-edgeT(null)Cqcom,glink-shmem-edge 
+-- /sys/kernel/debug/d7c00000.glink-edge/state
+rx: magic 0x4d534c47, head 43792, tail 43792, size 65520
+tx: magic 0x4d534c47, head 96, tail 96, size 65520
+doorbell: offset 0x8000, bits 0x20
+irq: 92, received 347
+kicks sent: 321
+intentless: 1
+== perf pmus
+hexagon
+software
+== interrupts
+            CPU0       CPU1       CPU2       CPU3       CPU4       CPU5       
+   1:       8338          0          0          0          0          0  HEXAGON     0  ipi_handler
+   2:          0      57074          0          0          0          0  HEXAGON     1  ipi_handler
+   3:          0          0      56800          0          0          0  HEXAGON     2  ipi_handler
+   4:          0          0          0      56291          0          0  HEXAGON     3  ipi_handler
+   5:          0          0          0          0      56803          0  HEXAGON     4  ipi_handler
+   6:          0          0          0          0          0      56136  HEXAGON     5  ipi_handler
+  13:      48478          0          0          0          0          0  HEXAGON    12  rtos_timer
+  92:          0        349          0          0          0          0  HEXAGON    91  glink-shmem
+== memory
+MemTotal:         236544 kB
+MemFree:          181440 kB
+MemAvailable:     179136 kB
+Buffers:               0 kB
+Cached:             6336 kB
+== net
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  sit0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  dsp0:   37570     347    0    0    0     0          0         0    62016     325    0    0    0     0       0          0
