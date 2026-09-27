@@ -52,9 +52,8 @@ typedef struct HmxAccFxp {
 } HmxAccFxp;
 
 /*
- * FP accumulator cell storage. `data` is an IEEE double bit pattern,
- * used by v75/v79 and (until hmx_fp_uses_xfp is flipped on) v81's
- * hmx_matmul_fp_dbl()/hmx_fp_convert_dbl() path. `xfp_data` is the
+ * FP accumulator cell storage. `data` is an IEEE binary64 bit pattern used
+ * by the v75/v79 SoftFloat path. `xfp_data` is the
  * bit-exact flat XFP representation (HmxXfp, hmx_xfp.h) v81's
  * hmx_matmul_fp_xfp()/hmx_fp_convert_xfp() path uses instead -- a
  * different in-memory shape, not a reinterpretation of the same
@@ -462,7 +461,7 @@ struct HmxConfig;
 /*
  * Initialize a freshly allocated (g_malloc0'd) HmxState's FP
  * accumulators and MAC product cache to XFP true-zero. v81-only
- * (hmx_cfg->hmx_fp_uses_xfp) -- the double path's plain zeroed
+ * (hmx_cfg->hmx_fp_uses_xfp) -- the SoftFloat path's plain zeroed
  * memory is already correct for v75/v79. Called once from CPU
  * realize (cpu.c), right after the HmxState allocation.
  */

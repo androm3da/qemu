@@ -9,9 +9,9 @@
  * primitives (v81 FP MAC path). No <math.h> dependency.
  *
  * v75/v79 never use this file's MAC-shaped functions at all
- * (hmx_matmul_fp_dbl(), native double); they use hmx_fp_convert_dbl(),
- * the existing double-based convert, not this file's generic
- * convert-path functions -- unlike the reference, where a later
+ * (hmx_matmul_fp_softfloat(), QEMU SoftFloat); they use
+ * hmx_fp_convert_softfloat(), the existing SoftFloat convert, not this
+ * file's generic convert-path functions -- unlike the reference, where a later
  * refactor routed every version's convert through here too.
  *
  * IMPORTANT -- the pre-flat reference normalize step had a

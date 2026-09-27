@@ -43,7 +43,7 @@ void hmx_init_config(HexagonCPU *cpu)
     hmx_cfg->mx_bthenc              = false;
     /*
      * v75/v79 have no XFP MAC/convert path at all (see hmx_xfp.c's
-     * header comment) -- they always use the native-double FP path.
+     * header comment) -- they use the SoftFloat FP path.
      */
     hmx_cfg->hmx_fp_uses_xfp        = false;
     hmx_cfg->hmx_present            = (ver >= HEX_VER_V75);
@@ -60,7 +60,7 @@ void hmx_init_config(HexagonCPU *cpu)
         /*
          * v81 uses the bit-exact XFP MAC/convert path
          * (hmx_matmul_fp_xfp()/hmx_fp_convert_xfp()) instead of the
-         * double path every other version uses.
+         * SoftFloat path every other version uses.
          */
         hmx_cfg->hmx_fp_uses_xfp    = true;
     }
