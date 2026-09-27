@@ -102,8 +102,99 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_hvx_multi(self):
         self.run_exit_zero("hvx-multi")
 
+    def test_pendalot(self):
+        self.run_console_pattern("pendalot", "PASS", machine="V81QA_1")
+
+    def test_pendalot_v66(self):
+        self.run_console_pattern("pendalot", "PASS", machine="V66G_1024")
+
+    def test_pendalot_v68(self):
+        self.run_console_pattern("pendalot", "PASS", machine="V68N_1024")
+
+    def test_swi_wait(self):
+        """Interrupt-delivery test gated on pcycle_pause() busy-waits."""
+        self.run_console_pattern("swi_wait", "PASS")
+
+    def test_pend_wake_wait(self):
+        self.run_console_pattern("pend_wake_wait", "PASS")
+
     def test_standalone_vec(self):
         self.run_exit_zero("standalone_vec")
+
+    def test_badva(self):
+        self.run_console_pattern("badva", "PASS")
+
+    def test_bestwait(self):
+        self.run_console_pattern("bestwait", "PASS")
+
+    def test_checkforpriv(self):
+        self.run_console_pattern("checkforpriv", "PASS")
+
+    def test_ciad_siad(self):
+        self.run_console_pattern("ciad-siad", "PASS")
+
+    def test_getcwd(self):
+        self.run_console_pattern("getcwd", "PASS")
+
+    def test_gregs(self):
+        self.run_console_pattern("gregs", "PASS")
+
+    def test_hvx_64b(self):
+        self.run_console_pattern("hvx_64b", "PASS")
+
+    def test_invalid_insn_for_rev(self):
+        self.run_console_pattern("invalid_insn_for_rev", "PASS")
+
+    def test_invalid_opcode(self):
+        self.run_console_pattern("invalid_opcode", "PASS")
+
+    def test_k0lock(self):
+        self.run_console_pattern("k0lock", "PASS")
+
+    def test_k0lock_syscfg(self):
+        self.run_console_pattern("k0lock-syscfg", "PASS")
+
+    def test_mmu_asids(self):
+        self.run_console_pattern("mmu_asids", "PASS")
+
+    def test_mmu_overlap(self):
+        self.run_console_pattern("mmu_overlap", "PASS")
+
+    def test_mmu_page_size(self):
+        self.run_console_pattern("mmu_page_size", "PASS")
+
+    def test_mmu_permissions(self):
+        self.run_console_pattern("mmu_permissions", "PASS")
+
+    def test_reg_reads(self):
+        self.run_console_pattern("reg-reads", "PASS")
+
+    def test_rev(self):
+        self.run_console_pattern("rev", "PASS")
+
+    def test_standalone_hw(self):
+        self.run_console_pattern("standalone_hw", "PASS")
+
+    def test_start(self):
+        self.run_console_pattern("start", "PASS")
+
+    def test_swi(self):
+        self.run_console_pattern("swi", "PASS")
+
+    def test_sys_atomics(self):
+        self.run_console_pattern("sys_atomics", "PASS")
+
+    def test_thread_scheduling(self):
+        self.run_console_pattern("thread_scheduling", "PASS")
+
+    def test_tlblock(self):
+        self.run_console_pattern("tlblock", "PASS")
+
+    def test_vid_reg(self):
+        self.run_console_pattern("vid_reg", "PASS")
+
+    def test_vtcm_error(self):
+        self.run_console_pattern("vtcm_error", "PASS")
 
 if __name__ == "__main__":
     QemuSystemTest.main()
