@@ -452,6 +452,7 @@ void HELPER(hmx_act_load)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
         }
         break;
     case HMX_ACT_F8:
+        g_assert(hmx_cfg_from_env(env)->mx_fp8_en);
         for (int i = 0; i < HMX_ACT_CROUTON_SIZE; i += 4) {
             uint32_t w = cpu_ldl_le_data_ra(env, base_addr + i, ra);
             stl_le_p(&hmx->act_buffer[i], w);
@@ -1979,7 +1980,10 @@ fp_wgt_advance:
 void HELPER(hmx_matmul_fp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
                            uint32_t params)
 {
-    if (hmx_cfg_from_env(env)->hmx_fp_uses_xfp) {
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
+    g_assert(HMX_UNPACK_WEI_TYPE(params) != HMX_WEI_F8 || hmx_cfg->mx_fp8_en);
+    if (hmx_cfg->hmx_fp_uses_xfp) {
         hmx_matmul_fp_xfp(env, rs, rt, params);
     } else {
         hmx_matmul_fp_softfloat(env, rs, rt, params);
@@ -3492,7 +3496,8 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
          * fb_dst/fb_limit: relaxed-precision convert feedback.
          *
          * F8 is v81-only (tag_rev_info.c.inc) and v81 always uses the
-         * XFP path, so there is no SoftFloat F8 convert.
+         * XFP path, so there is no SoftFloat F8 convert (hmx_config.c
+         * checks both against mx_fp8_en).
          *
          * F8's age-pipeline shift happens unconditionally on every
          * F8 convert (unlike FP16/BF16's deferred cvt_fxp_pending
@@ -3501,6 +3506,7 @@ uint32_t HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
         int maxnorm = (rs >> 6) & 1;
         int fp8_odd_sel = (rs >> 11) & 1;
         int fp_rnd = (rs >> 8) & 1;
+        g_assert(hmx_cfg->mx_fp8_en);
         hmx->cvt_fp[2] = hmx->cvt_fp[1];
         hmx->cvt_fp[1] = hmx->cvt_fp[0];
         hmx_fp_convert_xfp(env, hmx, hmx->current_acc_set,
@@ -3656,6 +3662,7 @@ void HELPER(hmx_cvt_store)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
     hmx_flush_acc_clear(env, hmx);
 
     if (fmt == HMX_CVTST_F8) {
+        g_assert(hmx_cfg->mx_fp8_en);
         /*
          * FP8 store: each cvt_fp slot packs two FP8 results (see
          * HmxCvtStateFp's comment in hmx_state.h): low byte = even

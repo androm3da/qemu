@@ -5,6 +5,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "decode.h"
 #include "hmx_config.h"
 #include "hmx_state.h"
 
@@ -71,6 +72,15 @@ void hmx_init_config(HexagonCPU *cpu)
     g_assert(hmx_cfg->mx_fp_cols <= HMX_OUTPUT_CHANNELS);
     g_assert(hmx_cfg->mx_input_channels <= HMX_INPUT_CHANNELS);
     g_assert(hmx_cfg->mx_num_bias_grps <= HMX_NUM_BIAS_SETS);
+
+    /*
+     * The F8 helpers rely on mx_fp8_en, but it is tag_rev_info.c.inc that
+     * makes the F8 instructions illegal where FP8 is absent, so the two
+     * must agree. Only the XFP path implements F8.
+     */
+    g_assert(hmx_cfg->mx_fp8_en ==
+             opcode_supported(M8_cvt_rs_f8, cpu->cfg.hex_def));
+    g_assert(!hmx_cfg->mx_fp8_en || hmx_cfg->hmx_fp_uses_xfp);
 
     if (hmx_cfg->hmx_present) {
         g_assert(hmx_cfg->mx_rows != 0);
