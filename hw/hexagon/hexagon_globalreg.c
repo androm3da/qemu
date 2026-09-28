@@ -173,7 +173,8 @@ static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
 static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
                           uint32_t value)
 {
-    s->regs[reg] = value;
+    /* Paired with hexagon_globalreg_read_syscfg_lockless(). */
+    qatomic_set(&s->regs[reg], value);
     if (is_vid_reg(reg)) {
         l2vic_update_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1, value);
     }
@@ -206,6 +207,18 @@ void hexagon_globalreg_write(HexagonGlobalRegState *s, uint32_t reg,
     g_assert(reg >= HEX_SREG_GLB_START);
     set_reg_value(s, reg, value);
     trace_hexagon_globalreg_write(htid, get_sreg_name(reg), value);
+}
+
+/*
+ * SYSCFG is read on every TB lookup to pick the MMU index, so taking the BQL
+ * there serializes every vCPU.  It is a plain register with no read side
+ * effects, and every write stores it with qatomic_set() under the BQL, so a
+ * lockless load sees either the old or the new value -- the same as a BQL
+ * holder racing that write would.
+ */
+uint32_t hexagon_globalreg_read_syscfg_lockless(HexagonGlobalRegState *s)
+{
+    return s ? qatomic_read(&s->regs[HEX_SREG_SYSCFG]) : 0;
 }
 
 uint32_t hexagon_globalreg_masked_value(HexagonGlobalRegState *s, uint32_t reg,

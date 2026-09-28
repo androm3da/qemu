@@ -524,11 +524,9 @@ static int hexagon_cpu_mmu_index(CPUState *cs, bool ifetch)
     HexagonCPU *cpu = HEXAGON_CPU(cs);
     int cpu_mode;
 
-    BQL_LOCK_GUARD();
     if (cpu->globalregs) {
         uint32_t syscfg =
-            hexagon_globalreg_read(cpu->globalregs, HEX_SREG_SYSCFG,
-                                   env->threadId);
+            hexagon_globalreg_read_syscfg_lockless(cpu->globalregs);
         uint8_t mmuen = GET_SYSCFG_FIELD(SYSCFG_MMUEN, syscfg);
         if (!mmuen) {
             return MMU_KERNEL_IDX;
