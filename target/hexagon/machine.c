@@ -63,9 +63,33 @@ static const VMStateInfo vmstate_info_hlxvector = {
 
 #define VMSTATE_HLXVECTOR_ARRAY_V(_f, _s, _n, _v) \
     VMSTATE_SUB_ARRAY(_f, _s, 0, _n, _v, vmstate_info_hlxvector, HLXVector)
+static const VMStateDescription vmstate_hexagon_pmu_counters = {
+    .name = "hexagon_pmu_counters",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(num_packets, PMUCounters),
+        VMSTATE_UINT32(committed_loads, PMUCounters),
+        VMSTATE_UINT32(committed_stores, PMUCounters),
+        VMSTATE_UINT32(committed_memops, PMUCounters),
+        VMSTATE_UINT32(hvx_packets, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_alu, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_mpy, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_shift, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_perm, PMUCounters),
+        VMSTATE_UINT32(hlx_packets, PMUCounters),
+        VMSTATE_UINT32(hlx_slot_alu, PMUCounters),
+        VMSTATE_UINT32(hlx_slot_shift, PMUCounters),
+        VMSTATE_UINT32(hlx_slot_mpy, PMUCounters),
+        VMSTATE_UINT32(hlx_slot_ld, PMUCounters),
+        VMSTATE_UINT32(hlx_slot_st, PMUCounters),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 const VMStateDescription vmstate_hexagon_cpu = {
     .name = "cpu",
-    .version_id = 4,
+    .version_id = 5,
     .minimum_version_id = 2,
     .post_load = hexagon_cpu_post_load,
     .fields = (const VMStateField[]) {
@@ -83,6 +107,8 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT32(env.imprecise_exception, HexagonCPU),
         VMSTATE_UINT32_V(env.cfi_active, HexagonCPU, 3),
         VMSTATE_HLXVECTOR_ARRAY_V(env.future_LRegs, HexagonCPU, NUM_LREGS, 4),
+        VMSTATE_STRUCT(env.pmu, HexagonCPU, 5, vmstate_hexagon_pmu_counters,
+                       PMUCounters),
 
         VMSTATE_END_OF_LIST()
     },
