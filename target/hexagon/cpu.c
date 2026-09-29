@@ -44,6 +44,7 @@
 #include "exec/target_page.h"
 #include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/hexagon/hexagon_hvx_context.h"
+#include "hw/hexagon/hexagon_pmu.h"
 #endif
 
 static ObjectClass *hexagon_cpu_class_by_name(const char *cpu_model)
@@ -71,6 +72,13 @@ static const Property hexagon_cpu_properties[] = {
     DEFINE_PROP_LINK("global-regs", HexagonCPU, globalregs,
         TYPE_HEXAGON_GLOBALREG, HexagonGlobalRegState *),
     DEFINE_PROP_UINT32("htid", HexagonCPU, htid, 0),
+    /*
+     * Optional: only set when the machine was started with `pmu=on`. Like
+     * hvx-context[*], its absence is not an error -- it just means the PMU
+     * sregs read/write as 0/no-op (see IS_PMU_SREG() dispatch).
+     */
+    DEFINE_PROP_LINK("pmu", HexagonCPU, pmu, TYPE_HEXAGON_PMU,
+                     HexagonPMUState *),
 #endif
     DEFINE_PROP_BOOL("lldb-compat", HexagonCPU, cfg.lldb_compat, false),
     DEFINE_PROP_UNSIGNED("lldb-stack-adjust", HexagonCPU, cfg.lldb_stack_adjust,
@@ -354,6 +362,11 @@ static TCGTBCPUState hexagon_get_tb_cpu_state(CPUState *cs)
                            GET_SSR_FIELD(SSR_XE, env->t_sreg[HEX_SREG_SSR]));
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, CPU_MODE,
                            get_cpu_mode(env));
+    hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, PMU_ENABLED,
+                           cpu->pmu &&
+                           GET_SYSCFG_FIELD(SYSCFG_PM,
+                               hexagon_globalreg_read(cpu->globalregs,
+                                   HEX_SREG_SYSCFG, env->threadId)));
     /* Single-step applies only to user and guest mode packets */
     hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, SS_ACTIVE,
                            GET_SSR_FIELD(SSR_SS, env->t_sreg[HEX_SREG_SSR]) &&
@@ -463,6 +476,7 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     env->tlb_lock_count = 0;
     env->k0_lock_count = 0;
     env->next_PC = 0;
+    memset(&env->pmu, 0, sizeof(env->pmu));
 
     env->t_sreg[HEX_SREG_HTID] = cpu->htid;
     env->threadId = cpu->htid;
@@ -870,6 +884,15 @@ uint32_t hexagon_greg_read(CPUHexagonState *env, uint32_t reg)
         return ssr_ce ?
             hexagon_globalreg_read(cpu->globalregs, HEX_SREG_PCYCLEHI,
                                    env->threadId) : 0;
+    case HEX_GREG_GPMUCNT0:
+    case HEX_GREG_GPMUCNT1:
+    case HEX_GREG_GPMUCNT2:
+    case HEX_GREG_GPMUCNT3:
+    case HEX_GREG_GPMUCNT4:
+    case HEX_GREG_GPMUCNT5:
+    case HEX_GREG_GPMUCNT6:
+    case HEX_GREG_GPMUCNT7:
+        return hexagon_get_pmu_greg(env, reg);
     default:
         qemu_log_mask(LOG_UNIMP, "reading greg %" PRId32
                 " not yet supported.\n", reg);

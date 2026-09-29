@@ -19,9 +19,27 @@ static int hexagon_cpu_post_load(void *opaque, int version_id)
     return 0;
 }
 
+static const VMStateDescription vmstate_hexagon_pmu_counters = {
+    .name = "hexagon_pmu_counters",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(num_packets, PMUCounters),
+        VMSTATE_UINT32(committed_loads, PMUCounters),
+        VMSTATE_UINT32(committed_stores, PMUCounters),
+        VMSTATE_UINT32(committed_memops, PMUCounters),
+        VMSTATE_UINT32(hvx_packets, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_alu, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_mpy, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_shift, PMUCounters),
+        VMSTATE_UINT32(hvx_pipe_perm, PMUCounters),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 const VMStateDescription vmstate_hexagon_cpu = {
     .name = "cpu",
-    .version_id = 2,
+    .version_id = 3,
     .minimum_version_id = 2,
     .post_load = hexagon_cpu_post_load,
     .fields = (const VMStateField[]) {
@@ -39,6 +57,8 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT32(env.wait_next_pc, HexagonCPU),
         VMSTATE_UNUSED(sizeof(uint64_t)), /* was env.t_cycle_count */
         VMSTATE_UINT32(env.imprecise_exception, HexagonCPU),
+        VMSTATE_STRUCT(env.pmu, HexagonCPU, 3, vmstate_hexagon_pmu_counters,
+                      PMUCounters),
 
         VMSTATE_END_OF_LIST()
     },
