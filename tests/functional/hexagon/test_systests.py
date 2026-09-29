@@ -134,7 +134,7 @@ class SysTestsStandaloneTests(QemuSystemTest):
         self.run_console_pattern("ciad-siad", "PASS")
 
     def test_getcwd(self):
-        self.run_console_pattern("getcwd", "PASS")
+        self.run_exit_zero("getcwd")
 
     def test_gregs(self):
         self.run_console_pattern("gregs", "PASS")
@@ -170,10 +170,10 @@ class SysTestsStandaloneTests(QemuSystemTest):
         self.run_console_pattern("reg-reads", "PASS")
 
     def test_rev(self):
-        self.run_console_pattern("rev", "PASS")
+        self.run_exit_zero("rev")
 
     def test_standalone_hw(self):
-        self.run_console_pattern("standalone_hw", "PASS")
+        self.run_exit_zero("standalone_hw")
 
     def test_start(self):
         self.run_console_pattern("start", "PASS")
@@ -191,10 +191,10 @@ class SysTestsStandaloneTests(QemuSystemTest):
         self.run_console_pattern("tlblock", "PASS")
 
     def test_vid_reg(self):
-        self.run_console_pattern("vid_reg", "PASS")
+        self.run_exit_zero("vid_reg")
 
     def test_vtcm_error(self):
-        self.run_console_pattern("vtcm_error", "PASS")
+        self.run_exit_zero("vtcm_error")
 
 if __name__ == "__main__":
     QemuSystemTest.main()
