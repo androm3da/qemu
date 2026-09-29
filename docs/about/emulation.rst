@@ -836,8 +836,9 @@ Uftrace
 This plugin generates a binary trace compatible with
 `uftrace <https://github.com/namhyung/uftrace>`_.
 
-Plugin supports aarch64, x64 and riscv64, and works in user and system mode,
-allowing to trace a system boot, which is not something possible usually.
+Plugin supports aarch64, x64, riscv64 and hexagon, and works in user and
+system mode, allowing to trace a system boot, which is not something possible
+usually.
 
 In user mode, the memory mapping is directly copied from ``/proc/self/maps`` at
 the end of execution. Uftrace should be able to retrieve symbols by itself,
@@ -872,7 +873,8 @@ Performance wise, overhead compared to normal tcg execution is around x5-x15.
     - Description
   * - trace-privilege-level=[on|off]
     - Generate separate traces for each privilege level (Exception Level +
-      Security State on aarch64, Privilege levels on riscv64 and Rings on x64).
+      Security State on aarch64, Privilege levels on riscv64, Rings on x64,
+      and monitor, guest, and user modes on hexagon).
 
 .. list-table:: uftrace_symbols.py arguments
   :widths: 20 80
