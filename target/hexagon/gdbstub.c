@@ -149,3 +149,35 @@ int hexagon_hvx_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
 
     g_assert_not_reached();
 }
+
+#ifndef CONFIG_USER_ONLY
+int hexagon_sys_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
+{
+    CPUHexagonState *env = cpu_env(cs);
+
+    if (n < NUM_SREGS) {
+        return gdb_get_reg32(mem_buf, env->t_sreg[n]);
+    }
+    n -= NUM_SREGS;
+    if (n < NUM_GREGS) {
+        return gdb_get_reg32(mem_buf, env->greg[n]);
+    }
+    g_assert_not_reached();
+}
+
+int hexagon_sys_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
+{
+    CPUHexagonState *env = cpu_env(cs);
+
+    if (n < NUM_SREGS) {
+        env->t_sreg[n] = ldl_le_p(mem_buf);
+        return 4;
+    }
+    n -= NUM_SREGS;
+    if (n < NUM_GREGS) {
+        env->greg[n] = ldl_le_p(mem_buf);
+        return 4;
+    }
+    g_assert_not_reached();
+}
+#endif
