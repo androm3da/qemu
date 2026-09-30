@@ -144,16 +144,6 @@ static void gen_precise_exception(int cause, uint32_t PC)
                                tcg_constant_i32(PC));
 }
 
-static void gen_exec_counters(DisasContext *ctx)
-{
-    tcg_gen_addi_tl(hex_gpr[HEX_REG_QEMU_PKT_CNT],
-                    hex_gpr[HEX_REG_QEMU_PKT_CNT], ctx->num_packets);
-    tcg_gen_addi_tl(hex_gpr[HEX_REG_QEMU_INSN_CNT],
-                    hex_gpr[HEX_REG_QEMU_INSN_CNT], ctx->num_insns);
-    tcg_gen_addi_tl(hex_gpr[HEX_REG_QEMU_HVX_CNT],
-                    hex_gpr[HEX_REG_QEMU_HVX_CNT], ctx->num_hvx_insns);
-}
-
 static bool use_goto_tb(DisasContext *ctx, target_ulong dest)
 {
     return translator_use_goto_tb(&ctx->base, dest);
@@ -210,8 +200,6 @@ static void gen_end_tb_singlestep(DisasContext *ctx)
 
 static void gen_end_tb(DisasContext *ctx)
 {
-    gen_exec_counters(ctx);
-
     if (ctx->need_next_pc) {
         tcg_gen_mov_tl(hex_gpr[HEX_REG_PC], hex_next_PC);
     }
@@ -260,7 +248,6 @@ static void gen_end_tb(DisasContext *ctx)
 
 void hex_gen_exception_end_tb(DisasContext *ctx, int cause)
 {
-    gen_exec_counters(ctx);
     gen_precise_exception(cause, ctx->pkt.pc);
     ctx->base.is_jmp = DISAS_NORETURN;
 }
@@ -273,7 +260,6 @@ static void gen_exception_decode_fail(DisasContext *ctx, int nwords, int cause)
 {
     target_ulong fail_pc = ctx->base.pc_next + nwords * sizeof(uint32_t);
 
-    gen_exec_counters(ctx);
     tcg_gen_movi_tl(hex_gpr[HEX_REG_PC], fail_pc);
     gen_precise_exception(cause, fail_pc);
     ctx->base.is_jmp = DISAS_NORETURN;
@@ -1146,27 +1132,6 @@ static void gen_commit_hvx(DisasContext *ctx)
     }
 }
 
-static void update_exec_counters(DisasContext *ctx)
-{
-    int num_real_insns = 0;
-    int num_hvx_insns = 0;
-
-    for (int i = 0; i < ctx->pkt.num_insns; i++) {
-        if (!ctx->pkt.insn[i].is_endloop &&
-            !ctx->pkt.insn[i].part1 &&
-            !GET_ATTRIB(ctx->pkt.insn[i].opcode, A_IT_NOP)) {
-            num_real_insns++;
-        }
-        if (GET_ATTRIB(ctx->pkt.insn[i].opcode, A_CVI)) {
-            num_hvx_insns++;
-        }
-    }
-
-    ctx->num_packets++;
-    ctx->num_insns += num_real_insns;
-    ctx->num_hvx_insns += num_hvx_insns;
-}
-
 #ifndef CONFIG_USER_ONLY
 /*
  * A tlbp instruction may detect multiple TLB matches and set a pending
@@ -1274,7 +1239,6 @@ static void gen_commit_packet(DisasContext *ctx)
     if (ctx->pkt.pkt_has_hvx) {
         gen_commit_hvx(ctx);
     }
-    update_exec_counters(ctx);
 
     if (ctx->pkt.vhist_insn != NULL) {
         ctx->pre_commit = false;
@@ -1349,9 +1313,6 @@ static void hexagon_tr_init_disas_context(DisasContextBase *dcbase,
     uint32_t hex_flags = dcbase->tb->flags;
 
     ctx->mem_idx = FIELD_EX32(hex_flags, TB_FLAGS, MMU_INDEX);
-    ctx->num_packets = 0;
-    ctx->num_insns = 0;
-    ctx->num_hvx_insns = 0;
     ctx->branch_cond = TCG_COND_NEVER;
     ctx->is_tight_loop = FIELD_EX32(hex_flags, TB_FLAGS, IS_TIGHT_LOOP);
     ctx->short_circuit = hex_cpu->cfg.short_circuit;
@@ -1433,7 +1394,6 @@ static void hexagon_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 
     switch (ctx->base.is_jmp) {
     case DISAS_TOO_MANY:
-        gen_exec_counters(ctx);
         tcg_gen_movi_tl(hex_gpr[HEX_REG_PC], ctx->base.pc_next);
 #ifndef CONFIG_USER_ONLY
         if (ctx->ss_active) {
