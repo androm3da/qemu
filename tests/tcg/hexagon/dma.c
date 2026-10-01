@@ -29,6 +29,7 @@ int err;
 /* 32-byte descriptor's DescriptorType byte. */
 #define DESC_TYPE_GATHER        4u
 #define DESC_TYPE_CONSTANT_FILL 8u
+#define DESC_TYPE_WIDE_2D       9u
 
 /* desc[0]=next desc[1]=ctrl desc[2]=src desc[3]=dst */
 typedef uint32_t type0_desc_t[4] __attribute__((aligned(16)));
@@ -238,6 +239,40 @@ static void test_gather(void)
     }
 }
 
+static void test_wide_2d(void)
+{
+    static type1_desc_t desc;
+    static uint8_t src[8 * 16], dst[8 * 16];
+    const uint32_t width = 5, height = 4;
+    const uint32_t srcstride = 16, dststride = 16;
+
+    for (int i = 0; i < sizeof(src); i++) {
+        src[i] = i + 1;
+    }
+    memset(dst, 0, sizeof(dst));
+
+    desc[0] = 0;
+    desc[1] = DESC_DESCTYPE_TYPE1 | dststride;
+    desc[2] = (uint32_t)(uintptr_t)src;
+    desc[3] = (uint32_t)(uintptr_t)dst;
+    desc[4] = DESC_TYPE_WIDE_2D;
+    desc[5] = (height << 24) | width;
+    desc[6] = srcstride << 8;
+    desc[7] = 0;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+
+    check32(dmpoll(), DM0_STATUS_IDLE);
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            check32(dst[row * dststride + col], src[row * srcstride + col]);
+        }
+        for (uint32_t col = width; col < dststride; col++) {
+            check32(dst[row * dststride + col], 0);
+        }
+    }
+}
+
 static void test_dmpause_after_completion(void)
 {
     static type0_desc_t desc;
@@ -411,6 +446,7 @@ int main(void)
     test_type1_box();
     test_constant_fill();
     test_gather();
+    test_wide_2d();
     test_dmpause_after_completion();
     test_misaligned_descriptor();
     test_unsupported_control();
