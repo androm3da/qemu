@@ -34,6 +34,7 @@ tests += {
     'qemu_args': ['-cpu', 'v66'],
   },
   'circ.c': {'cflags': cflags},
+  'dma.c': {'cflags': [cflags, '-mv68']},
   'first.S': {'cflags': asmflags},
   'fpstuff.c': {'cflags': cflags},
   'hex_sigsegv.c': {'cflags': cflags},
