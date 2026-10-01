@@ -67,6 +67,28 @@ static void dma_copy(const HexagonDMAMemory *mem, target_ulong dst,
     }
 }
 
+static void dma_fill(const HexagonDMAMemory *mem, target_ulong dst,
+                     uint32_t length, uint8_t value)
+{
+    while (length != 0) {
+        uint32_t dst_page = (1u << TARGET_PAGE_BITS) -
+                            (dst & ((1u << TARGET_PAGE_BITS) - 1));
+        uint32_t chunk = MIN(length, dst_page);
+        void *dst_host = probe_write(mem->env, dst, chunk, mem->mmu_idx,
+                                     mem->ra);
+
+        if (dst_host) {
+            memset(dst_host, value, chunk);
+        } else {
+            for (uint32_t i = 0; i < chunk; i++) {
+                cpu_stb_data_ra(mem->env, dst + i, value, mem->ra);
+            }
+        }
+        dst += chunk;
+        length -= chunk;
+    }
+}
+
 static bool dma_probe_range(const HexagonDMAMemory *mem, target_ulong addr,
                             uint32_t length, MMUAccessType access_type)
 {
@@ -193,6 +215,8 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
         case DESC_DESCTYPE_TYPE1: {
             uint32_t roi, stride, width, height, srcstride, dststride;
             uint32_t desc_type;
+            uint8_t fill_value;
+            bool constant_fill;
             target_ulong src, dst;
 
             if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
@@ -201,29 +225,48 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                               DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                 return;
             }
-            /*
-             * The 32-byte layout has 9 DescriptorType encodings (spec
-             * 5.2); only the plain 2D type (0) is modeled.  Without this
-             * check every other type's fields get misread as 2D
-             * width/height/stride instead of being rejected.
-             */
             desc_type = dma_ldl(&mem, desc_va + DESC_OFF_TYPE) &
-                       DESC_TYPE_FIELD_MASK;
-            if (desc_type != DESC_TYPE_2D ||
-                dma_ldl(&mem, desc_va + DESC_OFF_WIDTHOFFSET) != 0) {
+                        DESC_TYPE_FIELD_MASK;
+            if (dma_ldl(&mem, desc_va + DESC_OFF_WIDTHOFFSET) != 0) {
                 dma_set_error(dma, htid, desc_va,
                               DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                 return;
             }
-            src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
             dst = dma_ldl(&mem, desc_va + DESC_OFF_DST);
             roi = dma_ldl(&mem, desc_va + DESC_OFF_ROI);
             stride = dma_ldl(&mem, desc_va + DESC_OFF_STRIDE);
             width = roi & DESC_ROIWIDTH_MASK;
             height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
-            srcstride = stride & DESC_SRCSTRIDE_MASK;
-            dststride = (stride & DESC_DSTSTRIDE_MASK) >>
-                        DESC_DSTSTRIDE_SHIFT;
+            constant_fill = false;
+            switch (desc_type) {
+            case DESC_TYPE_2D:
+                src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
+                srcstride = stride & DESC_SRCSTRIDE_MASK;
+                dststride = (stride & DESC_DSTSTRIDE_MASK) >>
+                            DESC_DSTSTRIDE_SHIFT;
+                break;
+            case DESC_TYPE_CONSTANT_FILL:
+                if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
+                    HEX_VER_V73 || (stride & DESC_SRCSTRIDE_MASK) != 0) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                    return;
+                }
+                src = 0;
+                srcstride = 0;
+                dststride = (stride & DESC_DSTSTRIDE_MASK) >>
+                            DESC_DSTSTRIDE_SHIFT;
+                if (dststride == 0) {
+                    dststride = UINT16_MAX + 1;
+                }
+                fill_value = dma_ldl(&mem, desc_va + DESC_OFF_TYPE) >> 8;
+                constant_fill = true;
+                break;
+            default:
+                dma_set_error(dma, htid, desc_va,
+                              DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                return;
+            }
             length = width * height;
             if (bytes_copied + length > DMA_MAX_CHAIN_BYTES) {
                 dma_set_error(dma, htid, desc_va,
@@ -234,13 +277,22 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 uint64_t srow = src + (uint64_t)row * srcstride;
                 uint64_t drow = dst + (uint64_t)row * dststride;
 
-                if (srow > UINT32_MAX || drow > UINT32_MAX) {
+                if ((!constant_fill && srow > UINT32_MAX) ||
+                    drow > UINT32_MAX) {
                     dma_set_error(dma, htid, desc_va,
                                   DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                     return;
                 }
             }
-            dma_copy_type1(&mem, desc_va);
+            if (constant_fill) {
+                for (uint32_t row = 0; row < height; row++) {
+                    target_ulong drow = dst + (target_ulong)row * dststride;
+
+                    dma_fill(&mem, drow, width, fill_value);
+                }
+            } else {
+                dma_copy_type1(&mem, desc_va);
+            }
             break;
         }
         default:
