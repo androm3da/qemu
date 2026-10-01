@@ -158,7 +158,8 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
     target_ulong visited[DMA_MAX_CHAIN_DESCRIPTORS];
 
     while (desc_va != 0) {
-        uint32_t ctrl, desctype, length = 0;
+        uint32_t ctrl, desctype;
+        uint64_t length = 0;
 
         if (desc_va % DESC_ALIGNMENT != 0) {
             dma_set_error(dma, htid, desc_va,
@@ -218,6 +219,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             uint8_t fill_value;
             bool constant_fill;
             bool gather;
+            bool wide_2d;
             target_ulong src, dst;
 
             if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
@@ -240,6 +242,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
             constant_fill = false;
             gather = false;
+            wide_2d = false;
             switch (desc_type) {
             case DESC_TYPE_2D:
                 src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
@@ -288,12 +291,32 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 }
                 gather = true;
                 break;
+            case DESC_TYPE_WIDE_2D:
+                if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
+                    HEX_VER_V75) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                    return;
+                }
+                src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
+                width = roi & 0x00ffffff;
+                height = (roi >> 24) | ((stride & 0xff) << 8);
+                srcstride = stride >> 8;
+                dststride = ctrl & DESC_LENGTH_MASK;
+                if (srcstride == 0) {
+                    srcstride = 1 << 24;
+                }
+                if (dststride == 0) {
+                    dststride = 1 << 24;
+                }
+                wide_2d = true;
+                break;
             default:
                 dma_set_error(dma, htid, desc_va,
                               DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                 return;
             }
-            length = width * height;
+            length = (uint64_t)width * height;
             if (bytes_copied + length > DMA_MAX_CHAIN_BYTES) {
                 dma_set_error(dma, htid, desc_va,
                               DMA_SYNDROME_DESCRIPTOR_CHAIN_LIMIT);
@@ -319,6 +342,13 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             } else if (gather) {
                 for (uint32_t row = 0; row < height; row++) {
                     target_ulong srow = dma_ldl(&mem, src + row * srcstride);
+                    target_ulong drow = dst + (target_ulong)row * dststride;
+
+                    dma_copy(&mem, drow, srow, width);
+                }
+            } else if (wide_2d) {
+                for (uint32_t row = 0; row < height; row++) {
+                    target_ulong srow = src + (target_ulong)row * srcstride;
                     target_ulong drow = dst + (target_ulong)row * dststride;
 
                     dma_copy(&mem, drow, srow, width);
