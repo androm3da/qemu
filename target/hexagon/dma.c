@@ -145,7 +145,7 @@ static void dma_copy_type1(const HexagonDMAMemory *mem, target_ulong desc_va)
 }
 
 void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
-                           target_ulong desc_va, uintptr_t ra)
+                            target_ulong desc_va, uintptr_t ra)
 {
     HexagonDMAMemory mem = {
         .env = env,
@@ -156,6 +156,12 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
     uint32_t desc_count = 0;
     uint64_t bytes_copied = 0;
     target_ulong visited[DMA_MAX_CHAIN_DESCRIPTORS];
+
+    /* DMStart and DMResume only act on an idle engine. */
+    if (dma->status != DM0_STATUS_IDLE) {
+        return;
+    }
+    dma->status = DM0_STATUS_RUN;
 
     while (desc_va != 0) {
         uint32_t ctrl, desctype;
@@ -406,7 +412,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
 }
 
 void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
-                      target_ulong new_va, target_ulong tail_va, uintptr_t ra)
+                       target_ulong new_va, target_ulong tail_va, uintptr_t ra)
 {
     HexagonDMAMemory mem = {
         .env = env,
@@ -416,6 +422,11 @@ void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
     uint32_t htid = env_cpu(env)->cpu_index;
 
     trace_hexagon_dma_link(htid, new_va, tail_va);
+
+    /* DMLink cannot recover an Error engine. */
+    if (dma->status == DM0_STATUS_ERROR) {
+        return;
+    }
 
     if (tail_va % DESC_ALIGNMENT != 0) {
         dma->status = DM0_STATUS_ERROR;

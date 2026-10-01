@@ -129,6 +129,13 @@ static void test_type0_chain(void)
 
     dmlink((uint32_t)(uintptr_t)desc1, (uint32_t)(uintptr_t)desc0);
     check32(desc0[0], (uint32_t)(uintptr_t)desc1);
+    check32(dmpoll(), DM0_STATUS_IDLE);
+    for (int i = 0; i < sizeof(dst0); i++) {
+        check32(dst0[i], src0[i]);
+    }
+    for (int i = 0; i < sizeof(dst1); i++) {
+        check32(dst1[i], src1[i]);
+    }
 
     dmstart((uint32_t)(uintptr_t)desc0);
 
@@ -327,6 +334,7 @@ static void test_misaligned_descriptor(void)
     /* buf + 1 is guaranteed misaligned relative to the 16-byte requirement. */
     dmstart((uint32_t)(uintptr_t)(buf + 1));
     check32(dmpoll(), DM0_STATUS_ERROR);
+    check32(dmpause(), DM0_STATUS_ERROR);
 }
 
 static void test_unsupported_control(void)
@@ -346,6 +354,7 @@ static void test_unsupported_control(void)
     for (int i = 0; i < sizeof(dst); i++) {
         check32(dst[i], 0);
     }
+    check32(dmpause(), DM0_STATUS_ERROR);
 }
 
 static void test_unsupported_width_offset(void)
@@ -369,6 +378,39 @@ static void test_unsupported_width_offset(void)
     for (int i = 0; i < sizeof(dst); i++) {
         check32(dst[i], 0);
     }
+    check32(dmpause(), DM0_STATUS_ERROR);
+}
+
+static void test_error_state_commands(void)
+{
+    static type0_desc_t bad, good;
+    static uint8_t src[16], dst[16];
+
+    memset(src, 0x5a, sizeof(src));
+    memset(dst, 0, sizeof(dst));
+    bad[0] = 0;
+    bad[1] = DESC_SRCCOMP | sizeof(src);
+    bad[2] = (uint32_t)(uintptr_t)src;
+    bad[3] = (uint32_t)(uintptr_t)dst;
+    good[0] = 0;
+    good[1] = sizeof(src);
+    good[2] = (uint32_t)(uintptr_t)src;
+    good[3] = (uint32_t)(uintptr_t)dst;
+
+    dmstart((uint32_t)(uintptr_t)bad);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    dmstart((uint32_t)(uintptr_t)good);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    dmlink((uint32_t)(uintptr_t)good, (uint32_t)(uintptr_t)bad);
+    check32(bad[0], 0);
+    check32(dmpause(), DM0_STATUS_ERROR);
+    check32(dmpoll(), DM0_STATUS_IDLE);
+
+    dmstart((uint32_t)(uintptr_t)good);
+    check32(dmpoll(), DM0_STATUS_IDLE);
+    for (int i = 0; i < sizeof(dst); i++) {
+        check32(dst[i], src[i]);
+    }
 }
 
 static void test_cyclic_chain(void)
@@ -382,6 +424,7 @@ static void test_cyclic_chain(void)
 
     dmstart((uint32_t)(uintptr_t)desc);
     check32(dmpoll(), DM0_STATUS_ERROR);
+    check32(dmpause(), DM0_STATUS_ERROR);
 }
 
 /*
@@ -442,6 +485,7 @@ static void test_unsupported_descriptor_type(void)
     for (int i = 0; i < sizeof(dst); i++) {
         check32(dst[i], 0);
     }
+    check32(dmpause(), DM0_STATUS_ERROR);
 }
 
 static void test_descriptor_fault_status(void)
@@ -475,6 +519,7 @@ int main(void)
     test_misaligned_descriptor();
     test_unsupported_control();
     test_unsupported_width_offset();
+    test_error_state_commands();
     test_cyclic_chain();
     test_order_and_bypass_accepted();
     test_unsupported_descriptor_type();
