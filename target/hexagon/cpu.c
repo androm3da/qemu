@@ -23,6 +23,7 @@
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
 #include "qapi/error.h"
+#include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
 #include "fpu/softfloat-helpers.h"
 #include "hw/hexagon/hexagon_tlb.h"
@@ -438,6 +439,8 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     if (mcc->parent_phases.hold) {
         mcc->parent_phases.hold(obj, type);
     }
+
+    hexagon_dma_reset(&HEXAGON_CPU(obj)->dma);
 
     set_default_nan_mode(1, &env->fp_status);
     set_float_detect_tininess(float_tininess_before_rounding, &env->fp_status);
