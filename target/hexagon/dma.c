@@ -217,6 +217,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             uint32_t desc_type;
             uint8_t fill_value;
             bool constant_fill;
+            bool gather;
             target_ulong src, dst;
 
             if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
@@ -238,6 +239,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             width = roi & DESC_ROIWIDTH_MASK;
             height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
             constant_fill = false;
+            gather = false;
             switch (desc_type) {
             case DESC_TYPE_2D:
                 src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
@@ -261,6 +263,30 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 }
                 fill_value = dma_ldl(&mem, desc_va + DESC_OFF_TYPE) >> 8;
                 constant_fill = true;
+                break;
+            case DESC_TYPE_GATHER:
+                src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
+                srcstride = stride & DESC_SRCSTRIDE_MASK;
+                dststride = (stride & DESC_DSTSTRIDE_MASK) >>
+                            DESC_DSTSTRIDE_SHIFT;
+                if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
+                    HEX_VER_V73 || src % sizeof(uint32_t) != 0 ||
+                    dst % 128 != 0 || srcstride != sizeof(uint32_t) ||
+                    dststride != 128 ||
+                    (width != 32 && width != 64 && width != 96 &&
+                     width != 128)) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                    return;
+                }
+                for (uint32_t row = 0; row < height; row++) {
+                    if (dma_ldl(&mem, src + row * srcstride) % 32 != 0) {
+                        dma_set_error(dma, htid, desc_va,
+                                      DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                        return;
+                    }
+                }
+                gather = true;
                 break;
             default:
                 dma_set_error(dma, htid, desc_va,
@@ -289,6 +315,13 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                     target_ulong drow = dst + (target_ulong)row * dststride;
 
                     dma_fill(&mem, drow, width, fill_value);
+                }
+            } else if (gather) {
+                for (uint32_t row = 0; row < height; row++) {
+                    target_ulong srow = dma_ldl(&mem, src + row * srcstride);
+                    target_ulong drow = dst + (target_ulong)row * dststride;
+
+                    dma_copy(&mem, drow, srow, width);
                 }
             } else {
                 dma_copy_type1(&mem, desc_va);
