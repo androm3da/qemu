@@ -1,6 +1,6 @@
 /*
  * Test the Hexagon user-DMA engine: dmstart/dmlink/dmpoll/dmwait/
- * dmpause/dmresume, type0 (linear) and type1 (2D box) descriptors.
+ * dmpause/dmresume, linear, 2D box, and constant-fill descriptors.
  *
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -26,8 +26,9 @@ int err;
 #define DESC_BYPASSDST         (1u << 28)
 #define DESC_SRCCOMP          (1u << 27)
 
-/* 32-byte descriptor's DescriptorType byte, e.g. 8'd4 == Gather. */
-#define DESC_TYPE_GATHER      4u
+/* 32-byte descriptor's DescriptorType byte. */
+#define DESC_TYPE_GATHER        4u
+#define DESC_TYPE_CONSTANT_FILL 8u
 
 /* desc[0]=next desc[1]=ctrl desc[2]=src desc[3]=dst */
 typedef uint32_t type0_desc_t[4] __attribute__((aligned(16)));
@@ -165,6 +166,37 @@ static void test_type1_box(void)
     for (uint32_t row = 0; row < height; row++) {
         for (uint32_t col = 0; col < width; col++) {
             check32(dst[row * dststride + col], src[row * srcstride + col]);
+        }
+        for (uint32_t col = width; col < dststride; col++) {
+            check32(dst[row * dststride + col], 0);
+        }
+    }
+}
+
+static void test_constant_fill(void)
+{
+    static type1_desc_t desc;
+    static uint8_t dst[4 * 8];
+    const uint32_t width = 5, height = 3, dststride = 8;
+    const uint8_t fill = 0x5a;
+
+    memset(dst, 0, sizeof(dst));
+
+    desc[0] = 0;
+    desc[1] = DESC_DESCTYPE_TYPE1;
+    desc[2] = 0; /* Source fields are ignored for constant fill. */
+    desc[3] = (uint32_t)(uintptr_t)dst;
+    desc[4] = (fill << 8) | DESC_TYPE_CONSTANT_FILL;
+    desc[5] = (height << 16) | width;
+    desc[6] = dststride << 16;
+    desc[7] = 0;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+
+    check32(dmpoll(), DM0_STATUS_IDLE);
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            check32(dst[row * dststride + col], fill);
         }
         for (uint32_t col = width; col < dststride; col++) {
             check32(dst[row * dststride + col], 0);
@@ -343,6 +375,7 @@ int main(void)
     test_type0_single();
     test_type0_chain();
     test_type1_box();
+    test_constant_fill();
     test_dmpause_after_completion();
     test_misaligned_descriptor();
     test_unsupported_control();
