@@ -220,6 +220,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             bool constant_fill;
             bool gather;
             bool wide_2d;
+            bool l2_fetch;
             target_ulong src, dst;
 
             if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
@@ -243,6 +244,7 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             constant_fill = false;
             gather = false;
             wide_2d = false;
+            l2_fetch = false;
             switch (desc_type) {
             case DESC_TYPE_2D:
                 src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
@@ -291,6 +293,24 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 }
                 gather = true;
                 break;
+            case DESC_TYPE_L2FETCH:
+                if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
+                    HEX_VER_V73 ||
+                    (ctrl & (DESC_BYPASSSRC_MASK | DESC_BYPASSDST_MASK)) ||
+                    (stride & DESC_DSTSTRIDE_MASK) != 0) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                    return;
+                }
+                src = dma_ldl(&mem, desc_va + DESC_OFF_SRC);
+                srcstride = stride & DESC_SRCSTRIDE_MASK;
+                if (srcstride == 0) {
+                    srcstride = UINT16_MAX + 1;
+                }
+                dst = 0;
+                dststride = 0;
+                l2_fetch = true;
+                break;
             case DESC_TYPE_WIDE_2D:
                 if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
                     HEX_VER_V75) {
@@ -332,6 +352,12 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                                   DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
                     return;
                 }
+                if (l2_fetch &&
+                    !dma_probe_range(&mem, srow, width, MMU_DATA_LOAD)) {
+                    dma_set_error(dma, htid, desc_va,
+                                  DMA_SYNDROME_DESCRIPTOR_UNSUPPORTED);
+                    return;
+                }
             }
             if (constant_fill) {
                 for (uint32_t row = 0; row < height; row++) {
@@ -353,6 +379,8 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
 
                     dma_copy(&mem, drow, srow, width);
                 }
+            } else if (l2_fetch) {
+                /* Cache residency is not observable without an L2 model. */
             } else {
                 dma_copy_type1(&mem, desc_va);
             }
