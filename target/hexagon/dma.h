@@ -8,8 +8,8 @@
 /*
  * This models "Hexagon V68 Architecture System-Level Specification -
  * User DMA": the 16-byte linear, 32-byte Type 0 2D box-copy, and
- * version-2 Type 4 gather, Type 8 destination constant-fill, and version-4
- * Type 9 wide 2D descriptor formats, plus
+ * version-2 Type 3 L2Fetch, Type 4 gather, Type 8 destination constant-fill,
+ * and version-4 Type 9 wide 2D descriptor formats, plus
  * the dmstart/dmlink/dmpoll/dmwait/dmpause/dmresume
  * instructions.  Privileged config-space access (dmcfgrd/dmcfgwr) and
  * TLB sync (dmsyncht/dmtlbsynch) are out of scope: they have no
@@ -93,6 +93,7 @@
 /* DescriptorType byte (offset DESC_OFF_TYPE), 32-byte descriptors only. */
 #define DESC_TYPE_FIELD_MASK        0x000000FF
 #define DESC_TYPE_2D                0
+#define DESC_TYPE_L2FETCH            3
 #define DESC_TYPE_GATHER            4
 #define DESC_TYPE_CONSTANT_FILL      8
 #define DESC_TYPE_WIDE_2D            9
