@@ -33,10 +33,8 @@ struct HexagonGlobalRegState {
     /* Global performance cycle counter base */
     uint64_t g_pcycle_base;
 
-    /* Shared user-DMA control and syndrome registers. */
-    uint32_t dma2;
-    uint32_t dma4;
-    uint32_t dma5;
+    /* Shared user-DMA control and syndrome registers, DM1 through DM12. */
+    uint32_t dma[13];
 
     /* Properties for global register reset values */
     uint32_t boot_evb;           /* Boot Exception Vector Base (HEX_SREG_EVB) */
