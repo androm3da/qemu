@@ -11,6 +11,9 @@
 #include "accel/tcg/cpu-ldst.h"
 #include "accel/tcg/probe.h"
 #include "trace.h"
+#ifndef CONFIG_USER_ONLY
+#include "hw/hexagon/hexagon_globalreg.h"
+#endif
 
 typedef struct HexagonDMAMemory {
     CPUHexagonState *env;
@@ -110,11 +113,16 @@ static bool dma_probe_range(const HexagonDMAMemory *mem, target_ulong addr,
 }
 
 static void dma_set_error(HexagonDMAState *dma, uint32_t htid,
-                          target_ulong desc_va, uint32_t syndrome)
+                           target_ulong desc_va, uint32_t syndrome)
 {
     dma->status = DM0_STATUS_ERROR;
     dma->syndrome = syndrome;
     dma->desc_ptr = desc_va;
+#ifndef CONFIG_USER_ONLY
+    if (dma->globalregs) {
+        hexagon_dma_capture_error(dma->globalregs, htid, syndrome, desc_va);
+    }
+#endif
     trace_hexagon_dma_error(htid, desc_va, syndrome);
 }
 
@@ -197,10 +205,8 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
         }
         visited[desc_count++] = desc_va;
 
-        /* Leave a terminal state behind if probing raises an exception. */
-        dma->status = DM0_STATUS_ERROR;
-        dma->syndrome = DMA_SYNDROME_MEMORY_ACCESS;
-        dma->desc_ptr = desc_va;
+        /* Leave a terminal state and syndrome behind if probing faults. */
+        dma_set_error(dma, htid, desc_va, DMA_SYNDROME_MEMORY_ACCESS);
         if (!dma_probe_range(&mem, desc_va, DESC_TYPE0_SIZE,
                              MMU_DATA_LOAD) ||
             !dma_probe_range(&mem, desc_va + DESC_OFF_CTRL, sizeof(ctrl),
@@ -455,16 +461,12 @@ void hexagon_dma_link(CPUHexagonState *env, HexagonDMAState *dma,
     }
 
     if (tail_va % DESC_ALIGNMENT != 0) {
-        dma->status = DM0_STATUS_ERROR;
-        dma->syndrome = DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT;
-        dma->desc_ptr = tail_va;
-        trace_hexagon_dma_error(htid, tail_va, dma->syndrome);
+        dma_set_error(dma, htid, tail_va,
+                      DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT);
         return;
     }
 
-    dma->status = DM0_STATUS_ERROR;
-    dma->syndrome = DMA_SYNDROME_MEMORY_ACCESS;
-    dma->desc_ptr = tail_va;
+    dma_set_error(dma, htid, tail_va, DMA_SYNDROME_MEMORY_ACCESS);
     if (!dma_probe_range(&mem, tail_va + DESC_OFF_NEXT, sizeof(uint32_t),
                          MMU_DATA_STORE)) {
         return;
