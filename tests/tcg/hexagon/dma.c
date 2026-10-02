@@ -182,6 +182,33 @@ static void test_type1_box(void)
     }
 }
 
+static void test_type1_zero_stride(void)
+{
+    static type1_desc_t desc;
+    static uint8_t src[UINT16_MAX + 2];
+    static uint8_t dst[UINT16_MAX + 2];
+
+    memset(src, 0, sizeof(src));
+    memset(dst, 0, sizeof(dst));
+    src[0] = 0x5a;
+    src[UINT16_MAX + 1] = 0xa5;
+
+    desc[0] = 0;
+    desc[1] = DESC_DESCTYPE_TYPE1;
+    desc[2] = (uint32_t)(uintptr_t)src;
+    desc[3] = (uint32_t)(uintptr_t)dst;
+    desc[4] = 0;
+    desc[5] = (2u << 16) | 1;
+    desc[6] = 0; /* Version 2+: source and destination stride = 0x10000. */
+    desc[7] = 0;
+
+    dmstart((uint32_t)(uintptr_t)desc);
+
+    check32(dmpoll(), DM0_STATUS_IDLE);
+    check32(dst[0], src[0]);
+    check32(dst[UINT16_MAX + 1], src[UINT16_MAX + 1]);
+}
+
 static void test_constant_fill(void)
 {
     static type1_desc_t desc;
@@ -511,6 +538,7 @@ int main(void)
     test_type0_single();
     test_type0_chain();
     test_type1_box();
+    test_type1_zero_stride();
     test_constant_fill();
     test_gather();
     test_wide_2d();
