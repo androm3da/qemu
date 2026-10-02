@@ -11,15 +11,16 @@
  * version-2 Type 3 L2Fetch, Type 4 gather, Type 8 destination constant-fill,
  * and version-4 Type 9 wide 2D descriptor formats, plus
  * the dmstart/dmlink/dmpoll/dmwait/dmpause/dmresume
- * instructions.  Privileged config-space access (dmcfgrd/dmcfgwr) and
- * TLB sync (dmsyncht/dmtlbsynch) are out of scope: they have no
- * linux-user access path and stay as the existing UNIMP stubs.
+ * instructions.  Monitor-mode config-space access implements DM2, DM4,
+ * and DM5. TLB sync (dmsyncht/dmtlbsynch) remains out of scope.
  */
 
 #ifndef HEXAGON_DMA_H
 #define HEXAGON_DMA_H
 
 #include "exec/target_long.h"
+
+typedef struct HexagonGlobalRegState HexagonGlobalRegState;
 /* DM0 status, as observed by dmpoll/dmwait/dmpause. */
 #define DM0_STATUS_IDLE   0x00000000
 #define DM0_STATUS_RUN    0x00000001
@@ -115,6 +116,9 @@ typedef struct HexagonDMAState {
     uint32_t syndrome;
     /* Guest VA of the descriptor last started/resumed from. */
     target_ulong desc_ptr;
+#ifndef CONFIG_USER_ONLY
+    HexagonGlobalRegState *globalregs;
+#endif
 } HexagonDMAState;
 
 void hexagon_dma_reset(HexagonDMAState *dma);

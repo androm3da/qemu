@@ -248,6 +248,44 @@ void hexagon_globalreg_set_pcycle_base(HexagonGlobalRegState *s,
     s->g_pcycle_base = value;
 }
 
+uint32_t hexagon_dma_config_read(HexagonGlobalRegState *s, uint32_t index)
+{
+    switch (index) {
+    case 2:
+        return s->dma2;
+    case 4:
+        return s->dma4;
+    case 5:
+        return s->dma5;
+    default:
+        return 0;
+    }
+}
+
+void hexagon_dma_config_write(HexagonGlobalRegState *s, uint32_t index,
+                              uint32_t value)
+{
+    switch (index) {
+    case 2:
+        s->dma2 = value & ~BIT(2);
+        break;
+    case 4:
+        s->dma4 = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+void hexagon_dma_capture_error(HexagonGlobalRegState *s, uint32_t htid,
+                               uint32_t syndrome, uint32_t address)
+{
+    if ((s->dma4 & 1) == 0) {
+        s->dma4 = 1 | (htid << 4) | (syndrome << 8);
+        s->dma5 = address;
+    }
+}
+
 static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
 {
     uint32_t isdben_val = 0;
@@ -256,6 +294,9 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
     memset(s->regs, 0, sizeof(s->regs));
 
     s->g_pcycle_base = 0;
+    s->dma2 = 0;
+    s->dma4 = 0;
+    s->dma5 = 0;
 
     s->regs[HEX_SREG_EVB] = s->boot_evb;
     s->regs[HEX_SREG_CFGBASE] = HEXAGON_CFG_ADDR_BASE(s->config_table_addr);
@@ -323,6 +364,9 @@ static const VMStateDescription vmstate_hexagon_globalreg = {
     .fields = (const VMStateField[]){
         VMSTATE_UINT32_ARRAY(regs, HexagonGlobalRegState, NUM_SREGS),
         VMSTATE_UINT64(g_pcycle_base, HexagonGlobalRegState),
+        VMSTATE_UINT32(dma2, HexagonGlobalRegState),
+        VMSTATE_UINT32(dma4, HexagonGlobalRegState),
+        VMSTATE_UINT32(dma5, HexagonGlobalRegState),
         VMSTATE_UINT32(boot_evb, HexagonGlobalRegState),
         VMSTATE_UINT64(config_table_addr, HexagonGlobalRegState),
         VMSTATE_UINT32(dsp_rev, HexagonGlobalRegState),

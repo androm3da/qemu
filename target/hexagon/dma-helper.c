@@ -10,10 +10,18 @@
 #include "dma.h"
 #include "exec/helper-proto.h"
 #include "trace.h"
+#ifndef CONFIG_USER_ONLY
+#include "hw/hexagon/hexagon_globalreg.h"
+#endif
 
 static HexagonDMAState *dma_of(CPUHexagonState *env)
 {
-    return &HEXAGON_CPU(env_cpu(env))->dma;
+    HexagonCPU *cpu = HEXAGON_CPU(env_cpu(env));
+
+#ifndef CONFIG_USER_ONLY
+    cpu->dma.globalregs = cpu->globalregs;
+#endif
+    return &cpu->dma;
 }
 
 void HELPER(dmstart)(CPUHexagonState *env, uint32_t RsV)
@@ -60,4 +68,30 @@ uint32_t HELPER(dmpause)(CPUHexagonState *env)
     dma->status = DM0_STATUS_IDLE;
     dma->desc_ptr = 0;
     return status;
+}
+
+uint32_t HELPER(dmcfgrd)(CPUHexagonState *env, uint32_t index)
+{
+    HexagonDMAState *dma = dma_of(env);
+
+    if (index == 0) {
+        return dma->status;
+    }
+#ifndef CONFIG_USER_ONLY
+    if (dma->globalregs) {
+        return hexagon_dma_config_read(dma->globalregs, index);
+    }
+#endif
+    return 0;
+}
+
+void HELPER(dmcfgwr)(CPUHexagonState *env, uint32_t index, uint32_t value)
+{
+#ifndef CONFIG_USER_ONLY
+    HexagonDMAState *dma = dma_of(env);
+
+    if (dma->globalregs) {
+        hexagon_dma_config_write(dma->globalregs, index, value);
+    }
+#endif
 }
