@@ -12,7 +12,8 @@
  * and version-4 Type 9 wide 2D descriptor formats, plus
  * the dmstart/dmlink/dmpoll/dmwait/dmpause/dmresume
  * instructions.  Monitor-mode config-space access implements DM2, DM4,
- * and DM5. TLB sync (dmsyncht/dmtlbsynch) remains out of scope.
+ * and DM5. Monitor-mode synchronization commands are no-ops in the
+ * synchronous engine.
  */
 
 #ifndef HEXAGON_DMA_H
