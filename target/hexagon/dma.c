@@ -125,7 +125,8 @@ static void dma_set_error(HexagonDMAState *dma, uint32_t htid,
  * Descriptors with nonzero srcwidthoffset/dstwidthoffset are rejected before
  * this function is called because those fields are not modeled.
  */
-static void dma_copy_type1(const HexagonDMAMemory *mem, target_ulong desc_va)
+static void dma_copy_type1(const HexagonDMAMemory *mem, target_ulong desc_va,
+                           bool version_2)
 {
     target_ulong src = dma_ldl(mem, desc_va + DESC_OFF_SRC);
     target_ulong dst = dma_ldl(mem, desc_va + DESC_OFF_DST);
@@ -135,6 +136,15 @@ static void dma_copy_type1(const HexagonDMAMemory *mem, target_ulong desc_va)
     uint32_t height = (roi & DESC_ROIHEIGHT_MASK) >> DESC_ROIHEIGHT_SHIFT;
     uint32_t srcstride = stride & DESC_SRCSTRIDE_MASK;
     uint32_t dststride = (stride & DESC_DSTSTRIDE_MASK) >> DESC_DSTSTRIDE_SHIFT;
+
+    if (version_2) {
+        if (srcstride == 0) {
+            srcstride = UINT16_MAX + 1;
+        }
+        if (dststride == 0) {
+            dststride = UINT16_MAX + 1;
+        }
+    }
 
     for (uint32_t row = 0; row < height; row++) {
         target_ulong srow = src + (target_ulong)row * srcstride;
@@ -257,6 +267,15 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
                 srcstride = stride & DESC_SRCSTRIDE_MASK;
                 dststride = (stride & DESC_DSTSTRIDE_MASK) >>
                             DESC_DSTSTRIDE_SHIFT;
+                if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version >=
+                    HEX_VER_V73) {
+                    if (srcstride == 0) {
+                        srcstride = UINT16_MAX + 1;
+                    }
+                    if (dststride == 0) {
+                        dststride = UINT16_MAX + 1;
+                    }
+                }
                 break;
             case DESC_TYPE_CONSTANT_FILL:
                 if (HEXAGON_CPU(env_cpu(env))->cfg.hex_def->hex_version <
@@ -388,7 +407,9 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             } else if (l2_fetch) {
                 /* Cache residency is not observable without an L2 model. */
             } else {
-                dma_copy_type1(&mem, desc_va);
+                dma_copy_type1(&mem, desc_va,
+                               HEXAGON_CPU(env_cpu(env))->cfg.hex_def->
+                               hex_version >= HEX_VER_V73);
             }
             break;
         }
