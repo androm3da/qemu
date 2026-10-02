@@ -239,6 +239,11 @@ void hexagon_dma_run_chain(CPUHexagonState *env, HexagonDMAState *dma,
             bool l2_fetch;
             target_ulong src, dst;
 
+            if (desc_va % DESC_TYPE1_SIZE != 0) {
+                dma_set_error(dma, htid, desc_va,
+                              DMA_SYNDROME_DESCRIPTOR_INVALID_ALIGNMENT);
+                return;
+            }
             if (!dma_probe_range(&mem, desc_va, DESC_TYPE1_SIZE,
                                  MMU_DATA_LOAD)) {
                 dma_set_error(dma, htid, desc_va,

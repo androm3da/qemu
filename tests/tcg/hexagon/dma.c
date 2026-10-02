@@ -35,7 +35,7 @@ int err;
 /* desc[0]=next desc[1]=ctrl desc[2]=src desc[3]=dst */
 typedef uint32_t type0_desc_t[4] __attribute__((aligned(16)));
 /* + desc[4]=alloc/padding desc[5]=roi desc[6]=stride */
-typedef uint32_t type1_desc_t[8] __attribute__((aligned(16)));
+typedef uint32_t type1_desc_t[8] __attribute__((aligned(32)));
 
 static sigjmp_buf fault_jmp;
 
@@ -364,6 +364,18 @@ static void test_misaligned_descriptor(void)
     check32(dmpause(), DM0_STATUS_ERROR);
 }
 
+static void test_misaligned_type1_descriptor(void)
+{
+    static uint8_t buf[48] __attribute__((aligned(32)));
+    type1_desc_t *desc = (type1_desc_t *)(buf + 16);
+
+    memset(desc, 0, sizeof(*desc));
+    (*desc)[1] = DESC_DESCTYPE_TYPE1;
+    dmstart((uint32_t)(uintptr_t)desc);
+    check32(dmpoll(), DM0_STATUS_ERROR);
+    check32(dmpause(), DM0_STATUS_ERROR);
+}
+
 static void test_unsupported_control(void)
 {
     static type0_desc_t desc;
@@ -545,6 +557,7 @@ int main(void)
     test_l2fetch();
     test_dmpause_after_completion();
     test_misaligned_descriptor();
+    test_misaligned_type1_descriptor();
     test_unsupported_control();
     test_unsupported_width_offset();
     test_error_state_commands();
