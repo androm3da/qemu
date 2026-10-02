@@ -1350,9 +1350,9 @@
 #define fGEN_TCG_Y6_dmpause(SHORTCODE) \
     gen_helper_dmpause(RdV, tcg_env)
 #define fGEN_TCG_Y6_dmsyncht(SHORTCODE) \
-    do { fGEN_TCG_DMA_UNIMP(); tcg_gen_movi_tl(RdV, 0); } while (0)
+    gen_helper_dmsyncht(RdV, tcg_env)
 #define fGEN_TCG_Y6_dmtlbsynch(SHORTCODE) \
-    do { fGEN_TCG_DMA_UNIMP(); tcg_gen_movi_tl(RdV, 0); } while (0)
+    gen_helper_dmtlbsynch(RdV, tcg_env)
 #define fGEN_TCG_Y2_dcfetchbo(SHORTCODE) \
     do { \
         RsV = RsV; \
