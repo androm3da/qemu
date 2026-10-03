@@ -18,12 +18,16 @@
 #include "target/hexagon/cpu.h"
 #include "target/hexagon/hex_regs.h"
 #include "qemu/log.h"
+#include "qemu/main-loop.h"
 #include "qemu/timer.h"
 #include "trace.h"
 #include "qapi/error.h"
 
 #define IMMUTABLE (~0)
 #define INVALID_REG_VAL 0xdeadbeef
+#define HEXAGON_LOCK_NO_GRANT UINT8_MAX
+#define HEXAGON_LOCK_NO_OWNER UINT8_MAX
+#define HEXAGON_LOCK_MIGRATED_OWNER (UINT8_MAX - 1)
 
 static const char *hex_sreg_names[] = {
     [HEX_SREG_SGP0] = "sgp0",
@@ -139,6 +143,135 @@ static void hexagon_globalreg_init(Object *obj)
     HexagonGlobalRegState *s = HEXAGON_GLOBALREG(obj);
 
     memset(s->regs, 0, sizeof(s->regs));
+    for (unsigned int i = 0; i < HEXAGON_GLOBAL_LOCK_COUNT; i++) {
+        s->locks[i].granted = HEXAGON_LOCK_NO_GRANT;
+        s->locks[i].owner = HEXAGON_LOCK_NO_OWNER;
+        s->locks[i].last = THREADS_MAX - 1;
+    }
+}
+
+static int lock_syscfg_field(HexagonGlobalLock which)
+{
+    switch (which) {
+    case HEXAGON_GLOBAL_LOCK_K0:
+        return SYSCFG_K0LOCK;
+    case HEXAGON_GLOBAL_LOCK_TLB:
+        return SYSCFG_TLBLOCK;
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static bool lock_is_held(const HexagonGlobalLockState *lock)
+{
+    return lock->owner != HEXAGON_LOCK_NO_OWNER ||
+           lock->granted != HEXAGON_LOCK_NO_GRANT;
+}
+
+static uint32_t syscfg_without_lock_bits(uint32_t value)
+{
+    const RegField *k0 = &reg_field_info[SYSCFG_K0LOCK];
+    const RegField *tlb = &reg_field_info[SYSCFG_TLBLOCK];
+
+    value = deposit32(value, k0->offset, k0->width, 0);
+    return deposit32(value, tlb->offset, tlb->width, 0);
+}
+
+static uint32_t get_syscfg_value(HexagonGlobalRegState *s)
+{
+    uint32_t value = s->regs[HEX_SREG_SYSCFG];
+
+    for (unsigned int i = 0; i < HEXAGON_GLOBAL_LOCK_COUNT; i++) {
+        const RegField *field = &reg_field_info[lock_syscfg_field(i)];
+
+        value = deposit32(value, field->offset, field->width,
+                          lock_is_held(&s->locks[i]));
+    }
+    return value;
+}
+
+static int lock_next_waiter(HexagonGlobalLockState *lock)
+{
+    for (unsigned int offset = 1; offset <= THREADS_MAX; offset++) {
+        unsigned int htid = (lock->last + offset) % THREADS_MAX;
+
+        if (lock->waiters & (1U << htid)) {
+            lock->last = htid;
+            return htid;
+        }
+    }
+    return -1;
+}
+
+bool hexagon_globalreg_lock(HexagonGlobalRegState *s, HexagonGlobalLock which,
+                            uint32_t htid)
+{
+    HexagonGlobalLockState *lock;
+
+    g_assert(bql_locked());
+    g_assert(which < HEXAGON_GLOBAL_LOCK_COUNT);
+    g_assert(htid < THREADS_MAX);
+
+    lock = &s->locks[which];
+    if (!lock_is_held(lock)) {
+        lock->owner = htid;
+        lock->last = htid;
+        lock->waiters &= ~(1U << htid);
+        return true;
+    }
+    if (lock->granted == htid) {
+        lock->granted = HEXAGON_LOCK_NO_GRANT;
+        lock->owner = htid;
+        lock->waiters &= ~(1U << htid);
+        return true;
+    }
+
+    lock->waiters |= 1U << htid;
+    return false;
+}
+
+bool hexagon_globalreg_lock_owned(HexagonGlobalRegState *s,
+                                  HexagonGlobalLock which, uint32_t htid)
+{
+    g_assert(bql_locked());
+    g_assert(which < HEXAGON_GLOBAL_LOCK_COUNT);
+    g_assert(htid < THREADS_MAX);
+
+    return s->locks[which].owner == htid;
+}
+
+bool hexagon_globalreg_lock_waiting(HexagonGlobalRegState *s,
+                                    HexagonGlobalLock which, uint32_t htid)
+{
+    g_assert(bql_locked());
+    g_assert(which < HEXAGON_GLOBAL_LOCK_COUNT);
+    g_assert(htid < THREADS_MAX);
+
+    return s->locks[which].waiters & (1U << htid);
+}
+
+int hexagon_globalreg_unlock(HexagonGlobalRegState *s,
+                             HexagonGlobalLock which)
+{
+    HexagonGlobalLockState *lock;
+    int next;
+
+    g_assert(bql_locked());
+    g_assert(which < HEXAGON_GLOBAL_LOCK_COUNT);
+
+    lock = &s->locks[which];
+    if (!lock_is_held(lock)) {
+        return -1;
+    }
+
+    lock->owner = HEXAGON_LOCK_NO_OWNER;
+    lock->granted = HEXAGON_LOCK_NO_GRANT;
+    next = lock_next_waiter(lock);
+    if (next >= 0) {
+        /* Keep the lock reserved until the selected waiter consumes it. */
+        lock->granted = next;
+    }
+    return next;
 }
 
 static inline uint32_t apply_write_mask(uint32_t new_val, uint32_t cur_val,
@@ -244,6 +377,9 @@ static void pcycle_set_running(HexagonGlobalRegState *s, bool running)
 
 static uint32_t get_reg_value(HexagonGlobalRegState *s, uint32_t reg)
 {
+    if (reg == HEX_SREG_SYSCFG) {
+        return get_syscfg_value(s);
+    }
     if (is_vid_reg(reg)) {
         return l2vic_read_vid(s->l2vic, reg == HEX_SREG_VID ? 0 : 1);
     }
@@ -266,6 +402,9 @@ static void set_reg_value(HexagonGlobalRegState *s, uint32_t reg,
     bool pcycle_enable = reg == HEX_SREG_SYSCFG &&
         !pcycle_enabled(s->regs[reg]) && pcycle_enabled(value);
 
+    if (reg == HEX_SREG_SYSCFG) {
+        value = syscfg_without_lock_bits(value);
+    }
     s->regs[reg] = value;
     if (pcycle_enable) {
         s->g_pcycle_base = 0;
@@ -357,6 +496,13 @@ static void do_hexagon_globalreg_reset(HexagonGlobalRegState *s)
     g_assert(s);
     memset(s->regs, 0, sizeof(s->regs));
 
+    for (unsigned int i = 0; i < HEXAGON_GLOBAL_LOCK_COUNT; i++) {
+        s->locks[i].waiters = 0;
+        s->locks[i].granted = HEXAGON_LOCK_NO_GRANT;
+        s->locks[i].owner = HEXAGON_LOCK_NO_OWNER;
+        s->locks[i].last = THREADS_MAX - 1;
+    }
+
     s->g_pcycle_base = 0;
     s->pcycle_running = false;
 
@@ -437,7 +583,21 @@ static int hexagon_globalreg_pre_save(void *opaque)
 static int hexagon_globalreg_post_load(void *opaque, int version_id)
 {
     HexagonGlobalRegState *s = opaque;
+    uint32_t syscfg = s->regs[HEX_SREG_SYSCFG];
 
+    if (version_id < 3) {
+        if (extract32(syscfg, reg_field_info[SYSCFG_K0LOCK].offset,
+                      reg_field_info[SYSCFG_K0LOCK].width)) {
+            s->locks[HEXAGON_GLOBAL_LOCK_K0].owner =
+                HEXAGON_LOCK_MIGRATED_OWNER;
+        }
+        if (extract32(syscfg, reg_field_info[SYSCFG_TLBLOCK].offset,
+                      reg_field_info[SYSCFG_TLBLOCK].width)) {
+            s->locks[HEXAGON_GLOBAL_LOCK_TLB].owner =
+                HEXAGON_LOCK_MIGRATED_OWNER;
+        }
+    }
+    s->regs[HEX_SREG_SYSCFG] = syscfg_without_lock_bits(syscfg);
     if (version_id < 2) {
         s->pcycle_running = modectl_any_thread_running(
             s->regs[HEX_SREG_MODECTL]);
@@ -448,9 +608,22 @@ static int hexagon_globalreg_post_load(void *opaque, int version_id)
     return 0;
 }
 
+static const VMStateDescription vmstate_hexagon_global_lock = {
+    .name = "hexagon_global_lock",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT16(waiters, HexagonGlobalLockState),
+        VMSTATE_UINT8(granted, HexagonGlobalLockState),
+        VMSTATE_UINT8(owner, HexagonGlobalLockState),
+        VMSTATE_UINT8(last, HexagonGlobalLockState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static const VMStateDescription vmstate_hexagon_globalreg = {
     .name = "hexagon_globalreg",
-    .version_id = 2,
+    .version_id = 3,
     .minimum_version_id = 1,
     .pre_save = hexagon_globalreg_pre_save,
     .post_load = hexagon_globalreg_post_load,
@@ -466,6 +639,10 @@ static const VMStateDescription vmstate_hexagon_globalreg = {
         VMSTATE_BOOL(isdben_dfd_enable, HexagonGlobalRegState),
         VMSTATE_BOOL(isdben_trusted, HexagonGlobalRegState),
         VMSTATE_BOOL(isdben_secure, HexagonGlobalRegState),
+        VMSTATE_STRUCT_ARRAY(locks, HexagonGlobalRegState,
+                             HEXAGON_GLOBAL_LOCK_COUNT, 3,
+                             vmstate_hexagon_global_lock,
+                             HexagonGlobalLockState),
         VMSTATE_END_OF_LIST()
     }
 };

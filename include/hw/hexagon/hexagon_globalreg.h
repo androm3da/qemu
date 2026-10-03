@@ -18,11 +18,27 @@
 #define TYPE_HEXAGON_GLOBALREG "hexagon-globalreg"
 OBJECT_DECLARE_SIMPLE_TYPE(HexagonGlobalRegState, HEXAGON_GLOBALREG)
 
+typedef enum HexagonGlobalLock {
+    HEXAGON_GLOBAL_LOCK_K0,
+    HEXAGON_GLOBAL_LOCK_TLB,
+    HEXAGON_GLOBAL_LOCK_COUNT,
+} HexagonGlobalLock;
+
+typedef struct HexagonGlobalLockState {
+    uint16_t waiters;
+    uint8_t granted;
+    uint8_t owner;
+    uint8_t last;
+} HexagonGlobalLockState;
+
 struct HexagonGlobalRegState {
     SysBusDevice parent_obj;
 
     /* Array of system registers */
     uint32_t regs[NUM_SREGS];
+
+    /* Shared K0 and TLB lock arbiters */
+    HexagonGlobalLockState locks[HEXAGON_GLOBAL_LOCK_COUNT];
 
     /* L2VIC interface used to back the VID/VID1 registers */
     HexL2VicInterface *l2vic;
@@ -59,6 +75,16 @@ uint32_t hexagon_globalreg_masked_value(HexagonGlobalRegState *s, uint32_t reg,
                                         uint32_t value);
 void hexagon_globalreg_write_masked(HexagonGlobalRegState *s, uint32_t reg,
                                     uint32_t value);
+
+/* Shared K0 and TLB lock arbitration */
+bool hexagon_globalreg_lock(HexagonGlobalRegState *s, HexagonGlobalLock which,
+                            uint32_t htid);
+int hexagon_globalreg_unlock(HexagonGlobalRegState *s,
+                             HexagonGlobalLock which);
+bool hexagon_globalreg_lock_owned(HexagonGlobalRegState *s,
+                                  HexagonGlobalLock which, uint32_t htid);
+bool hexagon_globalreg_lock_waiting(HexagonGlobalRegState *s,
+                                    HexagonGlobalLock which, uint32_t htid);
 
 /* Global performance cycle counter access */
 uint64_t hexagon_globalreg_read_pcycle(HexagonGlobalRegState *s);
