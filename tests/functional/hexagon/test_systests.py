@@ -115,6 +115,9 @@ class SysTestsStandaloneTests(QemuSystemTest):
         """Interrupt-delivery test gated on pcycle_pause() busy-waits."""
         self.run_console_pattern("swi_wait", "PASS")
 
+    @unittest.skip(
+        "guest recursively takes K0 in its ISR and hangs on hexagon-sim"
+    )
     def test_pend_wake_wait(self):
         self.run_console_pattern("pend_wake_wait", "PASS")
 
