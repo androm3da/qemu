@@ -157,6 +157,9 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_k0lock_syscfg(self):
         self.run_console_pattern("k0lock-syscfg", "PASS")
 
+    def test_lock_verify(self):
+        self.run_console_pattern("lock_verify", "PASS")
+
     def test_mmu_asids(self):
         self.run_console_pattern("mmu_asids", "PASS")
 
