@@ -11,6 +11,7 @@
 #include "cpu_helper.h"
 #include "exec/cpu-interrupt.h"
 #include "hex_interrupts.h"
+#include "hex_lock.h"
 #include "hw/intc/hex-l2vic.h"
 #include "macros.h"
 #include "sys_macros.h"
@@ -240,28 +241,15 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
     bool ssr_ie = get_ssr_ie(env);
     bool ssr_ex = get_ssr_ex(env);
     bool imask = get_imask_bit(env, int_num);
-    bool lock_pending = env->k0_lock_state != HEX_LOCK_UNLOCKED ||
-                        env->tlb_lock_state != HEX_LOCK_UNLOCKED;
+    bool lock_waiting = hexagon_locks_waiting(env);
 
-    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_pending;
-}
-
-static void clear_pending_locks(CPUHexagonState *env)
-{
-    g_assert(bql_locked());
-    if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        env->k0_lock_state = HEX_LOCK_UNLOCKED;
-    }
-    if (env->tlb_lock_state == HEX_LOCK_WAITING) {
-        env->tlb_lock_state = HEX_LOCK_UNLOCKED;
-    }
+    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_waiting;
 }
 
 static bool should_not_exec(CPUHexagonState *env)
 {
     return get_exe_mode(env) == HEX_EXE_MODE_WAIT ||
-           env->k0_lock_state == HEX_LOCK_WAITING ||
-           env->tlb_lock_state == HEX_LOCK_WAITING;
+           hexagon_locks_waiting(env);
 }
 
 static void restore_state(CPUHexagonState *env, bool int_accepted)
@@ -348,7 +336,7 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
     set_iad_bit(env, int_num, 1);
     cs->exception_index = HEX_EVENT_INT0 + int_num;
     env->cause_code = HEX_EVENT_INT0 + int_num;
-    clear_pending_locks(env);
+    g_assert(!hexagon_locks_waiting(env));
     if (in_wait_mode) {
         qemu_log_mask(CPU_LOG_INT,
             "%s: thread " TARGET_FMT_ld " resuming, exiting WAIT mode\n",
@@ -356,8 +344,6 @@ static void hex_accept_int(CPUHexagonState *env, int int_num)
         elr = env->wait_next_pc;
         clear_wait_mode(env);
         cs->halted = false;
-    } else if (env->k0_lock_state == HEX_LOCK_WAITING) {
-        g_assert_not_reached();
     } else {
         elr = env->gpr[HEX_REG_PC];
     }

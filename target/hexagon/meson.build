@@ -257,6 +257,7 @@ hexagon_ss.add(files(
 
 hexagon_softmmu_ss.add(files(
     'cpu_helper.c',
+    'hex_lock.c',
     'hex_mmu.c',
     'hex_interrupts.c',
     'hexswi.c',

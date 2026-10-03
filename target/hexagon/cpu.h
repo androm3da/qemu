@@ -75,12 +75,6 @@ typedef struct HexagonHVXContextState HexagonHVXContextState;
 #define MMU_GUEST_IDX        1
 #define MMU_KERNEL_IDX       2
 
-typedef enum {
-    HEX_LOCK_UNLOCKED       = 0,
-    HEX_LOCK_WAITING        = 1,
-    HEX_LOCK_OWNER          = 2,
-    HEX_LOCK_QUEUED        = 3
-} hex_lock_state_t;
 #endif
 
 
@@ -147,10 +141,6 @@ typedef struct CPUArchState {
 
     /* This alias of CPUState.cpu_index is used by imported sources: */
     uint32_t threadId;
-    hex_lock_state_t tlb_lock_state;
-    hex_lock_state_t k0_lock_state;
-    uint32_t tlb_lock_count;
-    uint32_t k0_lock_count;
 #endif
     uint32_t next_PC;
     uint32_t imprecise_exception;

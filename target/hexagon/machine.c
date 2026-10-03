@@ -30,10 +30,7 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT32_ARRAY(env.t_sreg, HexagonCPU, NUM_SREGS),
         VMSTATE_UINT32_ARRAY(env.greg, HexagonCPU, NUM_GREGS),
         VMSTATE_UINT32(env.next_PC, HexagonCPU),
-        VMSTATE_UINT32(env.tlb_lock_state, HexagonCPU),
-        VMSTATE_UINT32(env.k0_lock_state, HexagonCPU),
-        VMSTATE_UINT32(env.tlb_lock_count, HexagonCPU),
-        VMSTATE_UINT32(env.k0_lock_count, HexagonCPU),
+        VMSTATE_UNUSED(4 * sizeof(uint32_t)), /* former lock state/counts */
         VMSTATE_UINT32(env.threadId, HexagonCPU),
         VMSTATE_UINT32(env.cause_code, HexagonCPU),
         VMSTATE_UINT32(env.wait_next_pc, HexagonCPU),

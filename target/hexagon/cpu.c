@@ -451,10 +451,6 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     memset(env->t_sreg, 0, sizeof(uint32_t) * NUM_SREGS);
     memset(env->greg, 0, sizeof(uint32_t) * NUM_GREGS);
     env->wait_next_pc = 0;
-    env->tlb_lock_state = HEX_LOCK_UNLOCKED;
-    env->k0_lock_state = HEX_LOCK_UNLOCKED;
-    env->tlb_lock_count = 0;
-    env->k0_lock_count = 0;
     env->next_PC = 0;
 
     env->t_sreg[HEX_SREG_HTID] = cpu->htid;
@@ -755,6 +751,7 @@ static const struct SysemuCPUOps hexagon_sysemu_ops = {
 static bool hexagon_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
     CPUHexagonState *env = cpu_env(cs);
+
     if (interrupt_request & CPU_INTERRUPT_TLB_UNLOCK) {
         cs->halted = false;
         cpu_reset_interrupt(cs, CPU_INTERRUPT_TLB_UNLOCK);
