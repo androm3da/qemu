@@ -26,7 +26,6 @@
 #define QTIMER_FRAME_STRIDE 0x1000
 /* Frames instantiated by hex-subsys, and the L2VIC input frame 0 drives. */
 #define QTIMER_NR_FRAMES 3
-#define QTIMER_L2VIC_IRQ_BASE 2
 
 #define QCT_QTIMER_AC_CNTFRQ (0x000)
 #define QCT_QTIMER_AC_CNTSR (0x004)
@@ -39,6 +38,8 @@
 
 static uint64_t qtimer_view_base;
 static uint64_t qtimer_ac_base;
+static unsigned qtimer_irq_base;
+#define QTIMER_L2VIC_IRQ_BASE qtimer_irq_base
 
 #define TIMER_TEST_OFFSET 1000
 /* TIMER_TEST_OFFSET ticks expressed in nanoseconds of QEMU_CLOCK_VIRTUAL */
@@ -352,6 +353,7 @@ static void test_qtimer_on_machine(gconstpointer data)
 
     qtimer_view_base = mc->cfg->qtmr_region;
     qtimer_ac_base = mc->cfg->qtmr_region - 0x1000;
+    qtimer_irq_base = mc->cfg->qtmr_irq_base ? mc->cfg->qtmr_irq_base : 2;
 
     qtest_start(args);
 

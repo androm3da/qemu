@@ -234,6 +234,7 @@ static void v68_h2_config_init(MachineState *machine)
     v68_h2.csr_base = 0xfe280000;
     v68_h2.l2vic_base = 0xfe290000;
     v68_h2.qtmr_region = 0xfe2a1000;
+    v68_h2.qtmr_irq_base = 2;
     v68_h2.cfgtable.subsystem_base = 0xfe28;
     hexagon_common_init(machine, v68_rev, &v68_h2);
 }

@@ -26,7 +26,7 @@
 /* Number of QTimer frames instantiated for every Hexagon machine. */
 #define HEX_QTIMER_NR_FRAMES 3
 
-#define HEX_QTIMER_L2VIC_IRQ_BASE 2
+#define HEX_QTIMER_L2VIC_IRQ_BASE_DEFAULT 2
 
 static DeviceState *l2vic_create(HexagonCommonMachineState *hms,
                                  const struct hexagon_machine_config *m_cfg)
@@ -62,10 +62,12 @@ static DeviceState *qtimer_create(HexagonCommonMachineState *hms,
     /* The access-control block sits right below the first frame's view. */
     sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 0, m_cfg->qtmr_region - 0x1000);
     sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
+    unsigned int irq_base = m_cfg->qtmr_irq_base ? m_cfg->qtmr_irq_base
+                                                 : HEX_QTIMER_L2VIC_IRQ_BASE_DEFAULT;
     for (unsigned int i = 0; i < HEX_QTIMER_NR_FRAMES; i++) {
         sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), i,
                            qdev_get_gpio_in(hms->l2vic,
-                                            HEX_QTIMER_L2VIC_IRQ_BASE + i));
+                                            irq_base + i));
     }
 
     return qtimer;

@@ -157,6 +157,8 @@ struct hexagon_machine_config {
     /* QTimer csr base */
     uint32_t csr_base;
     uint32_t qtmr_region;
+    /* l2vic interrupt of QTimer frame 0 (frame n uses +n); 0 means 2 */
+    uint32_t qtmr_irq_base;
     union hexagon_config_table cfgtable;
 };
 
