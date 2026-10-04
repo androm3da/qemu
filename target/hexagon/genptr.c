@@ -305,7 +305,9 @@ static void gen_log_sreg_write(DisasContext *ctx, int rnum, TCGv_i32 val)
 {
     uint32_t reg_mask = sreg_immut_masks[rnum];
 
-    if (rnum == HEX_SREG_MODECTL || rnum == HEX_SREG_SYSCFG) {
+    /* Writing the pcycle registers reads the (icount) virtual clock */
+    if (rnum == HEX_SREG_MODECTL || rnum == HEX_SREG_SYSCFG ||
+        rnum == HEX_SREG_PCYCLELO || rnum == HEX_SREG_PCYCLEHI) {
         translator_io_start(&ctx->base);
     }
     if (rnum == HEX_SREG_IMASK &&
