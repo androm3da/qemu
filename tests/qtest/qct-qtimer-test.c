@@ -351,7 +351,7 @@ static void test_qtimer_on_machine(gconstpointer data)
         "-machine %s -global qct-qtimer.freq-scale=1", mc->machine);
 
     qtimer_view_base = mc->cfg->qtmr_region;
-    qtimer_ac_base = mc->cfg->csr_base;
+    qtimer_ac_base = mc->cfg->qtmr_region - 0x1000;
 
     qtest_start(args);
 

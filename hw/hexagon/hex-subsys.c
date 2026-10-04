@@ -59,7 +59,8 @@ static DeviceState *qtimer_create(HexagonCommonMachineState *hms,
     object_property_add_child(OBJECT(hms), "qtimer", OBJECT(qtimer));
     qdev_prop_set_uint32(qtimer, "nr_frames", HEX_QTIMER_NR_FRAMES);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(qtimer), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 0, m_cfg->csr_base);
+    /* The access-control block sits right below the first frame's view. */
+    sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 0, m_cfg->qtmr_region - 0x1000);
     sysbus_mmio_map(SYS_BUS_DEVICE(qtimer), 1, m_cfg->qtmr_region);
     for (unsigned int i = 0; i < HEX_QTIMER_NR_FRAMES; i++) {
         sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), i,
