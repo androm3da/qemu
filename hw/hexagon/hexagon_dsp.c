@@ -220,6 +220,35 @@ static void v68n_1024_init(ObjectClass *oc, const void *data)
     mc->default_cpus = 6;
 }
 
+/*
+ * V68_H2: the V68N_1024 core with the subsystem placed where the h2
+ * hypervisor (and the hexagon-sim configuration it is tested with) expects
+ * it: the subsystem base is 0x80000 modulo 1MB, the l2vic is at +0x10000 and
+ * the qtimer access-control block at +0x20000.
+ */
+static void v68_h2_config_init(MachineState *machine)
+{
+    static struct hexagon_machine_config v68_h2;
+
+    v68_h2 = v68n_1024;
+    v68_h2.csr_base = 0xfe280000;
+    v68_h2.l2vic_base = 0xfe290000;
+    v68_h2.qtmr_region = 0xfe2a1000;
+    v68_h2.cfgtable.subsystem_base = 0xfe28;
+    hexagon_common_init(machine, v68_rev, &v68_h2);
+}
+
+static void v68_h2_init(ObjectClass *oc, const void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    mc->desc = "Hexagon V68N_1024 laid out for the h2 hypervisor";
+    mc->init = v68_h2_config_init;
+    init_mc(mc);
+    mc->default_cpu_type = TYPE_HEXAGON_CPU_V68;
+    mc->default_cpus = 6;
+}
+
 static void v81dgb_1_config_init(MachineState *machine)
 {
     hexagon_common_init(machine, v81dgb_1_rev, &v81dgb_1);
@@ -294,6 +323,11 @@ static const TypeInfo hexagon_machine_types[] = {
         .name = MACHINE_TYPE_NAME("V68N_1024"),
         .parent = TYPE_HEXAGON_DSP_MACHINE,
         .class_init = v68n_1024_init,
+    },
+    {
+        .name = MACHINE_TYPE_NAME("V68_H2"),
+        .parent = TYPE_HEXAGON_DSP_MACHINE,
+        .class_init = v68_h2_init,
     },
     {
         .name = MACHINE_TYPE_NAME("V79NA_1"),
