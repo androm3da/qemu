@@ -63,3 +63,4 @@ Machines
    :maxdepth: 1
 
    qcs6490-cdsp
+   sa8775p-cdsp

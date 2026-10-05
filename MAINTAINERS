@@ -262,6 +262,8 @@ F: hw/hexagon/qcom_dsp.c
 F: include/hw/hexagon/qcom_dsp.h
 F: hw/hexagon/qcs6490_cdsp.c
 F: hw/hexagon/machine_cfg_qcs6490_cdsp.h.inc
+F: hw/hexagon/sa8775p_cdsp.c
+F: hw/hexagon/machine_cfg_sa8775_cdsp0.h.inc
 X: target/hexagon/idef-parser/
 X: target/hexagon/gen_idef_parser_funcs.py
 F: linux-user/hexagon/
