@@ -66,3 +66,4 @@ Machines
    sa8775p-cdsp
    sc8480xp-nsp0
    sa8797p-nsp0
+   sm8975-nsp

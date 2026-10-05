@@ -268,6 +268,8 @@ F: hw/hexagon/sc8480xp_nsp0.c
 F: hw/hexagon/machine_cfg_sc8480xp_nsp0.h.inc
 F: hw/hexagon/sa8797p_nsp0.c
 F: hw/hexagon/machine_cfg_sa8797p_nsp0.h.inc
+F: hw/hexagon/sm8975_nsp.c
+F: hw/hexagon/machine_cfg_sm8975_nsp.h.inc
 X: target/hexagon/idef-parser/
 X: target/hexagon/gen_idef_parser_funcs.py
 F: linux-user/hexagon/
