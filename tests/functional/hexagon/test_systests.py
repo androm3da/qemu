@@ -111,5 +111,8 @@ class SysTestsStandaloneTests(QemuSystemTest):
     def test_lock_verify(self):
         self.run_exit_zero("lock_verify")
 
+    def test_udma(self):
+        self.run_console_pattern("udma", "PASS")
+
 if __name__ == "__main__":
     QemuSystemTest.main()
