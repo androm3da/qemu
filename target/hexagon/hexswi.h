@@ -13,5 +13,6 @@
 void hexagon_cpu_do_interrupt(CPUState *cpu);
 void register_trap_exception(CPUHexagonState *env, int type, int imm,
                              uint32_t PC);
+void hexagon_vmrte(CPUHexagonState *env);
 
 #endif /* HEXSWI_H */
