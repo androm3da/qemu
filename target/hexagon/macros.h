@@ -646,6 +646,7 @@ static inline TCGv gen_read_ireg(TCGv result, TCGv val, int shift)
 #define fUNPAUSE()
 #define fPAUSE(IMM)
 #define fDCFETCH(REG)
+#define fDCFETCH_MULTI(REG, SIZE) ((void)(REG), (void)(SIZE))
 
 #define fALIGN_REG_FIELD_VALUE(FIELD, VAL) \
     ((VAL) << reg_field_info[FIELD].offset)

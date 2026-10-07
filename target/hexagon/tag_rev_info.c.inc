@@ -9,6 +9,20 @@
 struct tag_rev_info { HexagonVersion introduced, removed; };
 
 static const struct tag_rev_info tag_rev_info[XX_LAST_OPCODE] = {
+    [Y4_dcfetch_multi] = { .introduced = HEX_VER_V85,
+                            .removed = HEX_VER_NONE },
+    [AM_addw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_addw_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_andw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_andw_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_orw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_orw_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_swapd_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_swapd_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_swapw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_swapw_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_xorw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
+    [AM_xorw_rl] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },
     [A5_ACS] = { .introduced = HEX_VER_V55, .removed = HEX_VER_NONE },
 
     [J2_jumpfpt] = { .introduced = HEX_VER_V60, .removed = HEX_VER_NONE },

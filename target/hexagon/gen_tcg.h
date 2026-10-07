@@ -100,6 +100,28 @@
 #define fGEN_TCG_L4_loadrd_ap(SHORTCODE) \
     fGEN_TCG_LOAD_AP(RddV, 8, u)
 
+#define fGEN_TCG_ATOMIC4(OP) \
+    do { \
+        fEA_REG(RsV); \
+        gen_atomic4(ctx, RdV, EA, RtV, OP); \
+    } while (0)
+#define fGEN_TCG_AM_addw_aq(SHORTCODE) fGEN_TCG_ATOMIC4(0)
+#define fGEN_TCG_AM_addw_rl(SHORTCODE) fGEN_TCG_ATOMIC4(0)
+#define fGEN_TCG_AM_andw_aq(SHORTCODE) fGEN_TCG_ATOMIC4(1)
+#define fGEN_TCG_AM_andw_rl(SHORTCODE) fGEN_TCG_ATOMIC4(1)
+#define fGEN_TCG_AM_orw_aq(SHORTCODE)  fGEN_TCG_ATOMIC4(2)
+#define fGEN_TCG_AM_orw_rl(SHORTCODE)  fGEN_TCG_ATOMIC4(2)
+#define fGEN_TCG_AM_xorw_aq(SHORTCODE) fGEN_TCG_ATOMIC4(3)
+#define fGEN_TCG_AM_xorw_rl(SHORTCODE) fGEN_TCG_ATOMIC4(3)
+#define fGEN_TCG_AM_swapw_aq(SHORTCODE) fGEN_TCG_ATOMIC4(4)
+#define fGEN_TCG_AM_swapw_rl(SHORTCODE) fGEN_TCG_ATOMIC4(4)
+#define fGEN_TCG_AM_swapd_aq(SHORTCODE) \
+    do { \
+        fEA_REG(RsV); \
+        gen_atomic8(ctx, RddV, EA, RttV); \
+    } while (0)
+#define fGEN_TCG_AM_swapd_rl(SHORTCODE) fGEN_TCG_AM_swapd_aq(SHORTCODE)
+
 #define fGEN_TCG_L2_loadrub_pci(SHORTCODE)    SHORTCODE
 #define fGEN_TCG_L2_loadrb_pci(SHORTCODE)     SHORTCODE
 #define fGEN_TCG_L2_loadruh_pci(SHORTCODE)    SHORTCODE
