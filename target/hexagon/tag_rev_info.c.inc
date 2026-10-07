@@ -9,6 +9,19 @@
 struct tag_rev_info { HexagonVersion introduced, removed; };
 
 static const struct tag_rev_info tag_rev_info[XX_LAST_OPCODE] = {
+    [V2_vallocframe_imm] = { .introduced = HEX_VER_V83,
+                             .removed = HEX_VER_NONE },
+    [V2_vallocframe_reg] = { .introduced = HEX_VER_V83,
+                             .removed = HEX_VER_NONE },
+    [V2_vdeallocframe_imm] = { .introduced = HEX_VER_V83,
+                               .removed = HEX_VER_NONE },
+    [V2_vdeallocframe_reg] = { .introduced = HEX_VER_V83,
+                               .removed = HEX_VER_NONE },
+    [J2_callr_rb] = { .introduced = HEX_VER_V83, .removed = HEX_VER_NONE },
+    [J2_callrh_rb] = { .introduced = HEX_VER_V83, .removed = HEX_VER_NONE },
+    [J2_jumpr_rb] = { .introduced = HEX_VER_V83, .removed = HEX_VER_NONE },
+    [J2_jumprh_rb] = { .introduced = HEX_VER_V83, .removed = HEX_VER_NONE },
+    [J2_trap2] = { .introduced = HEX_VER_V83, .removed = HEX_VER_NONE },
     [Y4_dcfetch_multi] = { .introduced = HEX_VER_V85,
                             .removed = HEX_VER_NONE },
     [AM_addw_aq] = { .introduced = HEX_VER_V85, .removed = HEX_VER_NONE },

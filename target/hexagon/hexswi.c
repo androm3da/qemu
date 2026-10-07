@@ -366,6 +366,10 @@ static void coredump(CPUHexagonState *env)
         fprintf(f, "0x%x, Stack limit check error",
                 HEX_CAUSE_STACK_LIMIT);
         break;
+    case HEX_CAUSE_VECTOR_STACK_OVERFLOW:
+        fprintf(f, "0x%x, Vector stack overflow",
+                HEX_CAUSE_VECTOR_STACK_OVERFLOW);
+        break;
     case HEX_CAUSE_FPTRAP_CAUSE_BADFLOAT:
         fprintf(f, "0x%x, Floating-Point: Execution of Floating-Point "
                 "instruction resulted in exception",
@@ -379,6 +383,11 @@ static void coredump(CPUHexagonState *env)
         fprintf(f, "0x%x, Illegal Execution of Secondary"
                 " Coprocessor Instruction",
                 HEX_CAUSE_NO_COPROC2_ENABLE);
+        break;
+    case HEX_CAUSE_NO_COPROC3_ENABLE:
+        fprintf(f, "0x%x, Illegal Execution of Tertiary"
+                " Coprocessor Instruction",
+                HEX_CAUSE_NO_COPROC3_ENABLE);
         break;
     case HEX_CAUSE_UNSUPPORTED_HVX_64B:
         fprintf(f, "0x%x, Unsupported Execution of"
@@ -904,7 +913,9 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
         case HEX_CAUSE_INVALID_OPCODE:
         case HEX_CAUSE_NO_COPROC_ENABLE:
         case HEX_CAUSE_NO_COPROC2_ENABLE:
+        case HEX_CAUSE_NO_COPROC3_ENABLE:
         case HEX_CAUSE_UNSUPPORTED_HVX_64B:
+        case HEX_CAUSE_VECTOR_STACK_OVERFLOW:
         case HEX_CAUSE_REG_WRITE_CONFLICT:
         case HEX_CAUSE_VWCTRL_WINDOW_MISS:
             hexagon_ssr_set_cause(env, env->cause_code);

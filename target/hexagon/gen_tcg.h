@@ -726,6 +726,10 @@
     gen_callr(ctx, RsV)
 #define fGEN_TCG_J2_callrh(SHORTCODE) \
     gen_callr(ctx, RsV)
+#define fGEN_TCG_J2_callr_rb(SHORTCODE) \
+    gen_callr(ctx, RsV)
+#define fGEN_TCG_J2_callrh_rb(SHORTCODE) \
+    gen_callr(ctx, RsV)
 
 #define fGEN_TCG_J2_callt(SHORTCODE) \
     gen_cond_call(ctx, PuV, TCG_COND_TSTEQ, riV)
@@ -954,6 +958,10 @@
 #define fGEN_TCG_J2_jumpr(SHORTCODE) \
     gen_jumpr(ctx, RsV)
 #define fGEN_TCG_J2_jumprh(SHORTCODE) \
+    gen_jumpr(ctx, RsV)
+#define fGEN_TCG_J2_jumpr_rb(SHORTCODE) \
+    gen_jumpr(ctx, RsV)
+#define fGEN_TCG_J2_jumprh_rb(SHORTCODE) \
     gen_jumpr(ctx, RsV)
 #define fGEN_TCG_J4_jumpseti(SHORTCODE) \
     do { \
@@ -1388,6 +1396,55 @@
     do { \
         RsV = RsV; \
         uiV = uiV; \
+    } while (0)
+
+#ifdef CONFIG_USER_ONLY
+#define fGEN_TCG_V2_CHECK_AND_WRITE_VSP(VSP) \
+    do { \
+        TCGLabel *write_vsp = gen_new_label(); \
+        tcg_gen_brcond_tl(TCG_COND_GEU, VSP, \
+                          hex_gpr[HEX_REG_VFRAMELIMIT], write_vsp); \
+        gen_precise_exception(HEX_CAUSE_VECTOR_STACK_OVERFLOW, ctx->pkt.pc); \
+        gen_set_label(write_vsp); \
+        tcg_gen_mov_tl(hex_gpr[HEX_REG_VSP], VSP); \
+    } while (0)
+#else
+#define fGEN_TCG_V2_CHECK_AND_WRITE_VSP(VSP) \
+    do { \
+        TCGLabel *write_vsp = gen_new_label(); \
+        TCGv mode = tcg_temp_new(); \
+        tcg_gen_andi_tl(mode, hex_t_sreg[HEX_SREG_SSR], 1 << 17); \
+        tcg_gen_brcondi_tl(TCG_COND_NE, mode, 0, write_vsp); \
+        tcg_gen_andi_tl(mode, hex_t_sreg[HEX_SREG_SSR], 1 << 16); \
+        tcg_gen_brcondi_tl(TCG_COND_EQ, mode, 0, write_vsp); \
+        tcg_gen_brcond_tl(TCG_COND_GEU, VSP, \
+                          hex_gpr[HEX_REG_VFRAMELIMIT], write_vsp); \
+        gen_precise_exception(HEX_CAUSE_VECTOR_STACK_OVERFLOW, ctx->pkt.pc); \
+        gen_set_label(write_vsp); \
+        tcg_gen_mov_tl(hex_gpr[HEX_REG_VSP], VSP); \
+    } while (0)
+#endif
+#define fGEN_TCG_V2_vallocframe_imm(SHORTCODE) \
+    do { \
+        TCGv vsp = tcg_temp_new(); \
+        tcg_gen_subi_tl(vsp, hex_gpr[HEX_REG_VSP], uiV << 11); \
+        fGEN_TCG_V2_CHECK_AND_WRITE_VSP(vsp); \
+    } while (0)
+#define fGEN_TCG_V2_vallocframe_reg(SHORTCODE) \
+    do { \
+        TCGv size = tcg_temp_new(); \
+        TCGv vsp = tcg_temp_new(); \
+        tcg_gen_shli_tl(size, RsV, 11); \
+        tcg_gen_sub_tl(vsp, hex_gpr[HEX_REG_VSP], size); \
+        fGEN_TCG_V2_CHECK_AND_WRITE_VSP(vsp); \
+    } while (0)
+#define fGEN_TCG_V2_vdeallocframe_imm(SHORTCODE) \
+    tcg_gen_addi_tl(hex_gpr[HEX_REG_VSP], hex_gpr[HEX_REG_VSP], uiV << 11)
+#define fGEN_TCG_V2_vdeallocframe_reg(SHORTCODE) \
+    do { \
+        TCGv size = tcg_temp_new(); \
+        tcg_gen_shli_tl(size, RsV, 11); \
+        tcg_gen_add_tl(hex_gpr[HEX_REG_VSP], hex_gpr[HEX_REG_VSP], size); \
     } while (0)
 
 #define fGEN_TCG_L2_loadw_aq(SHORTCODE)                 SHORTCODE
