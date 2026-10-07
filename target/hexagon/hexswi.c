@@ -735,6 +735,56 @@ static void set_addresses(CPUHexagonState *env, uint32_t pc_offset,
     env->gpr[HEX_REG_PC] = evb | (exception_index << 2);
 }
 
+static void guest_event_entry(CPUHexagonState *env, uint32_t cause,
+                              uint32_t event_pc, int event_num,
+                              bool set_gbadva)
+{
+    uint32_t old_ssr = env->t_sreg[HEX_SREG_SSR];
+    uint32_t gsr = 0;
+    uint32_t gevb = env->t_sreg[HEX_SREG_GEVB];
+
+    gsr = deposit32(gsr, reg_field_info[GSR_CAUSE].offset,
+                    reg_field_info[GSR_CAUSE].width, cause);
+    gsr = deposit32(gsr, reg_field_info[GSR_SS].offset,
+                    reg_field_info[GSR_SS].width,
+                    GET_FIELD(SSR_SS, old_ssr));
+    gsr = deposit32(gsr, reg_field_info[GSR_UM].offset,
+                    reg_field_info[GSR_UM].width,
+                    !GET_FIELD(SSR_GM, old_ssr));
+    gsr = deposit32(gsr, reg_field_info[GSR_IE].offset,
+                    reg_field_info[GSR_IE].width,
+                    GET_FIELD(CCR_GIE, env->t_sreg[HEX_SREG_CCR]));
+    env->greg[HEX_GREG_GSR] = gsr;
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_SS, 0);
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_GM, 1);
+    hexagon_modify_ssr(env, env->t_sreg[HEX_SREG_SSR], old_ssr);
+    SET_SYSTEM_FIELD(env, HEX_SREG_CCR, CCR_GIE, 0);
+    env->greg[HEX_GREG_GELR] = event_pc;
+    if (set_gbadva) {
+        env->greg[HEX_GREG_GBADVA] = env->t_sreg[HEX_SREG_BADVA];
+    }
+    env->gpr[HEX_REG_PC] = gevb | (event_num << 2);
+}
+
+void hexagon_vmrte(CPUHexagonState *env)
+{
+    uint32_t gsr = env->greg[HEX_GREG_GSR];
+    uint32_t old_ssr = env->t_sreg[HEX_SREG_SSR];
+    CPUState *cs = env_cpu(env);
+
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_SS,
+                     GET_FIELD(GSR_SS, gsr));
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_GM,
+                     !GET_FIELD(GSR_UM, gsr));
+    bql_lock();
+    hexagon_modify_ssr(env, env->t_sreg[HEX_SREG_SSR], old_ssr);
+    bql_unlock();
+    SET_SYSTEM_FIELD(env, HEX_SREG_CCR, CCR_GIE,
+                     GET_FIELD(GSR_IE, gsr));
+    env->gpr[HEX_REG_PC] = env->greg[HEX_GREG_GELR] & ~3;
+    cpu_loop_exit(cs);
+}
+
 static const char *event_name[] = {
     [HEX_EVENT_RESET] = "HEX_EVENT_RESET",
     [HEX_EVENT_IMPRECISE] = "HEX_EVENT_IMPRECISE",
@@ -792,6 +842,13 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
 
     switch (cs->exception_index) {
     case HEX_EVENT_TRAP0:
+        if (GET_FIELD(SSR_GM, env->t_sreg[HEX_SREG_SSR]) &&
+            GET_FIELD(CCR_GTE, env->t_sreg[HEX_SREG_CCR])) {
+            guest_event_entry(env, env->cause_code,
+                              env->gpr[HEX_REG_PC] + 4,
+                              HEX_EVENT_TRAP0, false);
+            break;
+        }
         if (env->cause_code == 0) {
             sim_handle_trap0(env);
         }
@@ -877,6 +934,13 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
         break;
 
     case HEX_EVENT_PRECISE:
+        if (GET_FIELD(SSR_GM, env->t_sreg[HEX_SREG_SSR]) &&
+            GET_FIELD(CCR_GEE, env->t_sreg[HEX_SREG_CCR])) {
+            guest_event_entry(env, env->cause_code,
+                              env->gpr[HEX_REG_PC], HEX_EVENT_PRECISE,
+                              true);
+            break;
+        }
         switch (env->cause_code) {
         case HEX_CAUSE_FETCH_NO_XPAGE:
         case HEX_CAUSE_FETCH_NO_UPAGE:
@@ -991,8 +1055,6 @@ void register_trap_exception(CPUHexagonState *env, int traptype, int imm,
     CPUState *cs = env_cpu(env);
 
     cs->exception_index = (traptype == 0) ? HEX_EVENT_TRAP0 : HEX_EVENT_TRAP1;
-    ASSERT_DIRECT_TO_GUEST_UNSET(env, cs->exception_index);
-
     env->cause_code = imm;
     env->gpr[HEX_REG_PC] = PC;
     cpu_loop_exit(cs);
