@@ -18,6 +18,7 @@
 #include "hw/hexagon/hexagon_hlx.h"
 #include "hw/core/loader.h"
 #include "qapi/error.h"
+#include "qapi/visitor.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "elf.h"
@@ -38,6 +39,7 @@
 #include "machine_cfg_v85qa_1.h.inc"
 
 #define TYPE_HEXAGON_DSP_MACHINE "hexagon-dsp-machine"
+#define HEXAGON_DSP_SUBSYSTEM_BASE 0xfc900000
 OBJECT_DECLARE_SIMPLE_TYPE(HexagonDspMachineState, HEXAGON_DSP_MACHINE)
 
 struct HexagonDspMachineState {
@@ -45,6 +47,8 @@ struct HexagonDspMachineState {
 
     hwaddr isdb_secure_flag;
     hwaddr isdb_trusted_flag;
+    uint32_t subsystem_base;
+    struct hexagon_machine_config config;
 };
 
 static HexagonDspMachineState *current_dms;
@@ -110,6 +114,50 @@ static void do_cpu_reset(void *opaque)
     cpu_reset(cs);
 }
 
+static void hexagon_sim_get_subsystem_base(Object *obj, Visitor *v,
+                                           const char *name, void *opaque,
+                                           Error **errp)
+{
+    HexagonDspMachineState *dms = HEXAGON_DSP_MACHINE(obj);
+    uint32_t value = dms->subsystem_base;
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void hexagon_sim_set_subsystem_base(Object *obj, Visitor *v,
+                                           const char *name, void *opaque,
+                                           Error **errp)
+{
+    HexagonDspMachineState *dms = HEXAGON_DSP_MACHINE(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+    if (!value || !QEMU_IS_ALIGNED(value, 64 * KiB)) {
+        error_setg(errp, "subsystem-base must be nonzero and 64 KiB aligned");
+        return;
+    }
+
+    dms->subsystem_base = value;
+}
+
+static void add_dsp_properties(ObjectClass *oc)
+{
+    object_class_property_add(oc, "subsystem-base", "uint32",
+                              hexagon_sim_get_subsystem_base,
+                              hexagon_sim_set_subsystem_base, NULL, NULL);
+    object_class_property_set_description(oc, "subsystem-base",
+                                          "Simulator subsystem base address");
+}
+
+static void hexagon_dsp_init(Object *obj)
+{
+    HexagonDspMachineState *dms = HEXAGON_DSP_MACHINE(obj);
+
+    dms->subsystem_base = HEXAGON_DSP_SUBSYSTEM_BASE;
+}
+
 static void hexagon_common_init(MachineState *machine, Rev_t rev,
                                 const struct hexagon_machine_config *m_cfg)
 {
@@ -124,7 +172,13 @@ static void hexagon_common_init(MachineState *machine, Rev_t rev,
 
     machine->enable_graphics = 0;
 
-    hex_subsys_create(hms, m_cfg, rev);
+    dms->config = *m_cfg;
+    dms->config.csr_base = dms->subsystem_base;
+    dms->config.l2vic_base = dms->subsystem_base + HEXAGON_L2VIC_OFFSET;
+    dms->config.qtmr_region = dms->subsystem_base + HEXAGON_QTIMER_OFFSET;
+    dms->config.cfgtable.subsystem_base = dms->subsystem_base >> 16;
+
+    hex_subsys_create(hms, &dms->config, rev);
 
     g_autofree HexagonCPU **cpus = g_new(HexagonCPU *, machine->smp.cpus);
 
@@ -196,6 +250,7 @@ static void v66g_1024_init(ObjectClass *oc, const void *data)
     mc->is_default = true;
     mc->default_cpu_type = TYPE_HEXAGON_CPU_V66;
     mc->default_cpus = 4;
+    add_dsp_properties(oc);
 }
 
 static void v68n_1024_config_init(MachineState *machine)
@@ -212,6 +267,7 @@ static void v68n_1024_init(ObjectClass *oc, const void *data)
     init_mc(mc);
     mc->default_cpu_type = TYPE_HEXAGON_CPU_V68;
     mc->default_cpus = 6;
+    add_dsp_properties(oc);
 }
 
 static void v81dgb_1_config_init(MachineState *machine)
@@ -233,6 +289,7 @@ static void v79na_1_init(ObjectClass *oc, const void *data)
     init_mc(mc);
     mc->default_cpu_type = TYPE_HEXAGON_CPU_V79;
     mc->default_cpus = 8;
+    add_dsp_properties(oc);
 }
 
 static void v81dgb_1_init(ObjectClass *oc, const void *data)
@@ -245,6 +302,7 @@ static void v81dgb_1_init(ObjectClass *oc, const void *data)
     mc->default_cpu_type = TYPE_HEXAGON_CPU_V81;
     mc->max_cpus = 12;
     mc->default_cpus = 12;
+    add_dsp_properties(oc);
 }
 
 static void v81qa_1_config_init(MachineState *machine)
@@ -262,6 +320,7 @@ static void v81qa_1_init(ObjectClass *oc, const void *data)
     mc->default_cpu_type = TYPE_HEXAGON_CPU_V81;
     mc->max_cpus = 12;
     mc->default_cpus = 12;
+    add_dsp_properties(oc);
 }
 
 static void v85qa_1_config_init(MachineState *machine)
@@ -310,6 +369,7 @@ static const TypeInfo hexagon_machine_types[] = {
         .name = TYPE_HEXAGON_DSP_MACHINE,
         .parent = TYPE_HEXAGON_COMMON_MACHINE,
         .instance_size = sizeof(HexagonDspMachineState),
+        .instance_init = hexagon_dsp_init,
         .abstract = true,
     },
     {
