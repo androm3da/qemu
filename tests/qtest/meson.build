@@ -312,6 +312,9 @@ qtests_riscv64 = ['riscv-csr-test'] + \
    ['k230-ddr-test', 'k230-wdt-test', 'k230-gsdma-test', 'k230-decomp-gzip-test'] : [])
 
 qtests_hexagon = ['boot-serial-test', 'l2vic-test', 'qct-qtimer-test']
+if config_all_devices.has_key('CONFIG_X_QUP_GENI_UART_RUST')
+  qtests_hexagon += ['qup-geni-uart-test']
+endif
 
 qos_test_ss = ss.source_set()
 qos_test_ss.add(

@@ -262,6 +262,7 @@ F: linux-user/hexagon/
 F: tests/tcg/hexagon/
 F: hw/misc/qup-wrapper.c
 F: include/hw/misc/qup-wrapper.h
+F: tests/qtest/qup-geni-uart-test.c
 F: include/hw/char/qup_geni_uart.h
 F: rust/hw/char/qup_geni_uart/
 F: disas/hexagon.c
