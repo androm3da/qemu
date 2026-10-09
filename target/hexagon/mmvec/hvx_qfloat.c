@@ -500,13 +500,14 @@ int16_t conv_hf_extqf32(uint32_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
     float_status status = { 0 };
 
     if (is_extqf32_nan(raw)) {
-        return raw == extqf32_neg_nan || raw == extqf32_neg_nan_inexact ?
-               ieee_pos_NaN_16 | 0x8000 : ieee_pos_NaN_16;
+        return (int16_t)(raw == extqf32_neg_nan ||
+                         raw == extqf32_neg_nan_inexact ?
+                         ieee_pos_NaN_16 | 0x8000 : ieee_pos_NaN_16);
     }
     if (is_extqf32_inf(raw)) {
-        return raw == extqf32_neg_inf_exact ||
-               raw == extqf32_neg_inf_inexact ?
-               ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16;
+        return (int16_t)(raw == extqf32_neg_inf_exact ||
+                         raw == extqf32_neg_inf_inexact ?
+                         ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16);
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
     parts = qfloat_unpack_ext_parts(32, a, a_ext);
@@ -521,12 +522,12 @@ int16_t conv_hf_extqf16(uint16_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
     float_status status = { 0 };
 
     if (is_extqf16_nan(raw)) {
-        return raw == extqf16_neg_nan ?
-               ieee_pos_NaN_16 | 0x8000 : ieee_pos_NaN_16;
+        return (int16_t)(raw == extqf16_neg_nan ?
+                         ieee_pos_NaN_16 | 0x8000 : ieee_pos_NaN_16);
     }
     if (is_extqf16_inf(raw)) {
-        return raw == extqf16_neg_inf ?
-               ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16;
+        return (int16_t)(raw == extqf16_neg_inf ?
+                         ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16);
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
     parts = qfloat_unpack_ext_parts(16, a, a_ext);
