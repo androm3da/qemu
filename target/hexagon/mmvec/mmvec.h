@@ -138,7 +138,7 @@ static inline uint8_t hexagon_mmqreg_get_byte(const MMQReg *q, size_t index)
 typedef struct {
     MMVector data;
     DECLARE_BITMAP(mask, sizeof_field(MMVector, ub));
-    target_ulong va[sizeof_field(MMVector, ub)];
+    uint32_t va[sizeof_field(MMVector, ub)];
     bool op;
     int op_size;
 } VTCMStoreLog;
