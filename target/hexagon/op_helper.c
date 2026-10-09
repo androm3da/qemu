@@ -1283,7 +1283,7 @@ void HELPER(modify_ssr)(CPUHexagonState *env, uint32_t new, uint32_t old)
     hexagon_modify_ssr(env, new, old);
 }
 
-static void hex_k0_lock(CPUHexagonState *env, target_ulong PC)
+static void hex_k0_lock(CPUHexagonState *env, uint32_t PC)
 {
     HexagonCPU *cpu = env_archcpu(env);
     CPUState *cs = env_cpu(env);

@@ -154,7 +154,7 @@ static inline void print_thread_states(const char *str)
     }
 }
 
-void hex_tlb_lock(CPUHexagonState *env, target_ulong PC)
+void hex_tlb_lock(CPUHexagonState *env, uint32_t PC)
 {
     qemu_log_mask(CPU_LOG_MMU, "hex_tlb_lock: " TARGET_FMT_ld "\n",
                   env->threadId);
