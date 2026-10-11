@@ -268,8 +268,7 @@ static bool hex_tlb_is_match(uint64_t entry1, uint64_t entry2,
 uint64_t hexagon_tlb_read(HexagonTLBState *tlb, uint32_t index)
 {
     g_assert(index < tlb->num_entries);
-    QEMU_LOCK_GUARD(&tlb->lock);
-    return tlb->entries[index];
+    return qatomic_read(&tlb->entries[index]);
 }
 
 uint64_t hexagon_tlb_write(HexagonTLBState *tlb, uint32_t index,
@@ -280,7 +279,7 @@ uint64_t hexagon_tlb_write(HexagonTLBState *tlb, uint32_t index,
     g_assert(index < tlb->num_entries);
     QEMU_LOCK_GUARD(&tlb->lock);
     old = tlb->entries[index];
-    tlb->entries[index] = value;
+    qatomic_set(&tlb->entries[index], value);
     return old;
 }
 
@@ -293,13 +292,13 @@ uint32_t hexagon_tlb_invalidate_asid(HexagonTLBState *tlb, uint32_t asid)
     uint32_t invalidated = 0;
 
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
-        uint64_t entry = tlb->entries[i];
+        uint64_t entry = qatomic_read(&tlb->entries[i]);
 
         if (!GET_PTE_V(entry) || GET_PTE_G(entry) ||
             GET_PTE_ASID(entry) != asid) {
             continue;
         }
-        tlb->entries[i] = deposit64(entry, 63, 1, 0);
+        qatomic_set(&tlb->entries[i], deposit64(entry, 63, 1, 0));
         invalidated++;
     }
 
@@ -317,9 +316,13 @@ bool hexagon_tlb_find_match(HexagonTLBState *tlb, uint32_t asid,
     *excp = 0;
     *cause_code = 0;
 
-    QEMU_LOCK_GUARD(&tlb->lock);
+    /*
+     * Lockless: this runs on every softtlb miss and TB lookup of every vCPU.
+     * Writers store whole entries with qatomic_set(), so a reader sees each
+     * entry either before or after a concurrent update.
+     */
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
-        uint64_t entry = tlb->entries[i];
+        uint64_t entry = qatomic_read(&tlb->entries[i]);
 
         if (hex_tlb_entry_match_noperm(entry, asid, VA)) {
             hex_tlb_entry_get_perm(entry, access_type, mmu_idx, prot, excp,
@@ -328,8 +331,8 @@ bool hexagon_tlb_find_match(HexagonTLBState *tlb, uint32_t asid,
             *size = hex_tlb_page_size_bytes(entry);
             if (*excp == 0) {
                 for (i++; i < tlb->num_entries; i++) {
-                    if (hex_tlb_entry_match_noperm(tlb->entries[i], asid,
-                                                   VA)) {
+                    if (hex_tlb_entry_match_noperm(
+                            qatomic_read(&tlb->entries[i]), asid, VA)) {
                         *excp = HEX_EVENT_IMPRECISE;
                         *cause_code = HEX_CAUSE_IMPRECISE_MULTI_TLB_MATCH;
                         break;
@@ -349,10 +352,9 @@ uint32_t hexagon_tlb_lookup(HexagonTLBState *tlb, uint32_t asid,
     uint32_t not_found = 0x80000000;
     uint32_t idx = not_found;
 
-    QEMU_LOCK_GUARD(&tlb->lock);
     *imprecise_exception = 0;
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
-        uint64_t entry = tlb->entries[i];
+        uint64_t entry = qatomic_read(&tlb->entries[i]);
         if (hex_tlb_entry_match_noperm(entry, asid, VA)) {
             if (idx != not_found) {
                 *imprecise_exception = HEX_EVENT_IMPRECISE;
@@ -390,7 +392,7 @@ int hexagon_tlb_check_overlap(HexagonTLBState *tlb, uint64_t entry,
 
     QEMU_LOCK_GUARD(&tlb->lock);
     for (uint32_t i = 0; i < tlb->num_entries; i++) {
-        if (hex_tlb_is_match(entry, tlb->entries[i], false)) {
+        if (hex_tlb_is_match(entry, qatomic_read(&tlb->entries[i]), false)) {
             matches++;
             last_match = i;
         }
