@@ -38,8 +38,10 @@
 #include "mmvec/macros.h"
 #include "op_helper.h"
 #include "hlx/hlx.h"
+#include "opcodes.h"
 #include "cpu_helper.h"
 #include "tcg/tcg-gvec-desc.h"
+#include "trace.h"
 #include "translate.h"
 #ifdef CONFIG_USER_ONLY
 #include "qemu/timer.h"
@@ -68,6 +70,11 @@ uint64_t HELPER(utimer)(void)
            HEX_UTIMER_CNT_MASK;
 }
 #endif
+
+void HELPER(hlx_trace_op)(CPUHexagonState *env, uint32_t opcode)
+{
+    trace_hexagon_hlx_op(opcode, opcode_names[opcode]);
+}
 
 #define SF_BIAS        127
 #define SF_MANTBITS    23

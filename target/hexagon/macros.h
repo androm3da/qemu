@@ -734,11 +734,6 @@ static inline TCGv gen_read_ireg(TCGv result, TCGv val, int shift)
     ((SHAMT) <= 0 ? ((uint64_t)(VAL) << fMIN(32, -(SHAMT))) : \
                     ((((uint64_t)(VAL) >> fMIN(32, (SHAMT) - 1)) + 1) >> 1))
 
-/*
- * HLX saturation macros: fVUSADDSAT and fVUSSUBSAT are defined in
- * mmvec/macros_auto.h and work for both HVX and HLX
- */
-
 /* HLX utility macros */
 #define fABSW(A) (((int64_t)(A) < 0) ? (-(int64_t)(A)) : ((int64_t)(A)))
 #define fBIT_WIDTH(SIZE, VAL) ((SIZE) - (__builtin_clz(VAL) - (32 - (SIZE))))
@@ -795,12 +790,6 @@ static inline TCGv gen_read_ireg(TCGv result, TCGv val, int shift)
  * (pointing to future_LRegs), so this macro just returns its argument.
  */
 #define fNEWLREG(LNUM) (LNUM)
-
-/*
- * STORE_CANCEL - Cancel a conditional store (no-op for now)
- * Used in predicated store instructions
- */
-#define STORE_CANCEL(EA) { }
 
 #define fMPY3216UU(A, B) (fZE32_64(A) * fZXTN(16, 64, B))
 #define check_ilog2_compliance(RESULT, INPUT, OFFSET) do {} while (0)

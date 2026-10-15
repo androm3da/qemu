@@ -13,6 +13,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "exec/helper-proto.h"
 #include "hlx/hlx.h"
 #include "hw/hexagon/hexagon_hlx.h"

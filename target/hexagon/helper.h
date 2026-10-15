@@ -35,6 +35,7 @@ DEF_HELPER_FLAGS_2(cabacdecbin_pred, TCG_CALL_NO_RWG_SE, s32, s64, s64)
 /* HLX helpers */
 DEF_HELPER_5(hlx_load_vec, void, env, ptr, tl, i32, i32)
 DEF_HELPER_5(hlx_store_vec, void, env, tl, ptr, i32, i32)
+DEF_HELPER_FLAGS_2(hlx_trace_op, TCG_CALL_NO_RWG, void, env, i32)
 
 /* Phase E: GVec fno helpers for signed→unsigned saturating ops (MO_16) */
 DEF_HELPER_FLAGS_4(hlx_gvec_ushsat_add16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, i32)
@@ -55,8 +56,6 @@ DEF_HELPER_FLAGS_4(hlx_gvec_absdiff_uh16, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, 
  * d[i] = (int16_t)a[i] >> 15  (0x0000 for non-negative, 0xFFFF for negative)
  * Used to compute the high L-reg of a sxt halfword->word-pair conversion. */
 DEF_HELPER_FLAGS_3(hlx_gvec_sari15_h16, TCG_CALL_NO_RWG, void, ptr, ptr, i32)
-
-DEF_HELPER_5(check_vtcm_memcpy, void, env, i32, i32, i32, i32)
 
 /* Floating point */
 DEF_HELPER_3(conv_sf2df, f64, env, f32, i32)

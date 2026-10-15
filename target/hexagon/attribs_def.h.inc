@@ -19,6 +19,9 @@
 DEF_ATTRIB(AA_DUMMY, "Dummy Zeroth Attribute", "", "")
 
 /* Misc */
+DEF_ATTRIB(FAKEINSN, "Not a real instruction", "", "")
+DEF_ATTRIB(MAPPING, "Not real -- asm mapped", "", "")
+DEF_ATTRIB(CONDMAPPING, "Not real -- mapped based on values", "", "")
 DEF_ATTRIB(EXTENSION, "Extension instruction", "", "")
 
 DEF_ATTRIB(NA_NT, "Non-Allocating Non-Temporal instruction", "", "")
@@ -109,6 +112,7 @@ DEF_ATTRIB(CVI_SLOT23, "Can execute in slot 2 or slot 3 (HVX)", "", "")
 DEF_ATTRIB(CVI_VA_2SRC, "Execs on multimedia vector engine; requires two srcs", "", "")
 
 DEF_ATTRIB(VTCM_ALLBANK_ACCESS, "Allocates in all VTCM schedulers.", "", "")
+DEF_ATTRIB(VDBG, "Vector debugging instruction", "", "")
 
 /* Change-of-flow attributes */
 DEF_ATTRIB(JUMP, "Jump-type instruction", "", "")

@@ -1418,12 +1418,20 @@ static void decode_and_translate_packet(CPUHexagonState *env, DisasContext *ctx)
             for (i = 0; i < ctx->pkt.num_insns; i++) {
                 if (GET_ATTRIB(ctx->pkt.insn[i].opcode, A_HLX_TMP)) {
                     ctx->insn = &ctx->pkt.insn[i];
+                    if (GET_ATTRIB(ctx->insn->opcode, A_HLX)) {
+                        gen_helper_hlx_trace_op(tcg_env,
+                            tcg_constant_i32(ctx->insn->opcode));
+                    }
                     gen_insn(ctx);
                 }
             }
             for (i = 0; i < ctx->pkt.num_insns; i++) {
                 if (!GET_ATTRIB(ctx->pkt.insn[i].opcode, A_HLX_TMP)) {
                     ctx->insn = &ctx->pkt.insn[i];
+                    if (GET_ATTRIB(ctx->insn->opcode, A_HLX)) {
+                        gen_helper_hlx_trace_op(tcg_env,
+                            tcg_constant_i32(ctx->insn->opcode));
+                    }
                     gen_insn(ctx);
                 }
             }

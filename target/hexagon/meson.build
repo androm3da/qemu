@@ -22,6 +22,7 @@ gen_tcg_h = meson.current_source_dir() / 'gen_tcg.h'
 gen_tcg_hvx_h = meson.current_source_dir() / 'gen_tcg_hvx.h'
 gen_tcg_sys_h = meson.current_source_dir() / 'gen_tcg_sys.h'
 idef_parser_dir = meson.current_source_dir() / 'idef-parser'
+imported_dir = meson.current_source_dir() / 'imported'
 
 #
 # Step 0.5
@@ -31,7 +32,8 @@ preprocessed_hlx_ext = custom_target(
     'hlx_ext.preprocessed.idef',
     output: 'hlx_ext.preprocessed.idef',
     input: imported_dir / 'hlx_ext.idef',
-    command: [compiler, '-x', 'c', '-E', '-o', '@OUTPUT@', '@INPUT@']
+    command: meson.get_compiler('c').cmd_array() +
+             ['-x', 'c', '-E', '-o', '@OUTPUT@', '@INPUT@']
 )
 generated_hlx_ext = custom_target(
     'generated_hlx_ext.idef',
@@ -49,7 +51,7 @@ hexagon_ss.add(generated_hlx_ext)
 gen_semantics = executable(
     'gen_semantics',
     'gen_semantics.c',
-    sources: [generated_mmvec_ext, generated_hlx_ext],
+    sources: generated_hlx_ext,
     native: true, build_by_default: false)
 
 semantics_generated = custom_target(
@@ -62,10 +64,21 @@ hexagon_ss.add(semantics_generated)
 #
 # Step 2
 # We use Python scripts to generate the following files
+#     tcg_func_table_generated.c.inc
 #     printinsn_generated.h.inc
 #     op_attribs_generated.h.inc
 #     opcodes_def_generated.h.inc
 #
+tcg_func_table_generated = custom_target(
+    'tcg_func_table_generated.c.inc',
+    output: 'tcg_func_table_generated.c.inc',
+    depends: [semantics_generated],
+    depend_files: [hex_common_py, gen_tcg_h, gen_tcg_hvx_h, gen_tcg_sys_h],
+    command: [python, files('gen_tcg_func_table.py'), semantics_generated,
+              gen_tcg_h, gen_tcg_hvx_h, gen_tcg_sys_h, '@OUTPUT@'],
+)
+hexagon_ss.add(tcg_func_table_generated)
+
 printinsn_generated = custom_target(
     'printinsn_generated.h.inc',
     output: 'printinsn_generated.h.inc',

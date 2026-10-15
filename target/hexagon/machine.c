@@ -5,6 +5,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "migration/cpu.h"
+#include "migration/qemu-file-types.h"
 #include "migration/vmstate.h"
 #include "cpu.h"
 #include "cpu_helper.h"
