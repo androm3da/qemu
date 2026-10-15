@@ -11,6 +11,10 @@
 #include "qom/object.h"
 
 #define TYPE_HEX_L2VIC "hex-l2vic"
+
+/* Core interrupts driven by L2VIC vector groups 0 through 3. */
+#define HEX_L2VIC_CORE_INTS (0xf << 2)
+
 /*
  * L2VIC Interface for CPU/GlobalReg interaction
  */

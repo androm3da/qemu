@@ -1619,20 +1619,22 @@ void HELPER(ciad)(CPUHexagonState *env, uint32_t mask)
     cpu = env_archcpu(env);
     if (cpu->cfg.hex_def->hex_version >= HEX_VER_V81) {
         iad = hexagon_globalreg_read(cpu->globalregs, HEX_SREG_IAD,
-                                     env->threadId) & ~mask;
-        hexagon_globalreg_write(cpu->globalregs, HEX_SREG_IAD, iad,
+                                     env->threadId);
+        hexagon_globalreg_write(cpu->globalregs, HEX_SREG_IAD, iad & ~mask,
                                 env->threadId);
     } else {
         uint32_t ipendad =
             hexagon_globalreg_read(cpu->globalregs, HEX_SREG_IPENDAD,
                                    env->threadId);
 
-        fSET_FIELD(ipendad, IPENDAD_IAD,
-                   fGET_FIELD(ipendad, IPENDAD_IAD) & ~mask);
+        iad = fGET_FIELD(ipendad, IPENDAD_IAD);
+        fSET_FIELD(ipendad, IPENDAD_IAD, iad & ~mask);
         hexagon_globalreg_write(cpu->globalregs, HEX_SREG_IPENDAD,
                                 ipendad, env->threadId);
     }
-    l2vic_clear_interrupt(cpu->l2vic);
+    if (iad & mask & HEX_L2VIC_CORE_INTS) {
+        l2vic_clear_interrupt(cpu->l2vic);
+    }
     hex_interrupt_update(env);
 }
 
