@@ -2,6 +2,11 @@
 #
 # Boot the production DSP firmware on the Qualcomm DSP machines
 #
+# The images are the QuRT firmware that Qualcomm ships in linux-firmware for
+# each SoC's compute or neural signal processor.  Most of the SoC around the
+# DSP is not modelled, so the firmware cannot get far: these tests only check
+# that each one starts QuRT and its root task, and gets as far as main().
+#
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -36,7 +41,7 @@ class QcomDspFirmwareTest(QemuSystemTest):
 @skipUntrustedTest()
 class Qcs6490CdspFirmwareTest(QcomDspFirmwareTest):
     MACHINE = 'qcs6490-cdsp'
-    # The QCM6490 shares the same CDSP as the QCS6490
+    # The QCM6490 is the same silicon as the QCS6490
     ASSET = Asset(f'{QcomDspFirmwareTest.REPO}/qcm6490/cdsp.mbn',
                   '43e9c89e15ee82daf83214cae34006a8515fddf9db7f645f5eff4b8e3c4ebb64')
 
@@ -57,6 +62,7 @@ class Sa8775pCdspFirmwareTest(QcomDspFirmwareTest):
 @skipUntrustedTest()
 class Sc8480xpNsp0FirmwareTest(QcomDspFirmwareTest):
     MACHINE = 'sc8480xp-nsp0'
+    # The SC8480XP is the Glymur SoC
     ASSET = Asset(f'{QcomDspFirmwareTest.REPO}/glymur/cdsp.mbn',
                   '7b22f33ae273d3dfc5f741a967831e7d4fd79ad141e6a1ecee17509eac207109')
 
@@ -67,6 +73,7 @@ class Sc8480xpNsp0FirmwareTest(QcomDspFirmwareTest):
 @skipUntrustedTest()
 class Sa8797pNsp0FirmwareTest(QcomDspFirmwareTest):
     MACHINE = 'sa8797p-nsp0'
+    # The SA8797P is the Nord SoC
     ASSET = Asset(f'{QcomDspFirmwareTest.REPO}/nord/cdsp.mbn',
                   '410e7ca3b340e80835e464545a218d9376310a09f24bc87de40bc25f7f5e3240')
 
@@ -77,6 +84,8 @@ class Sa8797pNsp0FirmwareTest(QcomDspFirmwareTest):
 @skipUntrustedTest()
 class Sm8975NspFirmwareTest(QcomDspFirmwareTest):
     MACHINE = 'sm8975-nsp'
+    # The SM8975 is the Hawi SoC.  Its firmware stops in the root task,
+    # before main().
     MILESTONE = 'QURT root task started'
     ASSET = Asset(f'{QcomDspFirmwareTest.REPO}/hawi/cdsp.mbn',
                   '7373952413c141fc636aa933ab0c71e7be1d10f5f7dd36be5374827b253c3db5')
