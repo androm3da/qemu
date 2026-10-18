@@ -40,6 +40,9 @@ typedef enum {
 #define HEXAGON_LATEST_REV v85
 #define HEXAGON_LATEST_REV_UPPER V85
 
+/* Bit assigned to the HMX unit in the config table's coproc_present word. */
+#define HEXAGON_COPROC_HMX (1U << 2)
+
 /*
  * Config table address bases represent bits [35:16].
  */
