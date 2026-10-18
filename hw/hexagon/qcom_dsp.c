@@ -62,9 +62,9 @@ static const MemMapEntry qcom_dsp_memmap[] = {
 
 static const int QCOM_DSP_UART0_IRQ = 15;
 /* Virtio IRQs run from QCOM_DSP_VIRTIO_IRQ to QCOM_DSP_VIRTIO_IRQ + 7 */
-/* Far from the low lines that real devices use */
-static const int QCOM_DSP_VIRTIO_IRQ = 768;
-/* The H2 timer's interrupt is one of the 32 per-cpu lines. */
+/* Keep the guest interrupt numbers within Linux's H2 interrupt domain. */
+static const int QCOM_DSP_VIRTIO_IRQ = 96;
+/* The H2 timer's interrupt is one of the 16 per-cpu lines. */
 static const int QCOM_DSP_GPT_IRQ = 12;
 
 #define QCOM_DSP_L2_ECC_SIZE 0x1000
