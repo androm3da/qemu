@@ -370,6 +370,19 @@ static void qcom_dsp_init(MachineState *ms)
         info->init_devices(ms);
     }
 
+    if (ms->dtb) {
+        g_free(ms->fdt);
+        ms->fdt = load_device_tree(ms->dtb, &qms->fdt_size);
+        if (!ms->fdt) {
+            error_report("could not load device tree '%s'", ms->dtb);
+            exit(1);
+        }
+        if (ms->kernel_cmdline && *ms->kernel_cmdline) {
+            qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs",
+                                    ms->kernel_cmdline);
+        }
+    }
+
     have_start = qcom_dsp_load_images(qms, &start);
     hex_board_create_cpus(ms, have_start, start, info->cfg);
 
