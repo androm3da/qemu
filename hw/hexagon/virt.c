@@ -39,6 +39,49 @@ static const MemMapEntry base_memmap[] = {
 };
 
 
+#define VIRT_KERNEL_ADDR 0xa0000000
+/* Where the kernel is linked, and so where its entry point is */
+#define VIRT_KERNEL_VADDR 0xc0000000
+
+static uint64_t kernel_translate(void *opaque, uint64_t addr)
+{
+    return addr + VIRT_KERNEL_ADDR;
+}
+
+/*
+ * Load a kernel of the Hexagon Virtual Machine where H2 would have run it,
+ * and the initramfs after the room for the device tree, and say where the
+ * device tree goes.  Returns the kernel's entry point.
+ */
+static uint64_t load_hvm_linux(MachineState *ms, hwaddr *fdt_addr)
+{
+    uint64_t entry, high;
+    hwaddr guest_ram_end = MIN(ms->ram_size, VIRT_KERNEL_ADDR + 896 * MiB);
+
+    if (ms->ram_size <= VIRT_KERNEL_ADDR + 32 * MiB) {
+        error_report("insufficient RAM for the guest kernel");
+        exit(1);
+    }
+    entry = hex_board_load_elf(ms->kernel_filename, kernel_translate, NULL,
+                               &high);
+    *fdt_addr = QEMU_ALIGN_UP(high + 16 * MiB, 4 * MiB);
+    if (*fdt_addr + 4 * MiB >= guest_ram_end) {
+        error_report("insufficient RAM for device tree");
+        exit(1);
+    }
+    if (ms->initrd_filename) {
+        hwaddr initrd = *fdt_addr + 4 * MiB;
+        ssize_t size = load_image_targphys_as(ms->initrd_filename, initrd,
+                                              guest_ram_end - initrd,
+                                              &address_space_memory,
+                                              &error_fatal);
+        qemu_fdt_setprop_u64(ms->fdt, "/chosen", "linux,initrd-start", initrd);
+        qemu_fdt_setprop_u64(ms->fdt, "/chosen", "linux,initrd-end",
+                             initrd + size);
+    }
+    return entry;
+}
+
 static uint64_t load_kernel(const HexagonVirtMachineState *vms)
 {
     return hex_board_load_elf(MACHINE(vms)->kernel_filename, NULL, NULL, NULL);
@@ -63,12 +106,20 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
 static void virt_init(MachineState *ms)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(ms);
+    HexagonCommonMachineState *hms = HEXAGON_COMMON_MACHINE(ms);
     const HexagonVirtMachineInfo *info =
         HEXAGON_VIRT_MACHINE_GET_CLASS(ms)->info;
     const struct hexagon_machine_config *m_cfg = info->cfg;
     int32_t l2vic_phandle;
     uint64_t start = 0;
     bool have_start = false;
+    hwaddr fdt_addr = base_memmap[VIRT_FDT].base;
+
+    if (hms->hvm_enabled && ms->firmware) {
+        error_report("hvm=on runs the guest without a hypervisor firmware "
+                     "(-bios)");
+        exit(1);
+    }
 
     hex_board_create_fdt(ms, "hexagon-virt,qemu", "qcom,sm8150",
                          &vms->fdt_size);
@@ -84,7 +135,15 @@ static void virt_init(MachineState *ms)
                             base_memmap[VIRT_MMIO].size, VIRTIO_IRQ_BASE,
                             VIRTIO_DEV_COUNT, l2vic_phandle);
 
-    if (ms->kernel_filename) {
+    if (hms->hvm_enabled) {
+        /* Without a kernel, a bare guest, which the user loads themselves. */
+        if (ms->kernel_filename) {
+            start = load_hvm_linux(ms, &fdt_addr) - VIRT_KERNEL_VADDR +
+                    VIRT_KERNEL_ADDR;
+            have_start = true;
+            hex_board_set_hvm_boot_args(hms, fdt_addr);
+        }
+    } else if (ms->kernel_filename) {
         start = load_kernel(vms);
         have_start = true;
     } else if (ms->firmware) {
@@ -94,11 +153,21 @@ static void virt_init(MachineState *ms)
     hex_board_create_cpus(ms, have_start, start);
 
     hex_board_fdt_add_cpus(ms);
+    if (hms->hvm_enabled && ms->kernel_filename) {
+        static const char compat[] = "qcom,h2-timer\0hvm-timer";
+        qemu_fdt_add_subnode(ms->fdt, "/soc/timer@ab000000");
+        qemu_fdt_setprop(ms->fdt, "/soc/timer@ab000000", "compatible",
+                         compat, sizeof(compat));
+        qemu_fdt_setprop_cells(ms->fdt, "/soc/timer@ab000000", "reg",
+                               0, 0xab000000, 0x1000);
+        qemu_fdt_setprop_cells(ms->fdt, "/soc/timer@ab000000", "interrupts",
+                               12, 0);
+    }
     hex_board_create_uart(ms, base_memmap[VIRT_UART0].base,
                           base_memmap[VIRT_UART0].size, VIRT_UART0_IRQ,
                           l2vic_phandle);
 
-    hex_board_load_fdt(ms, vms->fdt_size, base_memmap[VIRT_FDT].base);
+    hex_board_load_fdt(ms, vms->fdt_size, fdt_addr);
 }
 
 
@@ -106,6 +175,7 @@ static void virt_base_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
+    hex_board_add_hvm_property(oc);
     mc->init = virt_init;
     mc->default_ram_size = 4 * GiB;
     mc->is_default = false;

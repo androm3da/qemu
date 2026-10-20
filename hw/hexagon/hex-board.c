@@ -18,6 +18,7 @@
 #include "hw/core/sysbus.h"
 #include "hw/hexagon/hex-board.h"
 #include "hw/hexagon/hex-subsys.h"
+#include "hw/hexagon/hexagon_hvm.h"
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 #include "system/address-spaces.h"
@@ -60,6 +61,39 @@ static void fdt_set_irq(MachineState *ms, const char *nodename, int irq)
 {
     qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
                            HEX_BOARD_L2VIC_SPI_BASE + irq, 0);
+}
+
+static bool hvm_get(Object *obj, Error **errp)
+{
+    return HEXAGON_COMMON_MACHINE(obj)->hvm_enabled;
+}
+
+static void hvm_set(Object *obj, bool value, Error **errp)
+{
+    HEXAGON_COMMON_MACHINE(obj)->hvm_enabled = value;
+}
+
+void hex_board_add_hvm_property(ObjectClass *oc)
+{
+    object_class_property_add_bool(oc, "hvm", hvm_get, hvm_set);
+    object_class_property_set_description(oc, "hvm",
+        "Run a Hexagon Virtual Machine guest with QEMU as the monitor "
+        "instead of a hypervisor firmware (off by default)");
+}
+
+void hex_board_set_hvm_boot_args(HexagonCommonMachineState *hms,
+                                 hwaddr fdt_addr)
+{
+    HexagonHVMState *hvm = HEXAGON_HVM(hms->hvm);
+
+    /* The kernel finds the device tree in r1:r0, 64 bits wide. */
+    hvm->info[HVM_INFO_BOOT_R0] = fdt_addr;
+    hvm->info[HVM_INFO_BOOT_R1] = fdt_addr >> 32;
+}
+
+qemu_irq hex_board_irq(HexagonCommonMachineState *hms, int irq)
+{
+    return qdev_get_gpio_in(hms->hvm ? hms->hvm : hms->l2vic, irq);
 }
 
 int32_t hex_board_fdt_add_l2vic(MachineState *ms,
@@ -155,7 +189,7 @@ void hex_board_create_uart(MachineState *ms, hwaddr base, hwaddr size,
     qdev_connect_clock_in(dev, "clk", apb_clk);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, base);
-    sysbus_connect_irq(s, 0, qdev_get_gpio_in(hms->l2vic, irq));
+    sysbus_connect_irq(s, 0, hex_board_irq(hms, irq));
 
     qemu_fdt_add_subnode(ms->fdt, "/apb-pclk");
     qemu_fdt_setprop_string(ms->fdt, "/apb-pclk", "compatible", "fixed-clock");
@@ -199,7 +233,7 @@ void hex_board_create_virtio(MachineState *ms, hwaddr base, hwaddr size,
         object_property_add_child(OBJECT(ms), "virtio-mmio[*]", OBJECT(dev));
         sysbus_realize_and_unref(s, &error_fatal);
         sysbus_mmio_map(s, 0, slot);
-        sysbus_connect_irq(s, 0, qdev_get_gpio_in(hms->l2vic, irq));
+        sysbus_connect_irq(s, 0, hex_board_irq(hms, irq));
 
         qemu_fdt_add_subnode(ms->fdt, nodename);
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible",
