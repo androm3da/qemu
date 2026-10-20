@@ -127,6 +127,14 @@ VM's virtual interrupt controller that the devices interrupt.  Nothing of a
 hypervisor is in guest memory, so nothing needs protecting from the guest
 either: the physical memory a guest may map is all of the machine's.
 
+The Qualcomm DSP subsystem machines (``qcs6490-cdsp``, ``sa8775p-cdsp``,
+``sa8797p-nsp0``, ``sc8480xp-nsp0`` and ``sm8975-nsp``) take ``hvm=on`` as
+well.  The kernel goes to the address their H2 ``loadlinux`` would have used,
+the device tree and initramfs follow it, and the device tree lists
+``qcom,sm8150`` as a fallback ``compatible`` so the kernel recognizes the
+board.  Give the guest all of the machine's CPUs: a kernel starts every CPU
+its device tree describes, and waits for each of them.
+
 A freestanding guest of the interface can be loaded where it wants to run,
 and started, with the generic loader::
 
