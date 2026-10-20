@@ -16,6 +16,8 @@ void register_trap_exception(CPUHexagonState *env, int type, int imm,
 void hexagon_vmrte(CPUHexagonState *env);
 /* The guest turned its virtual interrupts on; one may be waiting for it. */
 void hexagon_hvm_ie_enabled(CPUHexagonState *env);
+/* Take a trap0(#0) semihosting call without vectoring to the monitor. */
+void hexagon_semihost_trap0(CPUHexagonState *env);
 
 /* Offsets of the guest event vectors from GEVB, as the VM interface has them */
 #define HEX_GEVB_ERROR      8

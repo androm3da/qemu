@@ -21,6 +21,7 @@
 #include "hexswi.h"
 #include "hw/hexagon/hexagon_globalreg.h"
 #include "hw/hexagon/hexagon_hvm.h"
+#include "hvm.h"
 
 #ifdef CONFIG_USER_ONLY
 #error "This file is only used in system emulation"
@@ -855,6 +856,11 @@ void hexagon_hvm_ie_enabled(CPUHexagonState *env)
     }
 }
 
+void hexagon_semihost_trap0(CPUHexagonState *env)
+{
+    sim_handle_trap0(env);
+}
+
 static const char *event_name[] = {
     [HEX_EVENT_RESET] = "HEX_EVENT_RESET",
     [HEX_EVENT_IMPRECISE] = "HEX_EVENT_IMPRECISE",
@@ -899,6 +905,11 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
                   env->cause_code);
 
     env->llsc_addr = ~0;
+
+    if (cpu->hvm) {
+        hexagon_hvm_do_interrupt(cs);
+        return;
+    }
 
     ssr = env->t_sreg[HEX_SREG_SSR];
     if (GET_SSR_FIELD(SSR_EX, ssr) == 0) {
