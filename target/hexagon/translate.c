@@ -186,8 +186,9 @@ static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx,
 static void gen_singlestep_exception(DisasContext *ctx)
 {
     tcg_gen_movi_i32(hex_cause_code, HEX_CAUSE_DEBUG_SINGLESTEP);
-    gen_helper_raise_exception(tcg_env, tcg_constant_i32(HEX_EVENT_DEBUG),
-                               hex_gpr[HEX_REG_PC]);
+    gen_helper_hexagon_raise_exception(tcg_env,
+                                       tcg_constant_i32(HEX_EVENT_DEBUG),
+                                       hex_gpr[HEX_REG_PC]);
     ctx->base.is_jmp = DISAS_NORETURN;
 }
 
