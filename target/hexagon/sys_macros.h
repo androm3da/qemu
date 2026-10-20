@@ -53,24 +53,18 @@
     (!!GET_FIELD(FIELD, (ENV)->t_sreg[HEX_SREG_CCR]))
 
 /*
- * Direct-to-guest is not implemented yet, continuing would cause unexpected
- * behavior, so we abort.
+ * Direct-to-guest delivery of imprecise and floating-point exceptions is not
+ * implemented yet, continuing would cause unexpected behavior, so we abort.
+ * (Trap0 and precise exceptions from guest user mode are, in hexswi.c.)
  */
 #define ASSERT_DIRECT_TO_GUEST_UNSET(ENV, EXCP) \
     do { \
         switch (EXCP) { \
-        case HEX_EVENT_TRAP0: \
-            g_assert(!CCR_FIELD_SET(ENV, CCR_GTE)); \
-            break; \
         case HEX_EVENT_IMPRECISE: \
-        case HEX_EVENT_PRECISE: \
         case HEX_EVENT_FPTRAP: \
             g_assert(!CCR_FIELD_SET(ENV, CCR_GEE)); \
             break; \
         default: \
-            if ((EXCP) >= HEX_EVENT_INT0) { \
-                g_assert(!CCR_FIELD_SET(ENV, CCR_GIE)); \
-            } \
             break; \
         } \
     } while (0)
@@ -101,15 +95,43 @@
 #define fFRAMECHECK(ADDR, EA) gen_framecheck(ctx, ADDR, EA)
 #endif
 
-#define fVIRTINSN_SPSWAP(IMM, REG)
-#define fVIRTINSN_GETIE(IMM, REG) { REG = 0xdeafbeef; }
-#define fVIRTINSN_SETIE(IMM, REG)
-#define fVIRTINSN_RTE(IMM, REG)
+#define fVIRTINSN_SPSWAP(IMM, REG) \
+    do { \
+        if (GET_FIELD(GSR_UM, env->greg[HEX_GREG_GSR])) { \
+            uint32_t tmp = (REG); \
+            (REG) = env->greg[HEX_GREG_GOSP]; \
+            env->greg[HEX_GREG_GOSP] = tmp; \
+        } \
+        env->gpr[HEX_REG_PC] = next_PC; \
+    } while (0)
+#define fVIRTINSN_GETIE(IMM, REG) \
+    do { \
+        (REG) = CCR_FIELD_SET(env, CCR_GIE); \
+        env->gpr[HEX_REG_PC] = next_PC; \
+    } while (0)
+#define fVIRTINSN_SETIE(IMM, REG) \
+    do { \
+        uint32_t old_gie = CCR_FIELD_SET(env, CCR_GIE); \
+        uint32_t new_gie = (REG) & 1; \
+        SET_SYSTEM_FIELD(env, HEX_SREG_CCR, CCR_GIE, new_gie); \
+        (REG) = old_gie; \
+        env->gpr[HEX_REG_PC] = next_PC; \
+        if (new_gie && !old_gie && env_archcpu(env)->hvm) { \
+            hexagon_hvm_ie_enabled(env); \
+        } \
+    } while (0)
+#define fVIRTINSN_RTE(IMM, REG) hexagon_vmrte(env)
 #define fGRE_ENABLED() \
     GET_FIELD(CCR_GRE, env->t_sreg[HEX_SREG_CCR])
+/*
+ * The virtual instructions are the guest kernel's: they are executed in guest
+ * mode only.  The stack pointer swap (6) is not one of the Hexagon Virtual
+ * Machine's operations, which QEMU serves with the rest of its interface.
+ */
 #define fTRAP1_VIRTINSN(IMM) \
-    (fGRE_ENABLED() && \
-        (((IMM) == 1) || ((IMM) == 3) || ((IMM) == 4) || ((IMM) == 6)))
+    (GET_FIELD(SSR_GM, env->t_sreg[HEX_SREG_SSR]) && fGRE_ENABLED() && \
+        (((IMM) == 1) || ((IMM) == 3) || ((IMM) == 4) || \
+         (((IMM) == 6) && !env_archcpu(env)->hvm)))
 
 /* Not modeled in qemu */
 

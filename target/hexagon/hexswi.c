@@ -14,11 +14,13 @@
 #include "internal.h"
 #include "macros.h"
 #include "sys_macros.h"
+#include "exec/cpu-interrupt.h"
 #include "accel/tcg/cpu-loop.h"
 #include "tcg/tcg-op.h"
 #include "hex_mmu.h"
 #include "hexswi.h"
 #include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/hexagon/hexagon_hvm.h"
 
 #ifdef CONFIG_USER_ONLY
 #error "This file is only used in system emulation"
@@ -761,6 +763,98 @@ static void set_addresses(CPUHexagonState *env, uint32_t pc_offset,
     env->gpr[HEX_REG_PC] = evb | (exception_index << 2);
 }
 
+/*
+ * Whether an event goes straight to the guest's own vector: the guest has
+ * asked for it with @enable (CCR.GTE or CCR.GEE), and it happened in guest
+ * user mode.  Events in guest mode are the monitor's.
+ *
+ * FIXME: check against the architecture (or hexagon-sim/hardware) that the
+ * CCR.GTE/CCR.GEE gate is guest user mode (SSR.UM && !SSR.GM) and not SSR.GM.
+ * Neither H2 nor hexagonMVM uses CCR.GRE/GEE/GTE, and no test covers this.
+ */
+static bool event_to_guest(CPUHexagonState *env, unsigned enable_field)
+{
+    return GET_FIELD(SSR_UM, env->t_sreg[HEX_SREG_SSR]) &&
+           !GET_FIELD(SSR_GM, env->t_sreg[HEX_SREG_SSR]) &&
+           GET_FIELD(enable_field, env->t_sreg[HEX_SREG_CCR]);
+}
+
+/* Take an event from guest user mode in the guest kernel. */
+static void guest_event_entry(CPUHexagonState *env, uint32_t cause,
+                              uint32_t event_pc, uint32_t vec_offset,
+                              bool set_gbadva)
+{
+    uint32_t old_ssr = env->t_sreg[HEX_SREG_SSR];
+    uint32_t gsr = 0;
+    uint32_t gevb = env->t_sreg[HEX_SREG_GEVB];
+    uint32_t sp = env->gpr[HEX_REG_SP];
+
+    gsr = deposit32(gsr, reg_field_info[GSR_CAUSE].offset,
+                    reg_field_info[GSR_CAUSE].width, cause);
+    gsr = deposit32(gsr, reg_field_info[GSR_SS].offset,
+                    reg_field_info[GSR_SS].width,
+                    GET_FIELD(SSR_SS, old_ssr));
+    gsr = deposit32(gsr, reg_field_info[GSR_UM].offset,
+                    reg_field_info[GSR_UM].width, 1);
+    gsr = deposit32(gsr, reg_field_info[GSR_IE].offset,
+                    reg_field_info[GSR_IE].width,
+                    GET_FIELD(CCR_GIE, env->t_sreg[HEX_SREG_CCR]));
+    env->greg[HEX_GREG_GSR] = gsr;
+    /* The guest kernel runs on its own stack. */
+    env->gpr[HEX_REG_SP] = env->greg[HEX_GREG_GOSP];
+    env->greg[HEX_GREG_GOSP] = sp;
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_SS, 0);
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_GM, 1);
+    hexagon_modify_ssr(env, env->t_sreg[HEX_SREG_SSR], old_ssr);
+    SET_SYSTEM_FIELD(env, HEX_SREG_CCR, CCR_GIE, 0);
+    env->greg[HEX_GREG_GELR] = event_pc;
+    if (set_gbadva) {
+        env->greg[HEX_GREG_GBADVA] = env->t_sreg[HEX_SREG_BADVA];
+    }
+    env->gpr[HEX_REG_PC] = gevb + vec_offset;
+}
+
+void hexagon_vmrte(CPUHexagonState *env)
+{
+    uint32_t gsr = env->greg[HEX_GREG_GSR];
+    uint32_t old_ssr = env->t_sreg[HEX_SREG_SSR];
+    CPUState *cs = env_cpu(env);
+
+    if (GET_FIELD(GSR_UM, gsr)) {
+        /* Back to the guest user's stack, which the event left in GOSP. */
+        uint32_t sp = env->gpr[HEX_REG_SP];
+
+        env->gpr[HEX_REG_SP] = env->greg[HEX_GREG_GOSP];
+        env->greg[HEX_GREG_GOSP] = sp;
+    }
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_SS,
+                     GET_FIELD(GSR_SS, gsr));
+    SET_SYSTEM_FIELD(env, HEX_SREG_SSR, SSR_GM,
+                     !GET_FIELD(GSR_UM, gsr));
+    {
+        BQL_LOCK_GUARD();
+        hexagon_modify_ssr(env, env->t_sreg[HEX_SREG_SSR], old_ssr);
+    }
+    SET_SYSTEM_FIELD(env, HEX_SREG_CCR, CCR_GIE,
+                     GET_FIELD(GSR_IE, gsr));
+    env->gpr[HEX_REG_PC] = env->greg[HEX_GREG_GELR] & ~3;
+    if (GET_FIELD(GSR_IE, gsr) && env_archcpu(env)->hvm) {
+        hexagon_hvm_ie_enabled(env);
+    }
+    cpu_loop_exit(cs);
+}
+
+void hexagon_hvm_ie_enabled(CPUHexagonState *env)
+{
+    HexagonHVMState *hvm = env_archcpu(env)->hvm;
+
+    BQL_LOCK_GUARD();
+    /* A virtual interrupt that was waiting for the guest to enable them. */
+    if (hexagon_hvm_int_peek(hvm, env->threadId) >= 0) {
+        cpu_interrupt(env_cpu(env), CPU_INTERRUPT_HARD);
+    }
+}
+
 static const char *event_name[] = {
     [HEX_EVENT_RESET] = "HEX_EVENT_RESET",
     [HEX_EVENT_IMPRECISE] = "HEX_EVENT_IMPRECISE",
@@ -828,6 +922,12 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
 
     switch (cs->exception_index) {
     case HEX_EVENT_TRAP0:
+        if (event_to_guest(env, CCR_GTE)) {
+            guest_event_entry(env, env->cause_code,
+                              env->gpr[HEX_REG_PC] + 4,
+                              HEX_GEVB_TRAP0, false);
+            break;
+        }
         if (env->cause_code == 0) {
             sim_handle_trap0(env);
         }
@@ -913,6 +1013,12 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
         break;
 
     case HEX_EVENT_PRECISE:
+        if (event_to_guest(env, CCR_GEE)) {
+            guest_event_entry(env, env->cause_code,
+                              env->gpr[HEX_REG_PC], HEX_GEVB_ERROR,
+                              true);
+            break;
+        }
         switch (env->cause_code) {
         case HEX_CAUSE_FETCH_NO_XPAGE:
         case HEX_CAUSE_FETCH_NO_UPAGE:
@@ -1029,8 +1135,6 @@ void register_trap_exception(CPUHexagonState *env, int traptype, int imm,
     CPUState *cs = env_cpu(env);
 
     cs->exception_index = (traptype == 0) ? HEX_EVENT_TRAP0 : HEX_EVENT_TRAP1;
-    ASSERT_DIRECT_TO_GUEST_UNSET(env, cs->exception_index);
-
     env->cause_code = imm;
     env->gpr[HEX_REG_PC] = PC;
     cpu_loop_exit(cs);
