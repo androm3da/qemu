@@ -15,6 +15,7 @@
 #include "macros.h"
 #include "sys_macros.h"
 #include "system/cpus.h"
+#include "exec/cpu-common.h"
 #include "hw/hexagon/hexagon_globalreg.h"
 
 static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num);
@@ -234,6 +235,61 @@ static bool is_lowest_prio(CPUHexagonState *env, int int_num)
     return true;
 }
 
+/* k0lock and tlblock, without the packet parse bits */
+#define INSN_K0LOCK     0x6c200060
+#define INSN_TLBLOCK    0x6c200020
+#define INSN_PARSE_MASK 0xc000
+#define INSN_PARSE_MORE 0x4000
+#define PACKET_MAX_INSNS 4
+
+/*
+ * A thread whose next packet takes a lock that another thread holds is
+ * already stalled: it can't service an interrupt, as it would if the packet
+ * had started to execute and found the lock taken.  The lock instruction
+ * hasn't run, so the thread's lock state doesn't say so, but the instruction
+ * at its PC does.
+ *
+ * Only the calling vCPU's own PC is current: another running vCPU's is only
+ * written back at the end of a translation block.  A thread that is asked
+ * about from another thread is judged by its lock state alone.
+ */
+static bool next_packet_stalls_on_lock(CPUHexagonState *env)
+{
+    CPUState *cs = env_cpu(env);
+    uint32_t syscfg = hexagon_globalreg_read(env_archcpu(env)->globalregs,
+                                             HEX_SREG_SYSCFG, env->threadId);
+    bool k0_held = GET_SYSCFG_FIELD(SYSCFG_K0LOCK, syscfg) &&
+                   env->k0_lock_state != HEX_LOCK_OWNER &&
+                   env->k0_lock_state != HEX_LOCK_QUEUED;
+    bool tlb_held = GET_SYSCFG_FIELD(SYSCFG_TLBLOCK, syscfg) &&
+                    env->tlb_lock_state != HEX_LOCK_OWNER &&
+                    env->tlb_lock_state != HEX_LOCK_QUEUED;
+    vaddr pc = env->gpr[HEX_REG_PC];
+
+    if ((!k0_held && !tlb_held) || cs != current_cpu) {
+        return false;
+    }
+    for (int i = 0; i < PACKET_MAX_INSNS; i++) {
+        uint32_t insn;
+
+        if (cpu_memory_rw_debug(cs, pc + i * sizeof(insn), &insn,
+                                sizeof(insn), false) != 0) {
+            return false;
+        }
+        insn = le32_to_cpu(insn);
+        /* A duplex (parse bits 00) has no room for a lock instruction */
+        if ((insn & INSN_PARSE_MASK) != 0 &&
+            (((insn & ~INSN_PARSE_MASK) == INSN_K0LOCK && k0_held) ||
+             ((insn & ~INSN_PARSE_MASK) == INSN_TLBLOCK && tlb_held))) {
+            return true;
+        }
+        if ((insn & INSN_PARSE_MASK) != INSN_PARSE_MORE) {
+            break;
+        }
+    }
+    return false;
+}
+
 static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
 {
     bool syscfg_gie = get_syscfg_gie(env);
@@ -244,7 +300,8 @@ static bool hex_is_qualified_for_int(CPUHexagonState *env, int int_num)
     bool lock_pending = env->k0_lock_state != HEX_LOCK_UNLOCKED ||
                         env->tlb_lock_state != HEX_LOCK_UNLOCKED;
 
-    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_pending;
+    return syscfg_gie && !iad && ssr_ie && !ssr_ex && !imask && !lock_pending &&
+           !next_packet_stalls_on_lock(env);
 }
 
 static void clear_pending_locks(CPUHexagonState *env)
