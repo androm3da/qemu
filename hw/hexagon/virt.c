@@ -70,6 +70,7 @@ static void virt_init(MachineState *ms)
     hex_board_create_fdt(ms, "hexagon-virt,qemu", "qcom,sm8150",
                          &vms->fdt_size);
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs", ms->kernel_cmdline);
+    qemu_fdt_setprop_string(ms->fdt, "/soc", "compatible", "simple-bus");
 
     hex_subsys_create(&vms->parent_obj, m_cfg, v68_rev);
     hex_board_create_tcm(m_cfg, &vms->tcm);
