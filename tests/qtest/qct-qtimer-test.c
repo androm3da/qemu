@@ -345,7 +345,7 @@ typedef struct {
 } QtimerMachineCfg;
 
 static const QtimerMachineCfg qtimer_machines[] = {
-    { "virt",      &v68n_1024 },
+    { "v68_virt",  &v68n_1024 },
     { "V66G_1024", &v66g_1024 },
     { "qcs6490-cdsp", &qcs6490_cdsp },
     { "sa8775p-cdsp", &SA8775P_cdsp0 },

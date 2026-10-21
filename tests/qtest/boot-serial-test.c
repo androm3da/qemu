@@ -201,7 +201,8 @@ static const testdef_t tests[] = {
     { "arm", "microbit", "", "T", sizeof(kernel_nrf51), kernel_nrf51 },
     { "arm", "stm32vldiscovery", "", "T",
       sizeof(kernel_stm32vldiscovery), kernel_stm32vldiscovery },
-    { "hexagon", "virt", "", "TT", sizeof(bios_hexagon), NULL, bios_hexagon },
+    { "hexagon", "v68_virt", "", "TT", sizeof(bios_hexagon), NULL,
+      bios_hexagon },
 
     { NULL }
 };

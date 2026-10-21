@@ -130,8 +130,8 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     mc->max_cpus = info->cpus;
 }
 
-static const HexagonVirtMachineInfo virt_info = {
-    .desc = "Hexagon Virtual Machine",
+static const HexagonVirtMachineInfo v68_virt_info = {
+    .desc = "Hexagon Virtual Machine with a v68 core",
     .cpu_type = HEXAGON_CPU_TYPE_NAME("v68"),
     .cpus = 8,
     .rev = v68_rev,
@@ -157,10 +157,10 @@ static const TypeInfo virt_machine_types[] = {
         .is_available = target_hexagon,
         .abstract = true,
     }, {
-        .name = MACHINE_TYPE_NAME("virt"),
+        .name = MACHINE_TYPE_NAME("v68_virt"),
         .parent = TYPE_HEXAGON_VIRT_MACHINE,
         .class_init = virt_class_init,
-        .class_data = &virt_info,
+        .class_data = &v68_virt_info,
     }, {
         .name = MACHINE_TYPE_NAME("v81_virt"),
         .parent = TYPE_HEXAGON_VIRT_MACHINE,

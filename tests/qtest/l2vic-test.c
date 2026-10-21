@@ -49,7 +49,7 @@ typedef struct {
 } L2VICMachineCfg;
 
 static const L2VICMachineCfg l2vic_machines[] = {
-    { "virt",      &v68n_1024 },
+    { "v68_virt",  &v68n_1024 },
     { "v81_virt",  &v81_virt },
     { "V66G_1024", &v66g_1024 },
     { "qcs6490-cdsp", &qcs6490_cdsp },
