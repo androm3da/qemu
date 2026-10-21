@@ -16,6 +16,7 @@
 #include "qemu/target-info.h"
 #include "qemu/units.h"
 #include "machine_cfg_v68n_1024.h.inc"
+#include "machine_cfg_v81_virt.h.inc"
 #include "system/device_tree.h"
 
 enum {
@@ -62,7 +63,9 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
 static void virt_init(MachineState *ms)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(ms);
-    const struct hexagon_machine_config *m_cfg = &v68n_1024;
+    const HexagonVirtMachineInfo *info =
+        HEXAGON_VIRT_MACHINE_GET_CLASS(ms)->info;
+    const struct hexagon_machine_config *m_cfg = info->cfg;
     int32_t l2vic_phandle;
     uint64_t start = 0;
     bool have_start = false;
@@ -72,7 +75,7 @@ static void virt_init(MachineState *ms)
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "bootargs", ms->kernel_cmdline);
     qemu_fdt_setprop_string(ms->fdt, "/soc", "compatible", "simple-bus");
 
-    hex_subsys_create(&vms->parent_obj, m_cfg, v68_rev);
+    hex_subsys_create(&vms->parent_obj, m_cfg, info->rev);
     hex_board_create_tcm(m_cfg, &vms->tcm);
     hex_board_fdt_add_hvx(ms, m_cfg);
 
@@ -99,16 +102,12 @@ static void virt_init(MachineState *ms)
 }
 
 
-static void virt_class_init(ObjectClass *oc, const void *data)
+static void virt_base_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
-    mc->desc = "Hexagon Virtual Machine";
     mc->init = virt_init;
-    mc->default_cpu_type = HEXAGON_CPU_TYPE_NAME("v68");
     mc->default_ram_size = 4 * GiB;
-    mc->max_cpus = 8;
-    mc->default_cpus = 8;
     mc->is_default = false;
     mc->default_kernel_irqchip_split = false;
     mc->block_default_type = IF_VIRTIO;
@@ -118,13 +117,56 @@ static void virt_class_init(ObjectClass *oc, const void *data)
     mc->default_nic = "virtio-mmio-bus";
 }
 
+static void virt_class_init(ObjectClass *oc, const void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+    HexagonVirtMachineClass *vc = HEXAGON_VIRT_MACHINE_CLASS(oc);
+    const HexagonVirtMachineInfo *info = data;
 
-static const TypeInfo virt_machine_types[] = { {
-    .name = TYPE_HEXAGON_VIRT_MACHINE,
-    .parent = TYPE_HEXAGON_COMMON_MACHINE,
-    .instance_size = sizeof(HexagonVirtMachineState),
-    .class_init = virt_class_init,
-    .is_available = target_hexagon,
-} };
+    vc->info = info;
+    mc->desc = info->desc;
+    mc->default_cpu_type = info->cpu_type;
+    mc->default_cpus = info->cpus;
+    mc->max_cpus = info->cpus;
+}
+
+static const HexagonVirtMachineInfo virt_info = {
+    .desc = "Hexagon Virtual Machine",
+    .cpu_type = HEXAGON_CPU_TYPE_NAME("v68"),
+    .cpus = 8,
+    .rev = v68_rev,
+    .cfg = &v68n_1024,
+};
+
+/* A v81 core with the most threads and HVX contexts that the CPU has. */
+static const HexagonVirtMachineInfo v81_virt_info = {
+    .desc = "Hexagon Virtual Machine with a v81 core",
+    .cpu_type = HEXAGON_CPU_TYPE_NAME("v81"),
+    .cpus = 16,
+    .rev = v81_rev,
+    .cfg = &v81_virt,
+};
+
+static const TypeInfo virt_machine_types[] = {
+    {
+        .name = TYPE_HEXAGON_VIRT_MACHINE,
+        .parent = TYPE_HEXAGON_COMMON_MACHINE,
+        .instance_size = sizeof(HexagonVirtMachineState),
+        .class_size = sizeof(HexagonVirtMachineClass),
+        .class_init = virt_base_class_init,
+        .is_available = target_hexagon,
+        .abstract = true,
+    }, {
+        .name = MACHINE_TYPE_NAME("virt"),
+        .parent = TYPE_HEXAGON_VIRT_MACHINE,
+        .class_init = virt_class_init,
+        .class_data = &virt_info,
+    }, {
+        .name = MACHINE_TYPE_NAME("v81_virt"),
+        .parent = TYPE_HEXAGON_VIRT_MACHINE,
+        .class_init = virt_class_init,
+        .class_data = &v81_virt_info,
+    },
+};
 
 DEFINE_TYPES(virt_machine_types)

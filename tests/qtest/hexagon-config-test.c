@@ -13,6 +13,7 @@
 #include "hw/hexagon/machine_cfg_v79na_1.h.inc"
 #include "hw/hexagon/machine_cfg_v81dgb_1.h.inc"
 #include "hw/hexagon/machine_cfg_v81qa_1.h.inc"
+#include "hw/hexagon/machine_cfg_v81_virt.h.inc"
 
 typedef struct {
     const char *machine;
@@ -27,6 +28,7 @@ static const HexagonMachineCfg hexagon_machines[] = {
     { "V81DGB_1", &v81dgb_1, 0 },
     { "V81QA_1", &v81qa_1, 0 },
     { "V81QA_1", &v81qa_1, 0xfca00000 },
+    { "v81_virt", &v81_virt, 0 },
 };
 
 static void test_config_table(gconstpointer data)

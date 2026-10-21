@@ -11,6 +11,7 @@
 
 #include "hw/hexagon/machine_cfg_v66g_1024.h.inc"
 #include "hw/hexagon/machine_cfg_v68n_1024.h.inc"
+#include "hw/hexagon/machine_cfg_v81_virt.h.inc"
 #include "hw/hexagon/machine_cfg_qcs6490_cdsp.h.inc"
 #include "hw/hexagon/machine_cfg_sm8975_nsp.h.inc"
 #include "hw/hexagon/machine_cfg_sa8797p_nsp0.h.inc"
@@ -49,6 +50,7 @@ typedef struct {
 
 static const L2VICMachineCfg l2vic_machines[] = {
     { "virt",      &v68n_1024 },
+    { "v81_virt",  &v81_virt },
     { "V66G_1024", &v66g_1024 },
     { "qcs6490-cdsp", &qcs6490_cdsp },
     { "sa8775p-cdsp", &SA8775P_cdsp0 },
