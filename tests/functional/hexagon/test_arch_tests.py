@@ -31,7 +31,7 @@ class ArchTestsUart(QemuSystemTest):
     )
 
     def run_uart_test(self, test_name: str,
-                      machine: str = "v68_virt") -> None:
+                      machine: str = "virt") -> None:
         """
         Run an arch test binary and verify PASS via UART console output.
         """

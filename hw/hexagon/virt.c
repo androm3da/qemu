@@ -125,6 +125,7 @@ static void virt_class_init(ObjectClass *oc, const void *data)
 
     vc->info = info;
     mc->desc = info->desc;
+    mc->alias = info->alias;
     mc->default_cpu_type = info->cpu_type;
     mc->default_cpus = info->cpus;
     mc->max_cpus = info->cpus;
@@ -141,6 +142,7 @@ static const HexagonVirtMachineInfo v68_virt_info = {
 /* A v81 core with the most threads and HVX contexts that the CPU has. */
 static const HexagonVirtMachineInfo v81_virt_info = {
     .desc = "Hexagon Virtual Machine with a v81 core",
+    .alias = "virt",
     .cpu_type = HEXAGON_CPU_TYPE_NAME("v81"),
     .cpus = 16,
     .rev = v81_rev,

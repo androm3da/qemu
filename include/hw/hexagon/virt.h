@@ -15,6 +15,8 @@
 
 typedef struct HexagonVirtMachineInfo {
     const char *desc;
+    /* An alternative name of the machine type, or NULL. */
+    const char *alias;
     const char *cpu_type;
     unsigned int cpus;
     Rev_t rev;

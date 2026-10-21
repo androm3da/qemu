@@ -203,6 +203,7 @@ static const testdef_t tests[] = {
       sizeof(kernel_stm32vldiscovery), kernel_stm32vldiscovery },
     { "hexagon", "v68_virt", "", "TT", sizeof(bios_hexagon), NULL,
       bios_hexagon },
+    { "hexagon", "virt", "", "TT", sizeof(bios_hexagon), NULL, bios_hexagon },
 
     { NULL }
 };
