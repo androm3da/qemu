@@ -110,6 +110,7 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
                                 bool deferred_sign,
                                 qfrnd_mode_enum_t qfrnd_mode);
 FloatParts64 qfloat_unfloat_parts(unfloat u);
+int qfloat_leading_exp(unfloat u, FloatParts64 parts);
 
 uint64_t handle_infinity_nan_add(unfloat u, unfloat v, uint64_t pos_nan_val,
                                  uint64_t neg_nan_val, uint64_t pos_inf_val,

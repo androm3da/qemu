@@ -165,6 +165,19 @@ FloatParts64 qfloat_unfloat_parts(unfloat u)
     return parts;
 }
 
+/*
+ * The exponent of the leading bit of a nonzero qfloat for choosing the
+ * exponent of a sum.  A significand that is negative as it stands is rounded
+ * down in magnitude so that -2^n counts as having exponent n - 1.
+ */
+int qfloat_leading_exp(unfloat u, FloatParts64 parts)
+{
+    bool power_of_two = parts.frac == UINT64_C(1) << 63;
+    bool negative_sig = parts.sign ^ u.sign;
+
+    return parts.exp - (power_of_two && negative_sig);
+}
+
 static void qfloat_apply_inexact(FloatParts64 *parts, uint8_t ext)
 {
     LREQ_t lreq = ext & EXT32_BITMASK;
@@ -249,11 +262,12 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
     int shift;
     uint64_t integer, discarded, mask;
     bool half, sticky, increment;
-    uint64_t quarters, rq1, even;
-    int64_t sig;
+    uint64_t quarters;
+    int64_t sq, rq1, even, sig;
     LREQ_t lreq = 0;
     bool zero = parts.cls == float_class_zero;
     bool complement, negate;
+    bool exact_sign, explicit_neg;
 
     if (zero) {
         /* A zero keeps its exponent, and has no bits to round */
@@ -261,11 +275,31 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
         parts.exp = exp;
         parts.frac = 0;
     }
-    if (parts.exp - exp >= 1) {
+    /*
+     * Round to nearest even is done on the signed significand the way the
+     * hardware does.  A deferred negation negates the significand before it
+     * is rounded, so what's rounded is negative if the result isn't, and
+     * the rounded value is negated again afterwards.  A negative
+     * significand is rounded in two's complement, so exactly -2.0 stays
+     * as it is instead of being renormalized.
+     */
+    exact_sign = !zero && mode == RND_TO_NEAREST_EVEN;
+    explicit_neg = exact_sign && (parts.sign ^ deferred_sign);
+    if (parts.exp - exp >= 1 &&
+        !(explicit_neg && parts.exp - exp == 1 &&
+          parts.frac == UINT64_C(1) << 63)) {
         exp++;
     }
+    /*
+     * The largest exponent only holds numbers less than one, in terms of
+     * the significand.  That's less than or equal to one for a negative
+     * significand, as -1.0 is the most negative.
+     */
     if (exp > emax ||
-        (exp == emax && parts.frac > (UINT64_C(1) << 63))) {
+        (exp == emax && !zero &&
+         (parts.exp > exp ||
+          (parts.exp == exp &&
+           (!explicit_neg || parts.frac > (UINT64_C(1) << 63)))))) {
         return qfloat_ext_overflow(size, parts.sign, mode);
     }
     if (exp < emin) {
@@ -293,27 +327,30 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
         sticky = false;
     }
     quarters = integer * 4 + (half ? 2 : 0) + (sticky ? 1 : 0);
+    sq = explicit_neg ? -(int64_t)quarters : quarters;
 
     switch (mode) {
     case RND_TO_NEAREST_EVEN:
-        increment = (quarters & 3) >= ((quarters >> 2 & 1) ? 2 : 3);
+        increment = (sq & 3) >= ((sq >> 2 & 1) ? 2 : 3);
         break;
     case RND_TO_ZERO:
         increment = false;
         break;
     case RND_TOWARDS_NEG_INF:
-        increment = parts.sign && (quarters & 3);
+        increment = parts.sign && (sq & 3);
         break;
     case RND_TOWARDS_POS_INF:
-        increment = !parts.sign && (quarters & 3);
+        increment = !parts.sign && (sq & 3);
         break;
     default:
         g_assert_not_reached();
     }
 
-    rq1 = (quarters >> 2) * 8 + increment * 4 +
-          (increment ^ ((quarters & 3) != 0)) * 2 + 1;
-    even = (rq1 >> 3) & ~UINT64_C(1);
+    rq1 = (sq >> 2) * 8 + increment * 4 + (increment ^ ((sq & 3) != 0)) * 2 + 1;
+    if (exact_sign && deferred_sign) {
+        rq1 = -rq1;
+    }
+    even = (rq1 >> 3) & ~INT64_C(1);
     rq1 -= even * 8 + 1;
     sig = even >> 1;
     lreq |= (rq1 >> 3) ? LREQ_L : 0;
@@ -321,18 +358,20 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
     lreq |= ((rq1 >> 1) & 1) ? LREQ_Q : 0;
 
     /*
-     * A negative number holds the complement of its significand, and the
-     * LREQ bits are complemented along with it.  Deferred negation is the
-     * same operation, not an additional one: when both apply the result is
-     * still negated only once.  A zero is only negative if it was deferred.
+     * Otherwise a negative number holds the complement of its significand,
+     * and the LREQ bits are complemented along with it.  Deferred negation
+     * is the same operation, not an additional one.  A zero is only negative
+     * if it was deferred.
      */
     complement = zero ? deferred_sign : parts.sign;
     negate = zero ? deferred_sign : parts.sign || deferred_sign;
-    if (complement) {
-        sig = ~sig;
-    }
-    if (negate) {
-        lreq = negate_lreq(lreq);
+    if (!exact_sign) {
+        if (complement) {
+            sig = ~sig;
+        }
+        if (negate) {
+            lreq = negate_lreq(lreq);
+        }
     }
 
     return qfloat_pack_ext(size, sig, exp + bias, lreq);

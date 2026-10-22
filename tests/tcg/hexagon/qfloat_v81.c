@@ -189,12 +189,97 @@ static void test_qf_zero_negative(void)
     }
 }
 
+/*
+ * The significand and extension bits of negative results.  The qf values
+ * are checked as they're stored, which is how they were found to differ from
+ * hexagon-sim, and not only after converting back to an IEEE format.
+ */
+static void test_qf_encoding(void)
+{
+    static const struct {
+        int op;
+        uint16_t a, b, qf;
+    } hf_cases[] = {
+        { QOP_ADD, 0xbc00, 0x0000, 0x800e },
+        { QOP_ADD, 0x8400, 0x0000, 0xc001 },
+        { QOP_ADD, 0xc000, 0x159a, 0x800f },
+        { QOP_ADD, 0x0001, 0x0000, 0x0001 },
+        { QOP_ADD, 0x8001, 0x0000, 0xffe1 },
+        { QOP_ADD, 0xbc01, 0x3c03, 0x002f },
+        { QOP_ADD, 0x3c01, 0xbc03, 0xffef },
+        { QOP_ADD, 0xbc01, 0xbc03, 0xbfd0 },
+        { QOP_ADD, 0x3c00, 0xbc00, 0x000f },
+        { QOP_ADD, 0x8000, 0x8000, 0xffe1 },
+        { QOP_SUB, 0xbc00, 0xbc00, 0x000f },
+        { QOP_SUB, 0x8000, 0x0000, 0xffe1 },
+        { QOP_MPY, 0xbc00, 0x3c00, 0xbfef },
+        { QOP_MPY, 0xbc01, 0x3c03, 0xbfaf },
+        { QOP_MPY, 0x0001, 0xdc00, 0xffe9 },
+        /* 2^16 is too large, and so is -2^16 */
+        { QOP_MPY, 0x5c00, 0x5c00, 0x7fff },
+        { QOP_MPY, 0xdc00, 0x5c00, 0x801f },
+    };
+    static const struct {
+        int op;
+        uint32_t a, b, qf;
+    } sf_cases[] = {
+        { QOP_ADD, 0xbf800000, 0x00000000, 0x8000007e },
+        { QOP_ADD, 0x80000001, 0x00000000, 0xffffff01 },
+        { QOP_ADD, 0xbf800000, 0x3f800001, 0x0000007f },
+        { QOP_SUB, 0xbf800000, 0xbf800000, 0x0000007f },
+        { QOP_MPY, 0xbf800000, 0x3f800000, 0xbfffff7f },
+        { QOP_MPY, 0xbf800001, 0x3f800003, 0xbffffd7f },
+    };
+
+    for (int i = 0; i < ARRAY_SIZE(hf_cases); i++) {
+        HVX_Vector a = Q6_Vh_vsplat_R(hf_cases[i].a);
+        HVX_Vector b = Q6_Vh_vsplat_R(hf_cases[i].b);
+        HVX_Vector qf;
+
+        switch (hf_cases[i].op) {
+        case QOP_ADD:
+            qf = Q6_Vqf16_vadd_VhfVhf(a, b);
+            break;
+        case QOP_SUB:
+            qf = Q6_Vqf16_vsub_VhfVhf(a, b);
+            break;
+        default:
+            qf = Q6_Vqf16_vmpy_VhfVhf(a, b);
+            break;
+        }
+        memcpy(output, &qf, sizeof(qf));
+        expect_h(0, hf_cases[i].qf);
+        check_output_h(__LINE__, 1);
+    }
+    for (int i = 0; i < ARRAY_SIZE(sf_cases); i++) {
+        HVX_Vector a = Q6_V_vsplat_R(sf_cases[i].a);
+        HVX_Vector b = Q6_V_vsplat_R(sf_cases[i].b);
+        HVX_Vector qf;
+
+        switch (sf_cases[i].op) {
+        case QOP_ADD:
+            qf = Q6_Vqf32_vadd_VsfVsf(a, b);
+            break;
+        case QOP_SUB:
+            qf = Q6_Vqf32_vsub_VsfVsf(a, b);
+            break;
+        default:
+            qf = Q6_Vqf32_vmpy_VsfVsf(a, b);
+            break;
+        }
+        memcpy(output, &qf, sizeof(qf));
+        expect_w(0, sf_cases[i].qf);
+        check_output_w(__LINE__, 1);
+    }
+}
+
 int main()
 {
     test_qf16();
     test_qf32();
     test_qf32_bf_conversion();
     test_qf_zero_negative();
+    test_qf_encoding();
 
     puts(err ? "FAIL" : "PASS");
     return err ? 1 : 0;

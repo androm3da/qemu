@@ -449,14 +449,12 @@
             float_status status = { 0 }; \
             int sub = pa.sign ^ pb.sign; \
             int rexp; \
-            if (pa.cls == float_class_zero) { \
-                rexp = (B).exp; \
-            } else if (pb.cls == float_class_zero) { \
-                rexp = (A).exp; \
-            } else if ((A).exp > (B).exp) { \
-                rexp = MAX(pa.exp - sub, (B).exp); \
+            if ((A).exp > (B).exp) { \
+                rexp = pa.cls == float_class_zero ? (B).exp : \
+                       MAX(qfloat_leading_exp(A, pa) - sub, (B).exp); \
             } else { \
-                rexp = MAX(pb.exp - sub, (A).exp); \
+                rexp = pb.cls == float_class_zero ? (A).exp : \
+                       MAX(qfloat_leading_exp(B, pb) - sub, (A).exp); \
             } \
             FloatParts64 pr = parts64_addsub(&pa, &pb, \
                                               &status, false); \
