@@ -40,6 +40,49 @@ int err;
         check_output_##TO(__LINE__, 1); \
     }
 
+DEF_TEST_CVT(hf, uh, { \
+    TEST_EXP(hf, uh, 0, HF_zero); \
+    TEST_EXP(hf, uh, 1, HF_one); \
+    TEST_EXP(hf, uh, 2, HF_two); \
+    TEST_EXP(hf, uh, 2049, raw_hf((_Float16)2048)); /* rounds DOWN */ \
+    TEST_EXP(hf, uh, 2051, raw_hf((_Float16)2052)); /* rounds UP */ \
+    TEST_EXP(hf, uh, UINT16_MAX, HF_INF); /* overflows */ \
+})
+
+DEF_TEST_CVT(hf, h, { \
+    TEST_EXP(hf, h, 0, HF_zero); \
+    TEST_EXP(hf, h, 1, HF_one); \
+    TEST_EXP(hf, h, -2, HF_neg_two); \
+    TEST_EXP(hf, h, 2049, raw_hf((_Float16)2048)); /* rounds DOWN */ \
+    TEST_EXP(hf, h, 2051, raw_hf((_Float16)2052)); /* rounds UP */ \
+    TEST_EXP(hf, h, INT16_MIN, raw_hf((_Float16)INT16_MIN)); \
+})
+
+/*
+ * The widening conversions from bytes produce a vector pair:
+ *    Vdd.v[0].hf[2*i]   = OP(Vu.FROM[4*i]);
+ *    Vdd.v[0].hf[2*i+1] = OP(Vu.FROM[4*i+1]);
+ *    Vdd.v[1].hf[2*i]   = OP(Vu.FROM[4*i+2]);
+ *    Vdd.v[1].hf[2*i+1] = OP(Vu.FROM[4*i+3]);
+ */
+#define DEF_TEST_CVT_WIDEN(FROM, MUL, ADD) \
+    static void test_vcvt_hf_##FROM(void) \
+    { \
+        HVX_VectorPair *hvx_output = (HVX_VectorPair *)&output[0]; \
+        HVX_Vector buffer; \
+        memset(expect, 0, sizeof(expect)); \
+        for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) { \
+            ((MMVector *)&buffer)->FROM[i] = i * MUL + ADD; \
+            expect[(i % 4) / 2].hf[2 * (i / 4) + (i % 2)] = \
+                raw_hf((_Float16)(((MMVector *)&buffer)->FROM[i])); \
+        } \
+        *hvx_output = Q6_Whf_vcvt_V##FROM(buffer); \
+        check_output_hf(__LINE__, 2); \
+    }
+
+DEF_TEST_CVT_WIDEN(ub, 3, 1)
+DEF_TEST_CVT_WIDEN(b, 5, 7)
+
 DEF_TEST_CVT(uh, hf, { \
     TEST_EXP(uh, hf, HF_QNaN, UINT16_MAX); \
     TEST_EXP(uh, hf, HF_SNaN, UINT16_MAX); \
@@ -204,6 +247,10 @@ static void test_vconv_bf_sf(void)
 
 int main(void)
 {
+    test_vcvt_hf_uh();
+    test_vcvt_hf_h();
+    test_vcvt_hf_ub();
+    test_vcvt_hf_b();
     test_vcvt_uh_hf();
     test_vcvt_h_hf();
     test_vcvt_ub_hf();

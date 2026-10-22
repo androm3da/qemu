@@ -3091,17 +3091,17 @@ EXTINSN(V6_##TAG, SYNTAX, \
 
 ITERATOR_INSN_IEEE_FP_DOUBLE_16(32,  vcvt_hf_ub, "Vdd32.hf=vcvt(Vu32.ub)",
     "Vector IEEE cvt from int: ub widen to hf",
-    VddV.v[0].hf[2*i]   = uint64_to_float16_scalbn(VuV.ub[4*i], float_round_nearest_even, 0);
-    VddV.v[0].hf[2*i+1] = uint64_to_float16_scalbn(VuV.ub[4*i+1], float_round_nearest_even, 0);
-    VddV.v[1].hf[2*i]   = uint64_to_float16_scalbn(VuV.ub[4*i+2], float_round_nearest_even, 0);
-    VddV.v[1].hf[2*i+1] = uint64_to_float16_scalbn(VuV.ub[4*i+3], float_round_nearest_even, 0))
+    VddV.v[0].hf[2*i]   = uint64_to_float16_scalbn(VuV.ub[4*i], 0, &env->hvx_fp_status);
+    VddV.v[0].hf[2*i+1] = uint64_to_float16_scalbn(VuV.ub[4*i+1], 0, &env->hvx_fp_status);
+    VddV.v[1].hf[2*i]   = uint64_to_float16_scalbn(VuV.ub[4*i+2], 0, &env->hvx_fp_status);
+    VddV.v[1].hf[2*i+1] = uint64_to_float16_scalbn(VuV.ub[4*i+3], 0, &env->hvx_fp_status))
 
 ITERATOR_INSN_IEEE_FP_DOUBLE_16(32,  vcvt_hf_b,  "Vdd32.hf=vcvt(Vu32.b)",
     "Vector IEEE cvt from int: b widen to hf",
-    VddV.v[0].hf[2*i]   = int64_to_float16_scalbn(VuV.b[4*i], float_round_nearest_even, 0);
-    VddV.v[0].hf[2*i+1] = int64_to_float16_scalbn(VuV.b[4*i+1], float_round_nearest_even, 0);
-    VddV.v[1].hf[2*i]   = int64_to_float16_scalbn(VuV.b[4*i+2], float_round_nearest_even, 0);
-    VddV.v[1].hf[2*i+1] = int64_to_float16_scalbn(VuV.b[4*i+3], float_round_nearest_even, 0))
+    VddV.v[0].hf[2*i]   = int64_to_float16_scalbn(VuV.b[4*i], 0, &env->hvx_fp_status);
+    VddV.v[0].hf[2*i+1] = int64_to_float16_scalbn(VuV.b[4*i+1], 0, &env->hvx_fp_status);
+    VddV.v[1].hf[2*i]   = int64_to_float16_scalbn(VuV.b[4*i+2], 0, &env->hvx_fp_status);
+    VddV.v[1].hf[2*i+1] = int64_to_float16_scalbn(VuV.b[4*i+3], 0, &env->hvx_fp_status))
 
 ITERATOR_INSN_IEEE_FP_DOUBLE_32(32, vcvt_sf_hf, "Vdd32.sf=vcvt(Vu32.hf)",
     "Vector IEEE cvt: hf widen to sf",
@@ -3110,10 +3110,10 @@ ITERATOR_INSN_IEEE_FP_DOUBLE_32(32, vcvt_sf_hf, "Vdd32.sf=vcvt(Vu32.hf)",
 
 ITERATOR_INSN_IEEE_FP_16(16,    vcvt_hf_uh, "Vd32.hf=vcvt(Vu32.uh)",
     "Vector IEEE cvt from int: uh to hf",
-    VdV.hf[i] = uint64_to_float16_scalbn(VuV.uh[i], float_round_nearest_even, 0))
+    VdV.hf[i] = uint64_to_float16_scalbn(VuV.uh[i], 0, &env->hvx_fp_status))
 ITERATOR_INSN_IEEE_FP_16(16,    vcvt_hf_h,  "Vd32.hf=vcvt(Vu32.h)",
     "Vector IEEE cvt from int: h to hf",
-    VdV.hf[i] = int64_to_float16_scalbn(VuV.h[i], float_round_nearest_even, 0))
+    VdV.hf[i] = int64_to_float16_scalbn(VuV.h[i], 0, &env->hvx_fp_status))
 ITERATOR_INSN_IEEE_FP_16_32(16, vcvt_uh_hf, "Vd32.uh=vcvt(Vu32.hf)",
     "Vector IEEE cvt to int: hf to uh",
     VdV.uh[i] = float16_to_uint16_scalbn(VuV.hf[i], float_round_nearest_even, 0, &env->hvx_fp_status))
