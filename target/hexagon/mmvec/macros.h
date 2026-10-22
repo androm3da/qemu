@@ -487,6 +487,9 @@
                          (B).parts.sign ^ \
                          ((A).parts.sign && (B).parts.sign); \
             FloatParts64 pr = parts64_mul(&pa, &pb, &status); \
+            if (pr.cls == float_class_zero) { \
+                rexp = E_MIN_EXTQF##SIZE; \
+            } \
             uint64_t result = qfloat_round_ext_parts(SIZE, pr, rexp, \
                                                       defer, \
                                                       CVI_QFRND_MODE); \

@@ -61,7 +61,7 @@ static void test_qf16(void)
     expect_h(0, 0x4200);
     expect_h(1, 0x3c00);
     expect_h(2, 0x4000);
-    expect_h(3, 0xc002);
+    expect_h(3, 0xc000);
     check_output_h(__LINE__, 4);
 }
 
@@ -108,11 +108,93 @@ static void test_qf32_bf_conversion(void)
     check_output_h(__LINE__, 1);
 }
 
+enum { QOP_ADD, QOP_SUB, QOP_MPY };
+
+static HVX_Vector qf16_op(int op, HVX_Vector a, HVX_Vector b)
+{
+    switch (op) {
+    case QOP_ADD:
+        return Q6_Vhf_equals_Vqf16(Q6_Vqf16_vadd_VhfVhf(a, b));
+    case QOP_SUB:
+        return Q6_Vhf_equals_Vqf16(Q6_Vqf16_vsub_VhfVhf(a, b));
+    default:
+        return Q6_Vhf_equals_Vqf16(Q6_Vqf16_vmpy_VhfVhf(a, b));
+    }
+}
+
+static HVX_Vector qf32_op(int op, HVX_Vector a, HVX_Vector b)
+{
+    switch (op) {
+    case QOP_ADD:
+        return Q6_Vsf_equals_Vqf32(Q6_Vqf32_vadd_VsfVsf(a, b));
+    case QOP_SUB:
+        return Q6_Vsf_equals_Vqf32(Q6_Vqf32_vsub_VsfVsf(a, b));
+    default:
+        return Q6_Vsf_equals_Vqf32(Q6_Vqf32_vmpy_VsfVsf(a, b));
+    }
+}
+
+/*
+ * Zero results and negative results, the former with the sign that a
+ * negative operand gives them, and the latter with the fraction bits that
+ * a negative number carries.  Reference values are from hexagon-sim.
+ */
+static void test_qf_zero_negative(void)
+{
+    static const struct {
+        int op;
+        uint16_t a, b, result;
+    } hf_cases[] = {
+        { QOP_ADD, 0x3c00, 0xbc00, 0x0000 },
+        { QOP_ADD, 0x0000, 0x0000, 0x0000 },
+        { QOP_ADD, 0x8000, 0x8000, 0x8000 },
+        { QOP_SUB, 0x3c00, 0x3c00, 0x0000 },
+        { QOP_SUB, 0x8000, 0x0000, 0x8000 },
+        { QOP_MPY, 0x0000, 0x3c00, 0x0000 },
+        { QOP_MPY, 0x8000, 0x3c00, 0x8000 },
+        { QOP_MPY, 0x0000, 0xbc00, 0x8000 },
+        { QOP_MPY, 0x8000, 0xbc00, 0x0000 },
+        { QOP_MPY, 0xbc00, 0x3c00, 0xbc00 },
+        { QOP_MPY, 0xbd00, 0x3c00, 0xbd00 },
+        { QOP_MPY, 0xbc01, 0x3c03, 0xbc04 },
+        { QOP_ADD, 0xbc01, 0xbc03, 0xc002 },
+    };
+    static const struct {
+        int op;
+        uint32_t a, b, result;
+    } sf_cases[] = {
+        { QOP_ADD, 0x3f800000, 0xbf800000, 0x00000000 },
+        { QOP_ADD, 0x80000000, 0x80000000, 0x80000000 },
+        { QOP_MPY, 0x80000000, 0x3f800000, 0x80000000 },
+        { QOP_MPY, 0xbf800000, 0x3f800000, 0xbf800000 },
+    };
+
+    for (int i = 0; i < ARRAY_SIZE(hf_cases); i++) {
+        HVX_Vector result = qf16_op(hf_cases[i].op,
+                                    Q6_Vh_vsplat_R(hf_cases[i].a),
+                                    Q6_Vh_vsplat_R(hf_cases[i].b));
+
+        memcpy(output, &result, sizeof(result));
+        expect_h(0, hf_cases[i].result);
+        check_output_h(__LINE__, 1);
+    }
+    for (int i = 0; i < ARRAY_SIZE(sf_cases); i++) {
+        HVX_Vector result = qf32_op(sf_cases[i].op,
+                                    Q6_V_vsplat_R(sf_cases[i].a),
+                                    Q6_V_vsplat_R(sf_cases[i].b));
+
+        memcpy(output, &result, sizeof(result));
+        expect_w(0, sf_cases[i].result);
+        check_output_w(__LINE__, 1);
+    }
+}
+
 int main()
 {
     test_qf16();
     test_qf32();
     test_qf32_bf_conversion();
+    test_qf_zero_negative();
 
     puts(err ? "FAIL" : "PASS");
     return err ? 1 : 0;

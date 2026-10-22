@@ -139,6 +139,24 @@ static FloatParts64 qfloat_unpack_ext_parts(unsigned size, uint32_t value,
     };
 }
 
+/*
+ * A zero with the R bit set is a negative zero as far as conversions to
+ * IEEE formats are concerned.
+ */
+static FloatParts64 qfloat_unpack_conv_parts(unsigned size, uint32_t value,
+                                             uint8_t ext)
+{
+    FloatParts64 parts = qfloat_unpack_ext_parts(size, value, ext);
+
+    if (parts.cls == float_class_zero) {
+        LREQ_t lreq = size == 32 ? ext & EXT32_BITMASK :
+                                   (ext & EXT16_BITMASK) << 2;
+
+        parts.sign = lreq & LREQ_R;
+    }
+    return parts;
+}
+
 FloatParts64 qfloat_unfloat_parts(unfloat u)
 {
     FloatParts64 parts = u.parts;
@@ -234,14 +252,14 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
     uint64_t quarters, rq1, even;
     int64_t sig;
     LREQ_t lreq = 0;
+    bool zero = parts.cls == float_class_zero;
+    bool complement, negate;
 
-    if (parts.cls == float_class_zero) {
-        exp = emin + bias;
-        if (size == 32) {
-            return (uint64_t)(exp & 0xff) << 4 |
-                   (((exp >> 8) & 1) << 1) | 7;
-        }
-        return (uint64_t)(exp & 0x1f) << 2 | 3;
+    if (zero) {
+        /* A zero keeps its exponent, and has no bits to round */
+        exp = MAX(exp, emin);
+        parts.exp = exp;
+        parts.frac = 0;
     }
     if (parts.exp - exp >= 1) {
         exp++;
@@ -302,11 +320,18 @@ uint64_t qfloat_round_ext_parts(unsigned size, FloatParts64 parts, int exp,
     lreq |= ((rq1 >> 2) & 1) ? LREQ_R : 0;
     lreq |= ((rq1 >> 1) & 1) ? LREQ_Q : 0;
 
-    if (parts.sign) {
+    /*
+     * A negative number holds the complement of its significand, and the
+     * LREQ bits are complemented along with it.  Deferred negation is the
+     * same operation, not an additional one: when both apply the result is
+     * still negated only once.  A zero is only negative if it was deferred.
+     */
+    complement = zero ? deferred_sign : parts.sign;
+    negate = zero ? deferred_sign : parts.sign || deferred_sign;
+    if (complement) {
         sig = ~sig;
-        lreq = negate_lreq(lreq);
     }
-    if (deferred_sign) {
+    if (negate) {
         lreq = negate_lreq(lreq);
     }
 
@@ -488,7 +513,7 @@ int32_t conv_sf_extqf32(uint32_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
                ieee_pos_inf_32 | 0x80000000 : ieee_pos_inf_32;
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
-    parts = qfloat_unpack_ext_parts(32, a, a_ext);
+    parts = qfloat_unpack_conv_parts(32, a, a_ext);
     qfloat_apply_inexact(&parts, a_ext);
     return float32_val(float32_round_pack_canonical(&parts, &status));
 }
@@ -510,7 +535,7 @@ int16_t conv_hf_extqf32(uint32_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
                          ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16);
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
-    parts = qfloat_unpack_ext_parts(32, a, a_ext);
+    parts = qfloat_unpack_conv_parts(32, a, a_ext);
     qfloat_apply_inexact(&parts, a_ext);
     return float16_val(float16_round_pack_canonical(&parts, &status));
 }
@@ -530,7 +555,7 @@ int16_t conv_hf_extqf16(uint16_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
                          ieee_pos_inf_16 | 0x8000 : ieee_pos_inf_16);
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
-    parts = qfloat_unpack_ext_parts(16, a, a_ext);
+    parts = qfloat_unpack_conv_parts(16, a, a_ext);
     return float16_val(float16_round_pack_canonical(&parts, &status));
 }
 
@@ -550,7 +575,7 @@ uint16_t conv_qf32_to_bf(uint32_t a, uint8_t a_ext, qfrnd_mode_enum_t qfrnd)
                                                 BF_POS_INF;
     }
     set_float_rounding_mode(qfrnd_to_float_round(qfrnd), &status);
-    parts = qfloat_unpack_ext_parts(32, a, a_ext);
+    parts = qfloat_unpack_conv_parts(32, a, a_ext);
     qfloat_apply_inexact(&parts, a_ext);
     return bfloat16_round_pack_canonical(&parts, &status);
 }
