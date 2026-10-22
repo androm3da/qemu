@@ -178,6 +178,13 @@ int qfloat_leading_exp(unfloat u, FloatParts64 parts)
     return parts.exp - (power_of_two && negative_sig);
 }
 
+/*
+ * Q is a sticky bit below the rounding bit, so R != Q means that the number
+ * is not exactly what its significand says.  The number is a little more
+ * than that for a number with R clear, and a little less than that if R is
+ * set because then the number is the negation of the one with the extension
+ * bits.  The rounding of a conversion needs to know which.
+ */
 static void qfloat_apply_inexact(FloatParts64 *parts, uint8_t ext)
 {
     LREQ_t lreq = ext & EXT32_BITMASK;
@@ -186,7 +193,8 @@ static void qfloat_apply_inexact(FloatParts64 *parts, uint8_t ext)
         !!(lreq & LREQ_R) == !!(lreq & LREQ_Q)) {
         return;
     }
-    if (!parts->sign) {
+    if (parts->sign == !!(lreq & LREQ_R)) {
+        /* Away from zero */
         parts->frac |= 1;
     } else if (--parts->frac < (UINT64_C(1) << 63)) {
         parts->frac = parts->frac << 1 | 1;

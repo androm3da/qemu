@@ -273,6 +273,64 @@ static void test_qf_encoding(void)
     }
 }
 
+/*
+ * Convert a qf32 with the given significand, exponent and extension bits
+ * to sf.  The extension bits are the Q, E, R and L bits, in that order from
+ * the least significant.
+ */
+static void qf32_ext_to_sf(uint32_t qf, uint32_t ext, HVX_Vector *result)
+{
+    MMVector bits;
+
+    for (int i = 0; i < MAX_VEC_SIZE_BYTES; i++) {
+        bits.ub[i] = (ext >> (i % 4)) & 1;
+    }
+    asm volatile(
+        "v1 = vmemu(%[bits])\n"
+        "v2 = vsplat(%[qf])\n"
+        "v3.x = vsetqfext(v1, %[mask])\n"
+        "v4 = vmerge(v3.x, v2.w)\n"
+        "v5.sf = v4.qf32\n"
+        "vmemu(%[out]) = v5\n"
+        :
+        : [bits] "r"(&bits), [qf] "r"(qf), [mask] "r"(-1), [out] "r"(result)
+        : "v1", "v2", "v3", "v4", "v5", "memory");
+}
+
+/*
+ * Rounding a qf32 to a subnormal sf.  The inexact bit is R != Q, and the
+ * number is a little less than the one its significand says if R is set and
+ * a little more otherwise, which matters when it's at a tie.
+ */
+static void test_qf32_to_sf_subnormal(void)
+{
+    static const struct {
+        uint32_t qf, ext, sf;
+    } cases[] = {
+        { 0x555556ff, 0x0, 0x002aaaab },
+        { 0x555556ff, 0x1, 0x002aaaab },
+        { 0x555556ff, 0x4, 0x002aaaab },
+        { 0x555556ff, 0xc, 0x002aaaab },
+        { 0x555556ff, 0xd, 0x002aaaac },
+        { 0xaaaaacff, 0x4, 0x802aaaaa },
+        { 0xaaaaacff, 0x8, 0x802aaaaa },
+        { 0xaaaaacff, 0xc, 0x802aaaaa },
+        { 0x008000ff, 0xc, 0x00004000 },
+        { 0x800000ff, 0xc, 0x80400000 },
+        { 0x555557fc, 0xc, 0x00055555 },
+        { 0xaaaaabfd, 0xc, 0x800aaaab },
+    };
+
+    for (int i = 0; i < ARRAY_SIZE(cases); i++) {
+        HVX_Vector result;
+
+        qf32_ext_to_sf(cases[i].qf, cases[i].ext, &result);
+        memcpy(output, &result, sizeof(result));
+        expect_w(0, cases[i].sf);
+        check_output_w(__LINE__, 1);
+    }
+}
+
 int main()
 {
     test_qf16();
@@ -280,6 +338,7 @@ int main()
     test_qf32_bf_conversion();
     test_qf_zero_negative();
     test_qf_encoding();
+    test_qf32_to_sf_subnormal();
 
     puts(err ? "FAIL" : "PASS");
     return err ? 1 : 0;
