@@ -4,6 +4,8 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import unittest
+
 from qemu_test import QemuSystemTest, Asset
 from qemu_test.cmd import wait_for_console_pattern
 
@@ -21,13 +23,13 @@ class ArchTestsUart(QemuSystemTest):
 
     ASSET_TARBALL = Asset(
         "https://github.com/qualcomm/qemu-hexagon-testing/releases/"
-        "download/v0.2.14/arch_tests_uart.tar.gz",
-        "ce93cb90b9d757c1946dfe8fe6abcec8292b08a66546ac51b2dd48650b05fa91",
+        "download/v0.2.21/arch_tests_uart.tar.gz",
+        "d428e511e56731ec7fb87e91ad548d8cfd251be789857d1c4872dcb24b8abc06",
     )
     ASSET_SEMIHOSTING_TARBALL = Asset(
         "https://github.com/qualcomm/qemu-hexagon-testing/releases/"
-        "download/v0.2.9/arch_tests_semihosting.tar.gz",
-        "f0ce731dc8dc2b861792b8bd60808cb714fd1922c0dc793af65090c0ba525bb0",
+        "download/v0.2.21/arch_tests_semihosting.tar.gz",
+        "2f57addeb9b74c6fb7e8788f54dd032b23f4701b531202345ef6202c58b77997",
     )
 
     def run_uart_test(self, test_name: str,
@@ -85,11 +87,21 @@ class ArchTestsUart(QemuSystemTest):
         """
         self.run_uart_test("test_cache")
 
+    @unittest.skip("QEMU does not emulate the DMA engine")
+    def test_dma(self) -> None:
+        """Tests DMA descriptor processing and memory transfers."""
+        self.run_uart_test("test_dma")
+
     def test_l2vic(self) -> None:
         """Tests the L2VIC interrupt controller: enable readback,
         interrupt type readback, VID capture, and the fast interface.
         """
         self.run_uart_test("test_l2vic")
+
+    @unittest.skip("QEMU does not implement page-crossing TLBMISSX")
+    def test_pagecross_tlbmissx(self) -> None:
+        """Tests instruction fetches that cross an MMU page boundary."""
+        self.run_uart_test("test_pagecross_tlbmissx")
 
     def test_sys_regs(self) -> None:
         """Tests system registers."""
