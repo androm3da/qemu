@@ -21,8 +21,8 @@ class SysTestsStandaloneTests(QemuSystemTest):
     SYSTEST_TIMEOUT_SEC = 30
 
     ASSET_TARBALL = Asset(
-        "https://github.com/qualcomm/qemu-hexagon-testing/releases/download/v0.2.14/systests_standalone.tar.gz",
-        "f0c535d746384126954757b6ce54452c5fe82624618c79862495eec24718a6ff",
+        "https://github.com/qualcomm/qemu-hexagon-testing/releases/download/v0.2.21/systests_standalone.tar.gz",
+        "326a6d58e49024c36987a7a865351c7686a7b85873e5c02b6fd6d8455a2eceb7",
     )
 
     def setUp(self):
