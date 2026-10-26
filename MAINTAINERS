@@ -1391,6 +1391,8 @@ F: hw/hexagon/
 F: hw/misc/qcom-qdsp6ss-clk.c
 F: include/hw/hexagon/
 F: include/hw/misc/qcom-qdsp6ss-clk.h
+F: hw/misc/qup-wrapper.c
+F: include/hw/misc/qup-wrapper.h
 F: configs/devices/hexagon-softmmu/default.mak
 F: docs/system/hexagon/
 F: tests/functional/hexagon/
