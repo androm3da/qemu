@@ -54,7 +54,11 @@ impl Write for CharFrontendMut<'_> {
 
         let len = buf.len().try_into().unwrap();
         let r = unsafe { bindings::qemu_chr_fe_write(addr_of_mut!(*chr), buf.as_ptr(), len) };
-        errno::into_io_result(r).map(|cnt| cnt as usize)
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(r as usize)
+        }
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -62,13 +66,13 @@ impl Write for CharFrontendMut<'_> {
 
         let len = buf.len().try_into().unwrap();
         let r = unsafe { bindings::qemu_chr_fe_write_all(addr_of_mut!(*chr), buf.as_ptr(), len) };
-        errno::into_io_result(r).and_then(|cnt| {
-            if cnt as usize == buf.len() {
-                Ok(())
-            } else {
-                Err(ErrorKind::WriteZero.into())
-            }
-        })
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else if r as usize == buf.len() {
+            Ok(())
+        } else {
+            Err(ErrorKind::WriteZero.into())
+        }
     }
 }
 
@@ -193,6 +197,49 @@ impl CharFrontend {
         unsafe { bindings::qemu_chr_fe_accept_input(addr_of_mut!(*chr)) }
     }
 
+    /// Watch for output becoming writable or disconnected.
+    ///
+    /// # Safety
+    /// The caller must keep `opaque` valid until the source is removed, and
+    /// must remove the source before the frontend is destroyed.
+    pub unsafe fn add_write_watch(
+        &self,
+        callback: bindings::FEWatchFunc,
+        opaque: *mut c_void,
+    ) -> u32 {
+        let mut chr = self.inner.borrow_mut();
+        unsafe {
+            bindings::qemu_chr_fe_add_watch(
+                addr_of_mut!(*chr),
+                glib_sys::G_IO_OUT | glib_sys::G_IO_HUP,
+                callback,
+                opaque,
+            )
+        }
+    }
+
+    /// Remove a watch previously returned by `add_write_watch`.
+    pub fn remove_watch(&self, tag: u32) {
+        if tag == 0 {
+            return;
+        }
+        let chr = self.inner.borrow();
+        if chr.chr.is_null() {
+            // The backend is gone, and took its watches with it.
+            return;
+        }
+        // SAFETY: the backend is alive, so its context is too.  The watch
+        // was attached to that context, and the source may already be gone
+        // if the backend closed, which removes its watches.
+        unsafe {
+            let context = (*chr.chr).gcontext;
+            let source = glib_sys::g_main_context_find_source_by_id(context, tag);
+            if !source.is_null() {
+                glib_sys::g_source_destroy(source);
+            }
+        }
+    }
+
     /// Temporarily borrow the character device, allowing it to be used
     /// as an implementor of `Write`.  Note that it is not valid to drop
     /// the big QEMU lock while the character device is borrowed, as
@@ -229,7 +276,11 @@ impl CharFrontend {
         let len = buf.len().try_into().unwrap();
         // SAFETY: qemu_chr_fe_write is thread-safe
         let r = unsafe { bindings::qemu_chr_fe_write(self.inner.as_ptr(), buf.as_ptr(), len) };
-        errno::into_io_result(r).map(|cnt| cnt as usize)
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(r as usize)
+        }
     }
 
     /// Write data to a character backend from the front end.  This function
@@ -243,13 +294,13 @@ impl CharFrontend {
         let len = buf.len().try_into().unwrap();
         // SAFETY: qemu_chr_fe_write_all is thread-safe
         let r = unsafe { bindings::qemu_chr_fe_write_all(self.inner.as_ptr(), buf.as_ptr(), len) };
-        errno::into_io_result(r).and_then(|cnt| {
-            if cnt as usize == buf.len() {
-                Ok(())
-            } else {
-                Err(ErrorKind::WriteZero.into())
-            }
-        })
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else if r as usize == buf.len() {
+            Ok(())
+        } else {
+            Err(ErrorKind::WriteZero.into())
+        }
     }
 }
 
