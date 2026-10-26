@@ -281,6 +281,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "qup_geni_uart"
+version = "0.1.0"
+dependencies = [
+ "bql",
+ "chardev",
+ "common",
+ "hwcore",
+ "migration",
+ "qemu_macros",
+ "qom",
+ "system",
+ "util",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
