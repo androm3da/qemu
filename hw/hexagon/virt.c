@@ -6,20 +6,29 @@
  */
 
 #include "qemu/osdep.h"
+#include CONFIG_DEVICES
 #include "qapi/error.h"
 #include "hw/hexagon/virt.h"
 #include "hw/hexagon/hexagon.h"
 #include "hw/hexagon/hex-board.h"
 #include "hw/hexagon/hex-subsys.h"
+#include "hw/char/qup_geni_uart.h"
+#include "hw/misc/qup-wrapper.h"
 #include "hw/core/loader.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
 #include "qemu/target-info.h"
 #include "qemu/units.h"
+#include "system/address-spaces.h"
+#include "system/memory.h"
+#include "system/system.h"
 #include "machine_cfg_v68n_1024.h.inc"
 #include "system/device_tree.h"
 
 enum {
     VIRT_UART0,
+    VIRT_QUP_UART0,
+    VIRT_QUP_WRAPPER0,
     VIRT_MMIO,
     VIRT_FDT,
 };
@@ -30,9 +39,13 @@ enum {
  */
 static const int VIRTIO_IRQ_BASE = 16;
 static const int VIRT_UART0_IRQ = 15;
+/* After the last virtio IRQ */
+static const int VIRT_QUP_UART0_IRQ = 24;
 
 static const MemMapEntry base_memmap[] = {
     [VIRT_UART0] = { 0x10000000, 0x00000200 },
+    [VIRT_QUP_UART0] = { 0x10004000, QUP_GENI_UART_MMIO_SIZE },
+    [VIRT_QUP_WRAPPER0] = { 0x1000a000, QUP_WRAPPER_MMIO_SIZE },
     [VIRT_MMIO] = { 0x11000000, 0x00001000 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
 };
@@ -58,6 +71,75 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
 
     return bios_addr;  /* Return entry point at address 0x0 */
 }
+
+#ifdef CONFIG_X_QUP_GENI_UART_RUST
+static void fdt_add_qup_uart(MachineState *ms, int32_t l2vic_phandle)
+{
+    HexagonCommonMachineState *hms = HEXAGON_COMMON_MACHINE(ms);
+    int32_t clk_phandle = qemu_fdt_get_phandle(ms->fdt, "/apb-pclk");
+    hwaddr wrapper_base = base_memmap[VIRT_QUP_WRAPPER0].base;
+    hwaddr wrapper_size = base_memmap[VIRT_QUP_WRAPPER0].size;
+    hwaddr base = base_memmap[VIRT_QUP_UART0].base;
+    hwaddr size = base_memmap[VIRT_QUP_UART0].size;
+    g_autofree char *wrappername = NULL;
+    g_autofree char *nodename = NULL;
+    DeviceState *wrapper_dev;
+    DeviceState *uart_dev;
+
+    /*
+     * The QUP wrapper is the DT parent of the individual GENI serial
+     * engines.  The Linux qcom_geni_se driver probes the wrapper and the
+     * child drivers fetch it back via dev_get_drvdata(pdev->dev.parent);
+     * without it geni_se_get_qup_hw_version() dereferences NULL.
+     */
+    wrapper_dev = qdev_new(TYPE_QUP_WRAPPER);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(wrapper_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(wrapper_dev), 0, wrapper_base);
+
+    wrappername = g_strdup_printf("/soc/geni-se-qup@%" PRIx64, wrapper_base);
+    qemu_fdt_add_subnode(ms->fdt, wrappername);
+    /*
+     * Not "qcom,geni-se-qup": that variant makes the wrapper driver fetch
+     * the m-ahb/s-ahb bus clocks, which this machine doesn't model.  The
+     * sa8255p one leaves clocks to the serial engine's own "se" clock.
+     */
+    qemu_fdt_setprop_string(ms->fdt, wrappername, "compatible",
+                            "qcom,sa8255p-geni-se-qup");
+    qemu_fdt_setprop_cells(ms->fdt, wrappername, "reg", 0, wrapper_base,
+                           wrapper_size);
+    qemu_fdt_setprop_cell(ms->fdt, wrappername, "#address-cells", 2);
+    qemu_fdt_setprop_cell(ms->fdt, wrappername, "#size-cells", 2);
+    qemu_fdt_setprop(ms->fdt, wrappername, "ranges", NULL, 0);
+
+    uart_dev = qdev_new(TYPE_QUP_GENI_UART);
+    if (serial_hd(1)) {
+        qdev_prop_set_chr(uart_dev, "chardev", serial_hd(1));
+    }
+    object_property_set_link(OBJECT(uart_dev), "memory",
+                             OBJECT(get_system_memory()), &error_abort);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(uart_dev), &error_fatal);
+    /* The Rust device model owns its region size; keep the memmap in step */
+    g_assert(memory_region_size(sysbus_mmio_get_region(SYS_BUS_DEVICE(uart_dev),
+                                                       0)) == size);
+    sysbus_mmio_map(SYS_BUS_DEVICE(uart_dev), 0, base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(uart_dev), 0,
+                       qdev_get_gpio_in(hms->l2vic, VIRT_QUP_UART0_IRQ));
+
+    nodename = g_strdup_printf("%s/serial@%" PRIx64, wrappername, base);
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "compatible",
+                            "qcom,geni-uart");
+    qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 2, size);
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
+                           HEX_BOARD_L2VIC_SPI_BASE + VIRT_QUP_UART0_IRQ, 0);
+    qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
+                          l2vic_phandle);
+    qemu_fdt_setprop_cell(ms->fdt, nodename, "clocks", clk_phandle);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "clock-names", "se");
+
+    qemu_fdt_setprop_string(ms->fdt, "/aliases", "serial1", nodename);
+}
+#endif
 
 static void virt_init(MachineState *ms)
 {
@@ -93,6 +175,9 @@ static void virt_init(MachineState *ms)
     hex_board_create_uart(ms, base_memmap[VIRT_UART0].base,
                           base_memmap[VIRT_UART0].size, VIRT_UART0_IRQ,
                           l2vic_phandle);
+#ifdef CONFIG_X_QUP_GENI_UART_RUST
+    fdt_add_qup_uart(ms, l2vic_phandle);
+#endif
 
     hex_board_load_fdt(ms, vms->fdt_size, base_memmap[VIRT_FDT].base);
 }
