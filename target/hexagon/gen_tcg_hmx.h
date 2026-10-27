@@ -20,13 +20,15 @@
 #define HMX_STATE_PTR_OFS offsetof(CPUHexagonState, hmx_state)
 
 /*
- * M8_mxclracc - clear both FXP accumulator sets.
+ * M8_mxclracc / M8_mxclracc_hf - clear both accumulator sets.
  */
 #define fGEN_TCG_M8_mxclracc(SHORTCODE) \
     gen_helper_hmx_clracc(tcg_env)
+#define fGEN_TCG_M8_mxclracc_hf(SHORTCODE) \
+    gen_helper_hmx_clracc_hf(tcg_env)
 
 /*
- * M8_mxswap - toggle the current accumulator set index
+ * M8_mxswap / M8_mxswap_hf - toggle the current accumulator set index
  * (0 <-> 1). No memory access or arithmetic, so this is plain inline
  * TCG rather than a helper call.
  */
@@ -41,6 +43,7 @@
         tcg_gen_st_i32(acc_set, hmx_ptr, \
                        offsetof(HmxState, current_acc_set)); \
     } while (0)
+#define fGEN_TCG_M8_mxswap_hf(SHORTCODE) fGEN_TCG_M8_mxswap(SHORTCODE)
 
 /*
  * M8_mxaccshl - shift both FXP accumulator sets left by 16.
@@ -95,7 +98,7 @@
                                       0, 0)))
 
 /*
- * M8_mxmem*_act_ub - activation load, all modifiers.
+ * M8_mxmem*_act_{ub,hf} - activation load, all formats/modifiers.
  * HELPER(hmx_act_load) already handles every type/format/modifier
  * combination, so these are all straightforward.
  */
@@ -114,6 +117,26 @@
 #define fGEN_TCG_M8_mxmemd_blk_sm_act_ub(SHORTCODE) \
     gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_UB, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_D)))
+#define fGEN_TCG_M8_mxmem_blk_sm_act_hf(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK)))
+#define fGEN_TCG_M8_mxmem_sm_act_hf(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_NOBLK)))
+#define fGEN_TCG_M8_mxmemu_blk_sm_act_hf(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_U)))
+#define fGEN_TCG_M8_mxmems_blk_sm_act_hf(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_S)))
+#define fGEN_TCG_M8_mxmemd_blk_sm_act_hf(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
                                       HMX_ACT_BLK_D)))
 #define fGEN_TCG_M8_mxmem_blk_dm_act_ub(SHORTCODE) \
     gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
@@ -483,5 +506,28 @@
 #define fGEN_TCG_M8_mxmem_2x2(SHORTCODE) \
     gen_helper_hmx_cvt_store(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_2X2, HMX_CVTST_AGE0)))
+
+/*
+ * M8_mxmem[s,dr,dp,a,di]_wei_hf - FP weight load + FP matrix
+ * multiply, every modifier.
+ */
+#define fGEN_TCG_M8_mxmem_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmems_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmemdr_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdp_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmema_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmemdi_wei_hf(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_DI)))
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */

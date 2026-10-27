@@ -11,12 +11,15 @@
 #include "qemu/host-utils.h"
 #include "qemu/int128.h"
 #include "cpu.h"
+#include "macros.h"
 #include "exec/helper-proto.h"
 #include "accel/tcg/cpu-ldst.h"
 #include "accel/tcg/cpu-loop.h"
 #include "accel/tcg/probe.h"
 #include "exec/target_page.h"
 #include "exec/tlb-flags.h"
+#include "fpu/softfloat.h"
+#include "fpu/softfloat-parts.h"
 #include "hmx_state.h"
 
 static inline const HmxConfig *hmx_cfg_from_env(CPUHexagonState *env)
@@ -180,6 +183,12 @@ static inline bool hmx_take_mac_cycle(HmxState *hmx)
 }
 
 /*
+ * Forward declaration: defined below, alongside the deferred-convert
+ * flush helpers, but needed by the FP matmul path further up in the file.
+ */
+static void hmx_flush_acc_clear(CPUHexagonState *env, HmxState *hmx);
+
+/*
  * M8_mxclracc - clear both FXP accumulator sets.
  */
 void HELPER(hmx_clracc)(CPUHexagonState *env)
@@ -188,6 +197,19 @@ void HELPER(hmx_clracc)(CPUHexagonState *env)
 
     memset(&hmx->acc[0].fxp_primary, 0, sizeof(HmxAccFxp));
     memset(&hmx->acc[1].fxp_primary, 0, sizeof(HmxAccFxp));
+}
+
+/*
+ * M8_mxclracc_hf - clear both FP accumulator sets.  The accumulators are
+ * IEEE doubles, whose zero is all-zero bits.
+ */
+void HELPER(hmx_clracc_hf)(CPUHexagonState *env)
+{
+    HmxState *hmx = env->hmx_state;
+
+    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
+    memset(&hmx->acc[0].fp_primary, 0, sizeof(HmxAccFp));
+    memset(&hmx->acc[1].fp_primary, 0, sizeof(HmxAccFp));
 }
 
 /*
@@ -1081,6 +1103,364 @@ void HELPER(hmx_matmul_fxp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
     }
 mac_budget_exhausted:
     return;
+}
+
+/*
+ * HMX's pre-v81 FP path uses QEMU SoftFloat binary64 for its intermediate
+ * arithmetic.  This keeps it independent of host floating-point behavior.
+ */
+static inline float_status hmx_softfloat_status(void)
+{
+    float_status status = { };
+
+    set_float_rounding_mode(float_round_nearest_even, &status);
+    return status;
+}
+
+/*
+ * Extract one weight column set for the SoftFloat FP path: HF (FP16 or
+ * BF16, 2 weights per 32-bit word). F8 weights are v81-only, so they
+ * never reach this path.
+ */
+static void hmx_fp_extract_weights_softfloat(
+    const uint32_t *wei_words, int sub_idx,
+    int wei_negate, int is_bf16, float64 *wei_dbl, float_status *status)
+{
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        uint16_t f16 = (wei_words[o] >> (sub_idx * 16)) & 0xFFFF;
+
+        if (wei_negate) {
+            f16 ^= 0x8000;
+        }
+        if (is_bf16) {
+            wei_dbl[o] = bfloat16_to_float64(f16, status);
+        } else {
+            wei_dbl[o] = float16_to_float64(make_float16(f16), true, status);
+        }
+    }
+}
+
+/*
+ * FP spatial MAC, SoftFloat-accumulator path. Same tap/spatial-mask
+ * addressing as hmx_fxp_spatial_mac(), but FP16 activations pack 2
+ * bytes per spatial slot (half the density of FXP's 1 byte/slot), so
+ * only even raw spatial positions map to a valid fp_spatial cell.
+ *
+ * chan_insert_zero/parallel_group_size/group_idx implement HMX's
+ * rate-8 grouped-convolution column gating: not exercised by anything
+ * tested so far (every test uses group_count=1), but implemented in
+ * full rather than only handling the ungrouped case.
+ */
+static void hmx_fp_spatial_mac_softfloat(
+    const HmxConfig *hmx_cfg, HmxState *hmx, const float64 *wei_f64,
+    const uint8_t *act_fp,
+    int y_count, int x_count,
+    const int *intra_y_array, const int *intra_x_array,
+    int y_tap, int x_tap,
+    int32_t tile_x_mask, int32_t tile_y_mask,
+    int ch_addr, int drop, int deep,
+    int current_acc, int format_mask,
+    int group_idx, int group_size, int out_start, int out_end,
+    int input_channel_raw, float_status *status)
+{
+    /* QDSP6_MX_FP_RATE: fixed at 8 for v75/v79/v81. */
+    const int rate = 8;
+    int parallel_group_size = hmx_cfg->mx_fp_cols / hmx_cfg->mx_parallel_grps;
+
+    int chan_insert_zero =
+        (rate == 8) && (group_size <= 4) &&
+        ((input_channel_raw / group_size) != group_idx);
+
+    for (int iy = 0; iy < y_count; iy++) {
+        int intra_y = intra_y_array[iy];
+        int32_t y_ovf = 0;
+        int32_t act_y = hmx_inc_with_spatial_mask_ovf(
+            y_tap, intra_y, tile_y_mask, &y_ovf);
+        act_y = (act_y & 0x7FFFFFFF) + y_ovf * 0x800;
+
+        for (int ix = 0; ix < x_count; ix++) {
+            int intra_x = intra_x_array[ix];
+            int32_t x_ovf = 0;
+            int32_t output_idx = hmx_inc_with_spatial_mask_ovf(
+                x_tap, intra_x, tile_x_mask, &x_ovf);
+            int acc_sel = x_ovf
+                ? (current_acc ^ 1) & 1
+                : current_acc & 1;
+
+            output_idx |= intra_y;
+
+            int spatial = ((output_idx >> 5) & ~format_mask)
+                        | (output_idx & format_mask);
+
+            if (x_ovf && (drop || deep)) {
+                continue;
+            }
+
+            if (spatial & 1) {
+                continue;
+            }
+            int fp_spatial = spatial >> 1;
+            if (fp_spatial < 0 || fp_spatial >= HMX_SPATIAL_DIM_FP) {
+                continue;
+            }
+
+            int32_t act_idx = (act_y + intra_x + ch_addr) & 0xFFF;
+            uint16_t act = lduw_le_p(&act_fp[act_idx & ~1]);
+            float64 d_act = hmx->is_bf16
+                ? bfloat16_to_float64(act, status)
+                : float16_to_float64(make_float16(act), true, status);
+
+            HmxAccFp *acc = &hmx->acc[acc_sel].fp_primary;
+
+            for (int o = out_start; o < out_end; o++) {
+                int mod_col = o & (parallel_group_size - 1);
+                float64 w = wei_f64[o];
+                if (chan_insert_zero) {
+                    w = float64_zero;
+                }
+                if (parallel_group_size > 8) {
+                    if (group_size <= 8 &&
+                        mod_col / group_size !=
+                            group_idx % (parallel_group_size / group_size)) {
+                        w = float64_zero;
+                    }
+                } else {
+                    if (group_size <= 4 &&
+                        mod_col / group_size !=
+                            group_idx % (parallel_group_size / group_size)) {
+                        w = float64_zero;
+                    }
+                }
+
+                float64 d_prod = float64_mul(d_act, w, status);
+                float64 prev = make_float64(acc->data[fp_spatial][o]);
+
+                acc->data[fp_spatial][o] = float64_val(
+                    float64_add(prev, d_prod, status));
+            }
+        }
+    }
+}
+
+/*
+ * M8_mxmem_wei_hf - FP weight load + matrix multiply against the
+ * activation latched by the preceding act-load instruction, SoftFloat-
+ * accumulator path (used by the revisions that have no XFP, see
+ * hmx_config.c's hmx_fp_uses_xfp).
+ *
+ * Unlike the FXP path, weight-vector validity is a plain Rt-derived
+ * bound (no decompression-buffer clamp as in hmx_fxp_max_valid_vec()).
+ * The MAC cycle budget still applies, one cycle per rate-8 channel batch.
+ */
+static void hmx_matmul_fp_softfloat(CPUHexagonState *env, uint32_t rs,
+                                    uint32_t rt, uint32_t params)
+{
+    HmxState *hmx = env->hmx_state;
+    float_status status = hmx_softfloat_status();
+
+    hmx_flush_acc_clear(env, hmx);
+
+    int wei_mod = HMX_UNPACK_MOD(params);
+    int current_acc = hmx->current_acc_set;
+    uintptr_t ra = GETPC();
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
+    g_assert(HMX_UNPACK_WEI_TYPE(params) == HMX_WEI_HF);
+
+    /* Weight negate: Rs[5] flips sign of all weights. */
+    int wei_negate = (rs >> 5) & 1;
+    /* FXP and FP use the same mx_cols-sized VTCM weight mapping. */
+    uint32_t wei_base = rs & ~(hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES - 1);
+    int max_valid_vec = rt / (hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES);
+
+    /* The deep modifier accumulates into the other set as well. */
+    HmxUndo undo;
+    hmx_undo_begin(&undo, hmx, &hmx->acc[current_acc].fp_primary.data,
+                   wei_mod == HMX_MOD_DP
+                       ? &hmx->acc[current_acc ^ 1].fp_primary.data : NULL,
+                   sizeof(hmx->acc[0].fp_primary.data));
+
+    /* Rs[6] selects BF16 for HF matmul on supported CPUs. */
+    hmx->is_bf16 = ((rs >> HMX_MATMUL_RS_BF16_BIT) & 1)
+                && (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
+
+    HmxTaps taps;
+
+    hmx_compute_taps(hmx, wei_mod, &taps);
+    int format_offset = taps.format_offset;
+
+    int ch_start = hmx->ch_start;
+    int ch_stop = hmx->ch_stop;
+
+    /*
+     * FP activations are loaded into act_buffer in raw crouton layout,
+     * as little-endian 16-bit values at byte offset act_idx & ~1.
+     */
+    const uint8_t *act_fp = hmx->act_buffer;
+
+    int wgt_stream_idx = 0;
+    /* HF: 2 input channels per 128B vector. */
+    const int cpv = 2;
+    uint32_t wei_words[HMX_OUTPUT_CHANNELS];
+    int prev_vec_idx = -1;
+
+    int num_deep_blk = taps.deep ? 2 : 1;
+    int num_croutons = hmx->blocks;
+    uint32_t act_base = hmx->act_rs & 0xFFFFF800;
+
+    /*
+     * QDSP6_MX_FP_RATE is fixed at 8 for v75/v79/v81. A grouped FP
+     * matmul instruction's weight vector still spans all mx_fp_cols
+     * output columns in VTCM, so every group_idx below reads from the
+     * same wei_base/vec_idx sequence; hmx_fp_spatial_mac_softfloat()'s
+     * column gating is what makes each group only keep its own
+     * contribution.
+     */
+    const int rate = 8;
+    int group_count = hmx->group_count;
+    int group_size = hmx->group_size;
+    int parallel_group_size = hmx_cfg->mx_fp_cols / hmx_cfg->mx_parallel_grps;
+    int input_ch_stride = 1 << format_offset;
+    int input_channels = (hmx_cfg->mx_fp_cols << format_offset) / group_count;
+    int input_ch_fp_rate_stride = rate * input_ch_stride;
+
+    for (int crouton_idx = 0; crouton_idx < num_croutons; crouton_idx++) {
+        if (num_croutons > 1) {
+            hmx_reload_act_crouton(env, hmx, act_base, crouton_idx,
+                                   hmx->act_type, &undo, ra);
+        }
+
+        int crouton_ch_start, crouton_ch_stop;
+        hmx_crouton_ch_range(crouton_idx, num_croutons, ch_start, ch_stop,
+                             &crouton_ch_start, &crouton_ch_stop);
+
+        int input_ch_start = crouton_ch_start << format_offset;
+        int input_ch_end = crouton_ch_stop << format_offset;
+        if (num_croutons > 1 && crouton_idx != num_croutons - 1) {
+            input_ch_end = input_channels;
+        }
+
+        int align_mask = 0xfff8 << format_offset;
+        input_ch_start &= align_mask;
+        input_ch_end = (input_ch_end & 0x1f)
+            ? ((input_ch_end + 32) & align_mask)
+            : (input_ch_end & align_mask);
+
+        for (int ytd = 0; ytd < taps.y_tap_count; ytd++) {
+            int y_tap = taps.y_tap_array[ytd];
+
+            for (int deep_blk = 0; deep_blk < num_deep_blk; deep_blk++) {
+                for (int xtd = 0; xtd < taps.x_tap_count; xtd++) {
+                    int x_tap = taps.x_tap_array[xtd];
+
+                    for (int input_ch_idx = input_ch_start;
+                         input_ch_idx < input_ch_end;
+                         input_ch_idx += input_ch_fp_rate_stride) {
+                        /* One MAC cycle per rate-8 channel batch. */
+                        if (!hmx_take_mac_cycle(hmx)) {
+                            goto mac_budget_exhausted;
+                        }
+
+                        int saved_wgt_stream_idx = wgt_stream_idx;
+
+                        for (int group_idx = 0; group_idx < group_count;
+                             group_idx++) {
+                            wgt_stream_idx = saved_wgt_stream_idx;
+
+                            int input_ch_start_group = input_ch_idx +
+                                (group_idx << format_offset) * group_size;
+                            int input_ch_stop_group;
+                            if (group_size > 4) {
+                                input_ch_stop_group = input_ch_start_group +
+                                    rate * input_ch_stride;
+                            } else {
+                                input_ch_stop_group =
+                                    (group_idx << format_offset) * group_size +
+                                    MIN(group_size << format_offset,
+                                        input_ch_end);
+                            }
+
+                            int out_start = group_idx * group_size;
+                            int out_end = out_start + group_size;
+                            if (group_size <= parallel_group_size / 2) {
+                                out_start =
+                                    (group_idx /
+                                     (parallel_group_size / group_size)) *
+                                    parallel_group_size;
+                                out_end = out_start + parallel_group_size;
+                            }
+                            out_start = MAX(out_start, 0);
+                            out_end = MIN(out_end, (int)hmx_cfg->mx_fp_cols);
+
+                            for (int input_ch_idx2 = input_ch_start_group;
+                                 input_ch_idx2 < input_ch_stop_group;
+                                 input_ch_idx2 += input_ch_stride) {
+                                int input_channel_raw =
+                                    input_ch_idx2 >> format_offset;
+                                int vec_idx = wgt_stream_idx / cpv;
+
+                                if (vec_idx > max_valid_vec) {
+                                    goto fp_wgt_advance;
+                                }
+
+                                int ch_addr = input_ch_idx2;
+
+                                if (vec_idx != prev_vec_idx) {
+                                    hmx_preload_weight_vec(
+                                        hmx_cfg, env, wei_base, vec_idx,
+                                        wei_words, &undo, ra);
+                                    prev_vec_idx = vec_idx;
+                                }
+
+                                float64 wei_f64[HMX_OUTPUT_CHANNELS];
+                                int sub_idx = wgt_stream_idx % cpv;
+                                hmx_fp_extract_weights_softfloat(
+                                    wei_words, sub_idx, wei_negate,
+                                    hmx->is_bf16, wei_f64, &status);
+
+                                hmx_fp_spatial_mac_softfloat(
+                                    hmx_cfg, hmx, wei_f64, act_fp,
+                                    taps.y_count, taps.x_count,
+                                    taps.intra_y_array, taps.intra_x_array,
+                                    y_tap, x_tap,
+                                    taps.tile_x_mask, taps.tile_y_mask,
+                                    ch_addr, taps.drop, taps.deep,
+                                    current_acc, taps.format_mask,
+                                    group_idx, group_size,
+                                    out_start, out_end,
+                                    input_channel_raw, &status);
+
+fp_wgt_advance:
+                                if (group_size > 4 &&
+                                    (input_channel_raw -
+                                     group_idx * group_size) >=
+                                        (input_ch_end >> format_offset)) {
+                                    /* no increment */
+                                } else {
+                                    wgt_stream_idx++;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (taps.deep) {
+                    current_acc = (current_acc ^ 1) & 1;
+                }
+            }
+        }
+    }
+mac_budget_exhausted:
+    return;
+}
+
+/*
+ * M8_mxmem_wei_hf: FP weight load + matrix multiply (SoftFloat path).
+ */
+void HELPER(hmx_matmul_fp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
+                           uint32_t params)
+{
+    g_assert(HMX_UNPACK_WEI_TYPE(params) == HMX_WEI_HF);
+    hmx_matmul_fp_softfloat(env, rs, rt, params);
 }
 
 /*
