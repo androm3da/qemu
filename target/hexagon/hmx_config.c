@@ -5,6 +5,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "decode.h"
 #include "hmx_config.h"
 #include "hmx_state.h"
 
@@ -55,4 +56,11 @@ void hmx_init_config(HexagonCPU *cpu)
     g_assert(hmx_cfg->mx_cols != 0 && hmx_cfg->mx_cols <= HMX_OUTPUT_CHANNELS);
     g_assert(hmx_cfg->mx_fp_cols != 0 &&
              hmx_cfg->mx_fp_cols <= HMX_OUTPUT_CHANNELS);
+
+    /*
+     * The HMX state is only allocated where HMX is present, so the decoder
+     * must not accept HMX instructions anywhere else.
+     */
+    g_assert(hmx_cfg->hmx_present ==
+             opcode_supported(M8_mxclracc, cpu->cfg.hex_def));
 }
