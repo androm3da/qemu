@@ -39,6 +39,12 @@
 #define HMX_BF16_NEG_MAX_EMAX_MINUS_1 \
     (HMX_BF16_SIGN_MASK | HMX_BF16_MAX_EMAX_MINUS_1)
 #define HMX_BF16_CANONICAL_NAN   UINT16_C(0xffff)
+/*
+ * cvt Rs fb_dst: which bias register the relaxed-precision feedback
+ * replaces.
+ */
+#define HEXAGON_XFP_FB_OUTBIAS   1
+#define HEXAGON_XFP_FB_SCALE     2
 
 #define HMX_ACT_CROUTON_SIZE    2048  /* 2KB crouton */
 /* 4KB: 2 croutons */

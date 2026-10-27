@@ -1118,6 +1118,49 @@ static inline float_status hmx_softfloat_status(void)
 }
 
 /*
+ * Convert an FP16 or BF16 value whose significand is extended by
+ * extra_width low bits (the HMX bias-register and convert-feedback fields)
+ * to SoftFloat binary64.  The extra bits extend the significand, so this
+ * cannot be expressed by first converting a plain float16/bfloat16.  Every
+ * such value is exactly representable in binary64.
+ */
+static float64 hmx_ext_fp_to_float64(uint16_t val, uint32_t extra,
+                                     unsigned int extra_width, bool is_bf16)
+{
+    const unsigned int exp_bits = is_bf16 ? 8 : 5;
+    const unsigned int frac_bits = (is_bf16 ? 7 : 10) + extra_width;
+    const int bias = (1 << (exp_bits - 1)) - 1;
+    uint32_t combined = ((uint32_t)val << extra_width) | extra;
+    bool sign = extract32(combined, exp_bits + frac_bits, 1);
+    uint32_t exp = extract32(combined, frac_bits, exp_bits);
+    uint64_t frac = extract32(combined, 0, frac_bits);
+    float_status status = { };
+    FloatParts64 parts;
+
+    if (exp == MAKE_64BIT_MASK(0, exp_bits)) {
+        return make_float64((uint64_t)sign << 63 |
+                            UINT64_C(0x7ff0000000000000) |
+                            frac << (52 - frac_bits));
+    }
+    if (exp == 0 && frac == 0) {
+        return make_float64((uint64_t)sign << 63);
+    }
+    if (exp != 0) {
+        frac |= UINT64_C(1) << frac_bits;
+    } else {
+        exp = 1;
+    }
+
+    parts = (FloatParts64) {
+        .cls = float_class_normal,
+        .sign = sign,
+        .exp = (int)exp - bias - (int)frac_bits + 63 - clz64(frac),
+        .frac = frac << clz64(frac),
+    };
+    return float64_round_pack_canonical(&parts, &status);
+}
+
+/*
  * Extract one weight column set for the SoftFloat FP path: HF (FP16 or
  * BF16, 2 weights per 32-bit word). F8 weights are v81-only, so they
  * never reach this path.
@@ -1816,8 +1859,9 @@ static void hmx_flush_acc_clear(CPUHexagonState *env, HmxState *hmx)
  * concatenated from two adjacent bias registers rather than UH's
  * single one.
  *
- * The legacy HF forms (M8_mxcvt{l,r}_sat[_pos]_hf[_r]) do not use this
- * helper.
+ * The legacy HF forms (M8_mxcvt{l,r}_sat[_pos]_hf[_r]) are not
+ * implemented; gen_tcg_hmx.h raises an illegal-instruction exception
+ * for them.
  */
 void HELPER(hmx_cvt_transfer)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
                               uint32_t params)
@@ -2028,6 +2072,242 @@ void HELPER(hmx_cvt_transfer)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
             memset(&acc->data[s], 0, sizeof(acc->data[s]));
         }
         hmx->current_acc_set ^= 1;
+    }
+}
+
+
+/*
+ * Fix up an FP16 result whose exponent field is all-ones (Inf or NaN)
+ * per the USR overflow/NaN-propagation mode bits.
+ */
+static uint16_t hmx_fp16_fixup(uint16_t fp16, int inf_prop,
+                                int nan_prop, int maxnorm)
+{
+    uint16_t sign = fp16 & 0x8000;
+    int is_nan = ((fp16 & 0x7C00) == 0x7C00) && (fp16 & 0x03FF);
+
+    if ((fp16 & 0x7C00) != 0x7C00) {
+        return fp16;            /* Finite: no fixup */
+    }
+
+    if (is_nan) {
+        if (!inf_prop) {
+            return 0xFBFF;      /* Mode 0: -max_finite */
+        }
+        if (!maxnorm) {
+            return 0xFFFF;      /* Mode 1: canonical NaN */
+        }
+        if (nan_prop) {
+            return 0xFBFF;      /* Mode 3: -max_finite */
+        }
+        return 0xF7FF;          /* Mode 2: -max(emax-1) */
+    }
+
+    /* Inf (or overflow that became Inf) */
+    if (!inf_prop) {
+        return sign | 0x7BFF;   /* Mode 0: +/-max_finite */
+    }
+    if (!maxnorm) {
+        return fp16;            /* Mode 1: +/-Inf */
+    }
+    return sign | 0x77FF;       /* Mode 2/3: +/-max(emax-1) */
+}
+
+/*
+ * Fix up a BF16 result whose exponent field is all-ones (Inf or NaN)
+ * per the USR overflow/NaN-propagation mode bits -- same structure as
+ * hmx_fp16_fixup(), BF16 encoding widths.
+ */
+static uint16_t hmx_bf16_fixup(uint16_t bf16, int inf_prop,
+                                int nan_prop, int maxnorm)
+{
+    uint16_t sign = bf16 & HMX_BF16_SIGN_MASK;
+    int is_nan = ((bf16 & HMX_BF16_EXP_MASK) == HMX_BF16_EXP_MASK) &&
+        (bf16 & HMX_BF16_FRAC_MASK);
+
+    if ((bf16 & HMX_BF16_EXP_MASK) != HMX_BF16_EXP_MASK) {
+        return bf16;            /* Finite: no fixup */
+    }
+
+    if (is_nan) {
+        if (!inf_prop) {
+            return HMX_BF16_NEG_MAX_FINITE;
+        }
+        if (!maxnorm) {
+            return HMX_BF16_CANONICAL_NAN;
+        }
+        if (nan_prop) {
+            return HMX_BF16_NEG_MAX_FINITE;
+        }
+        return HMX_BF16_NEG_MAX_EMAX_MINUS_1;
+    }
+
+    /* Inf (or overflow that became Inf) */
+    if (!inf_prop) {
+        return sign | HMX_BF16_MAX_FINITE;
+    }
+    if (!maxnorm) {
+        return bf16;            /* Mode 1: +/-Inf */
+    }
+    return sign | HMX_BF16_MAX_EMAX_MINUS_1;
+}
+
+/*
+ * Split a 20-bit FP convert result (fp16 << 4) into the same lo/hi
+ * cvt_future_fxp cells the FXP UH 2x1 convert uses (hmx_cvt_out_lo()/
+ * hmx_cvt_out_hi()): byte at fp_s*2 = FP16 low byte, byte at
+ * fp_s*2+1 = FP16 high byte. This lets the existing, unmodified
+ * HELPER(hmx_cvt_store) serve as the FP convert's store path too --
+ * see hmx_fp_convert_softfloat() below.
+ */
+static inline void hmx_fp_split_to_fxp(HmxState *hmx, int fp_s, int o,
+                                       uint32_t result20)
+{
+    hmx->cvt_future_fxp.data[fp_s * 2][o] = hmx_cvt_out_lo(result20);
+    hmx->cvt_future_fxp.data[fp_s * 2 + 1][o] = hmx_cvt_out_hi(result20);
+}
+
+/*
+ * Recombine the split lo/hi cvt_future_fxp halves a prior convert pass
+ * wrote (hmx_fp_split_to_fxp()) back into one 20-bit value, inverting
+ * hmx_cvt_out_lo()/hmx_cvt_out_hi()'s split.
+ */
+static inline uint32_t hmx_cvt_combine_feedback(uint16_t hi, uint16_t lo)
+{
+    return ((uint32_t)(hi & 0xFF0) << 8) | ((uint32_t)lo & 0xFFF);
+}
+
+/*
+ * Decode a 20-bit convert-feedback value to SoftFloat binary64; same shape
+ * as the scale/out_bias bias-register fields.
+ */
+static float64 hmx_fp_feedback_to_float64(uint32_t fb20, int is_bf16)
+{
+    return hmx_ext_fp_to_float64((uint16_t)(fb20 >> 4), fb20 & 0xF, 4,
+                                 is_bf16);
+}
+
+/*
+ * M8_cvt_rs_hf - FP accumulator convert to FP16 or BF16,
+ * SoftFloat-accumulator path, used when !hmx_cfg->hmx_fp_uses_xfp
+ * (v75/v79). relu is accepted by HELPER(hmx_cvt_rs)'s caller for
+ * parity with the FXP convert dispatch, but -- as on hardware -- it is
+ * not actually consumed by the FP convert math; the bias register's
+ * "shape" field is what gates min/max clamping for FP.
+ *
+ * fb_dst/fb_limit implement the relaxed-precision convert feedback: a
+ * first convert with fb_dst==0 writes its result into cvt_future_fxp as
+ * usual; a later convert (typically the same instruction on the next
+ * hardware-loop iteration) with fb_dst!=0 recombines those split cells
+ * (hmx_cvt_combine_feedback()) and clamps either the scale or the
+ * out_bias field against the recovered value (fb_limit selects
+ * max-clamp vs min-clamp) before applying it. cvt_future_fxp is a
+ * persistent scratch buffer -- hmx_flush_cvt_fxp() only ever copies
+ * out of it, never clears it -- so the first pass's cells are still
+ * there for the second pass to read even though a packet-boundary
+ * HELPER(hmx_commit_packet) flush runs in between on real compiled
+ * code.
+ *
+ * FP16/BF16 output is written into the shared cvt_future_fxp pipeline
+ * via hmx_fp_split_to_fxp(), so HELPER(hmx_cvt_store) needs no changes
+ * to read it back.
+ */
+static void hmx_fp_convert_softfloat(CPUHexagonState *env, HmxState *hmx,
+                                int acc_set, int bias_sel, int maxnorm,
+                                int is_bf16_out, int fb_dst, int fb_limit)
+{
+    int inf_prop = GET_USR_FIELD(USR_FPCOPROC_INFNAN);
+    int nan_prop = GET_USR_FIELD(USR_FPCOPROC_NANPROP);
+    float_status status = hmx_softfloat_status();
+
+    HmxAccFp *acc_fp = &hmx->acc[acc_set & 1].fp_primary;
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
+    for (int o = 0; o < (int)hmx_cfg->mx_fp_cols; o++) {
+        uint64_t raw = hmx->bias_raw[bias_sel][o];
+
+        uint16_t scale_fp16 = raw & 0xFFFF;
+        uint16_t out_bias_fp16 = (raw >> 16) & 0xFFFF;
+        uint32_t scale_extra = (raw >> 32) & 0xF;
+        uint32_t out_bias_extra = (raw >> 36) & 0xF;
+        uint32_t shape = (raw >> 40) & 0x3;
+        uint32_t negate = (raw >> 42) & 0x1;
+        uint32_t acc_bias_extra = (raw >> 43) & 0x1F;
+        uint16_t acc_bias_fp16 = (raw >> 48) & 0xFFFF;
+
+        float64 d_acc_bias = hmx_ext_fp_to_float64(acc_bias_fp16,
+                                                   acc_bias_extra, 5, false);
+        float64 d_scale = hmx_ext_fp_to_float64(scale_fp16, scale_extra, 4,
+                                                false);
+        float64 d_out_bias = hmx_ext_fp_to_float64(out_bias_fp16,
+                                                   out_bias_extra, 4, false);
+
+        for (int s = 0; s < HMX_SPATIAL_DIM_FP; s++) {
+            float64 d_acc = make_float64(acc_fp->data[s][o]);
+            float64 d_biased = float64_add(d_acc, d_acc_bias, &status);
+
+            int abs_negate = shape == 3 &&
+                float64_lt_quiet(d_biased, float64_zero, &status);
+            int scale_neg = negate ^ abs_negate;
+
+            /*
+             * Recombine the 20-bit convert feedback from the split
+             * low/high cells a previous convert pass wrote (see this
+             * function's doc comment above).
+             */
+            float64 d_feedback = float64_zero;
+            if (fb_dst != 0) {
+                uint16_t fb_lo = hmx->cvt_future_fxp.data[s * 2][o];
+                uint16_t fb_hi = hmx->cvt_future_fxp.data[s * 2 + 1][o];
+                d_feedback = hmx_fp_feedback_to_float64(
+                    hmx_cvt_combine_feedback(fb_hi, fb_lo), is_bf16_out);
+            }
+
+            /* Scale, with per-element negate and optional feedback clamp */
+            float64 d_scale_eff = scale_neg ? float64_chs(d_scale) : d_scale;
+            if (fb_dst == HEXAGON_XFP_FB_SCALE) {
+                float64 d_fb = scale_neg ? float64_chs(d_feedback) : d_feedback;
+                d_scale_eff = (fb_limit ^ scale_neg)
+                    ? float64_max(d_scale_eff, d_fb, &status)
+                    : float64_min(d_scale_eff, d_fb, &status);
+            }
+
+            switch (shape) {
+            case 1:
+                d_biased = float64_min(d_biased, float64_zero, &status);
+                break;
+            case 2:
+                d_biased = float64_max(d_biased, float64_zero, &status);
+                break;
+            }
+
+            float64 d_scaled = float64_mul(d_biased, d_scale_eff, &status);
+
+            /* Output bias, with optional feedback clamp */
+            float64 d_out_bias_eff = d_out_bias;
+            if (fb_dst == HEXAGON_XFP_FB_OUTBIAS) {
+                d_out_bias_eff = fb_limit
+                    ? float64_max(d_out_bias, d_feedback, &status)
+                    : float64_min(d_out_bias, d_feedback, &status);
+            }
+
+            float64 d_result = float64_add(d_scaled, d_out_bias_eff, &status);
+
+            if (is_bf16_out) {
+                uint16_t bf16 = float64_to_bfloat16(d_result, &status);
+                if ((bf16 & HMX_BF16_EXP_MASK) == HMX_BF16_EXP_MASK) {
+                    bf16 = hmx_bf16_fixup(bf16, inf_prop, nan_prop, maxnorm);
+                }
+                hmx_fp_split_to_fxp(hmx, s, o, (uint32_t)bf16 << 4);
+            } else {
+                uint16_t fp16 = float16_val(float64_to_float16(d_result, true,
+                                                                &status));
+                if ((fp16 & 0x7C00) == 0x7C00) {
+                    fp16 = hmx_fp16_fixup(fp16, inf_prop, nan_prop, maxnorm);
+                }
+                hmx_fp_split_to_fxp(hmx, s, o, (uint32_t)fp16 << 4);
+            }
+        }
     }
 }
 
@@ -2259,8 +2539,9 @@ static void hmx_fxp_convert_2x2(const HmxConfig *hmx_cfg, HmxState *hmx,
  * hmx_fxp_convert_2x1()/hmx_fxp_convert_2x2()). Rs only carries the
  * convert controls and is not written back; the converted data is read
  * back from memory by a later HELPER(hmx_cvt_store)
- * (M8_mxmem/M8_mxmem_deep/M8_mxmem_2x2).  The FP converts are not
- * handled here.
+ * (M8_mxmem/M8_mxmem_deep/M8_mxmem_2x2).
+ *
+ * HF triggers the FP convert (see hmx_fp_convert_softfloat()).
  */
 void HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
 {
@@ -2298,6 +2579,27 @@ void HELPER(hmx_cvt_rs)(CPUHexagonState *env, uint32_t rs, uint32_t type)
         int ch_sel = (rs >> 9) & 0x3;
         hmx_fxp_convert_2x2(hmx_cfg, hmx, hmx->current_acc_set, relu,
                             bias_sel, fb_dst, ch_sel);
+        if (acc_clear) {
+            hmx->cvt_acc_clear_pending = 1;
+            hmx->cvt_acc_clear_set = hmx->current_acc_set;
+        }
+        return;
+    }
+    case HMX_CVT_RS_HF:
+    {
+        /*
+         * Rs[6]: maxnorm, see hmx_fp16_fixup()/hmx_bf16_fixup(). Rs[7]:
+         * is_bf16_out (BF16 output instead of FP16), gated the same
+         * way as the matmul's BF16 select. fb_dst/fb_limit:
+         * relaxed-precision convert feedback, see
+         * hmx_fp_convert_softfloat()'s doc comment.
+         */
+        int maxnorm = (rs >> 6) & 1;
+        int is_bf16_out = ((rs >> HMX_CVT_RS_BF16_BIT) & 1) &&
+            (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
+        hmx_cvt_pipeline_begin(hmx, fb_dst);
+        hmx_fp_convert_softfloat(env, hmx, hmx->current_acc_set, bias_sel,
+                                 maxnorm, is_bf16_out, fb_dst, fb_limit);
         if (acc_clear) {
             hmx->cvt_acc_clear_pending = 1;
             hmx->cvt_acc_clear_set = hmx->current_acc_set;

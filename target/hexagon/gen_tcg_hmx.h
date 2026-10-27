@@ -496,6 +496,16 @@
         tcg_constant_i32(HMX_CVT_RS_UH_2X2))
 
 /*
+ * M8_cvt_rs_hf - trigger the FP convert (see HELPER(hmx_cvt_rs)), same
+ * shape as M8_cvt_rs_ub above.
+ * M8_mxmem (already overridden below) serves as its store instruction
+ * unchanged.
+ */
+#define fGEN_TCG_M8_cvt_rs_hf(SHORTCODE) \
+    gen_helper_hmx_cvt_rs(tcg_env, RsV, \
+        tcg_constant_i32(HMX_CVT_RS_HF))
+
+/*
  * M8_mxmem_2x2 - store the deferred UH2X2 convert pipeline's output.
  * HELPER(hmx_cvt_store)'s addressing already treats HMX_CVTST_2X2 the
  * same as HMX_CVTST_NORMAL (both use the 4-byte-stride SM peg store,
@@ -529,5 +539,37 @@
 #define fGEN_TCG_M8_mxmemdi_wei_hf(SHORTCODE) \
     gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_DI)))
+
+/*
+ * M8_mxcvt{l,r}_sat[_pos]_hf[_r] - legacy HF convert-and-store.
+ * Not implemented yet. Raise an illegal-instruction exception rather
+ * than let idef-parser's empty body make the instruction a silent NOP
+ * that a guest would take for success.
+ */
+#define HMX_GEN_UNIMPLEMENTED(name) \
+    do { \
+        (void)RsV; \
+        (void)RtV; \
+        qemu_log_mask(LOG_UNIMP, "hexagon: HMX %s is not implemented\n", \
+                      name); \
+        hex_gen_exception_end_tb(ctx, HEX_CAUSE_INVALID_OPCODE); \
+    } while (0)
+
+#define fGEN_TCG_M8_mxcvtl_sat_hf(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):before.hf=acc")
+#define fGEN_TCG_M8_mxcvtl_sat_hf_r(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):before:retain.hf=acc")
+#define fGEN_TCG_M8_mxcvtl_sat_pos_hf(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):before:pos.hf=acc")
+#define fGEN_TCG_M8_mxcvtl_sat_pos_hf_r(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):before:retain:pos.hf=acc")
+#define fGEN_TCG_M8_mxcvtr_sat_hf(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):after.hf=acc")
+#define fGEN_TCG_M8_mxcvtr_sat_hf_r(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):after:retain.hf=acc")
+#define fGEN_TCG_M8_mxcvtr_sat_pos_hf(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):after:pos.hf=acc")
+#define fGEN_TCG_M8_mxcvtr_sat_pos_hf_r(SHORTCODE) \
+    HMX_GEN_UNIMPLEMENTED("mxmem(Rs,Rt):after:retain:pos.hf=acc")
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */
