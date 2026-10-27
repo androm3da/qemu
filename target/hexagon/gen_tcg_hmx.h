@@ -137,35 +137,143 @@
 #define fGEN_TCG_M8_mxmem_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmem_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_NORMAL)))
 #define fGEN_TCG_M8_mxmems_wei_b(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_SINGLE)))
 #define fGEN_TCG_M8_mxmems_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_SINGLE)))
 #define fGEN_TCG_M8_mxmemdr_wei_b(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DR)))
 #define fGEN_TCG_M8_mxmemdr_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_DR)))
 #define fGEN_TCG_M8_mxmemdp_wei_b(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DP)))
 #define fGEN_TCG_M8_mxmemdp_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_DP)))
 #define fGEN_TCG_M8_mxmema_wei_b(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_ABOVE)))
 #define fGEN_TCG_M8_mxmema_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_ABOVE)))
 #define fGEN_TCG_M8_mxmemdi_wei_b(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DI)))
 #define fGEN_TCG_M8_mxmemdi_wei_sm(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_n(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_c(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_C, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_sc(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SC, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_b1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B1, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_sb1(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SB1, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_n_2x(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_DI)))
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */
