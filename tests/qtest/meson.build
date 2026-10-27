@@ -322,7 +322,7 @@ qtests_riscv64 = ['riscv-csr-test'] + \
    ['milkv-duo-test']
 
 qtests_hexagon = ['boot-serial-test', 'hexagon-config-test',
-                  'hexagon-hmx-test', 'l2vic-test',
+                  'hexagon-hmx-test', 'hexagon-hmx-migrate-test', 'l2vic-test',
                   'qcom-dsp-test',
                   'qct-qtimer-test']
 
