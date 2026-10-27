@@ -5,9 +5,13 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <ucontext.h>
+#include <unistd.h>
 
 int err;
 
@@ -105,6 +109,85 @@ static int hmx_test_hmx_matmul_fp_hf(void)
     for (int i = 0; i < H_OUT_SIZE; i += 2) {
         check32(H_out_buf[i], H_EXPECTED_LO);
         check32(H_out_buf[i + 1], H_EXPECTED_HI);
+    }
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
+/* hmx_matmul_fp_f8 */
+#define F_ACT_SIZE  1024  /* one crouton, as uint16_t: 2048 bytes / 2 */
+#define F_WEI_SIZE  1024  /* 8 vectors x 128 bytes, F8: 4 channels/word */
+#define F_OUT_SIZE  2048
+
+static uint16_t F_act_buf[F_ACT_SIZE] __attribute__((aligned(2048)));
+static uint8_t F_wei_buf[F_WEI_SIZE] __attribute__((aligned(128)));
+static uint32_t F_bias_buf[32] __attribute__((aligned(128)));
+static uint8_t F_out_buf[F_OUT_SIZE] __attribute__((aligned(2048)));
+
+#define F_FP16_ONE    0x3C00u
+#define F_F8_ONE      0x78u
+#define F_BIAS_LOW32  F_FP16_ONE   /* scale=1.0, everything else 0 */
+#define F_EXPECTED_LO 0x00u
+#define F_EXPECTED_HI 0x50u      /* 32.0 as FP16 = 0x5000 */
+
+static int hmx_test_hmx_matmul_fp_f8(void)
+{
+    err = 0;
+    clear_accumulators();
+    for (int i = 0; i < F_ACT_SIZE; i++) {
+        F_act_buf[i] = F_FP16_ONE;
+    }
+    memset(F_wei_buf, F_F8_ONE, sizeof(F_wei_buf));
+    for (int i = 0; i < 32; i++) {
+        F_bias_buf[i] = F_BIAS_LOW32;
+    }
+    memset(F_out_buf, 0xff, sizeof(F_out_buf));
+
+    /* bias = mxmem(r8) */
+    asm volatile("r8 = %[bias]\n"
+                 ".word 0x9208c3ff    /* bias=mxmem(r8) */\n"
+                 :
+                 : [bias] "r"(F_bias_buf)
+                 : "r8", "memory");
+
+    /* activation.hf = mxmem(r2,r3) */
+    asm volatile("r2 = %[act]\n"
+                 "r3 = #0x7c\n"
+                 ".word 0x9202c3e4    /* activation.hf=mxmem(r2,r3) */\n"
+                 :
+                 : [act] "r"(F_act_buf)
+                 : "r2", "r3", "memory");
+
+    /* weight.f8 = mxmem(r4,r5) -- triggers the FP matrix multiply. */
+    asm volatile("r4 = %[wei]\n"
+                 "r5 = #0xffff\n"
+                 ".word 0x9204e547    /* weight.f8=mxmem(r4,r5) */\n"
+                 :
+                 : [wei] "r"(F_wei_buf)
+                 : "r4", "r5", "memory");
+
+    /*
+     * cvt.hf=acc(r9), r9=0 (see hmx_matmul_fp_hf.c for the bit-field
+     * derivation).
+     */
+    asm volatile("r9 = #0\n"
+                 ".word 0xa6e9da10    /* cvt.hf=acc(r9) */\n"
+                 :
+                 :
+                 : "r9", "memory");
+
+    /* mxmem(r6,r7)=cvt -- reads the now-flushed convert result. */
+    asm volatile("r6 = %[out]\n"
+                 "r7 = #0\n"
+                 ".word 0xa6e6c718    /* mxmem(r6,r7)=cvt */\n"
+                 :
+                 : [out] "r"(F_out_buf)
+                 : "r6", "r7", "memory");
+
+    for (int i = 0; i < F_OUT_SIZE; i += 2) {
+        check32(F_out_buf[i], F_EXPECTED_LO);
+        check32(F_out_buf[i + 1], F_EXPECTED_HI);
     }
 
     puts(err ? "FAIL" : "PASS");
@@ -283,6 +366,86 @@ static int hmx_test_hmx_cvt_rs_bf16(void)
     return err ? 1 : 0;
 }
 
+/* hmx_cvt_rs_f8 */
+#define CF_ACT_SIZE  1024  /* one crouton, as uint16_t: 2048 bytes / 2 */
+#define CF_WEI_SIZE  1024  /* 16 vectors x 128 bytes, as uint16_t */
+#define CF_OUT_SIZE  2048
+
+static uint16_t CF_act_buf[CF_ACT_SIZE] __attribute__((aligned(2048)));
+static uint16_t CF_wei_buf[CF_WEI_SIZE] __attribute__((aligned(128)));
+static uint32_t CF_bias_buf[32] __attribute__((aligned(128)));
+static uint8_t CF_out_buf[CF_OUT_SIZE] __attribute__((aligned(2048)));
+
+#define CF_FP16_ONE    0x3C00u
+#define CF_BIAS_LOW32  CF_FP16_ONE   /* scale=1.0, everything else 0 */
+#define CF_EXPECTED_EVEN 0x60u    /* 32.0 as F8 (e4m3) */
+#define CF_EXPECTED_ODD  0x00u    /* untouched half (fp8_odd_sel=0) */
+
+static int hmx_test_hmx_cvt_rs_f8(void)
+{
+    err = 0;
+    clear_accumulators();
+    for (int i = 0; i < CF_ACT_SIZE; i++) {
+        CF_act_buf[i] = CF_FP16_ONE;
+    }
+    for (int i = 0; i < CF_WEI_SIZE; i++) {
+        CF_wei_buf[i] = CF_FP16_ONE;
+    }
+    for (int i = 0; i < 32; i++) {
+        CF_bias_buf[i] = CF_BIAS_LOW32;
+    }
+    memset(CF_out_buf, 0xff, sizeof(CF_out_buf));
+
+    /* bias = mxmem(r8) */
+    asm volatile("r8 = %[bias]\n"
+                 ".word 0x9208c3ff    /* bias=mxmem(r8) */\n"
+                 :
+                 : [bias] "r"(CF_bias_buf)
+                 : "r8", "memory");
+
+    /* activation.hf = mxmem(r2,r3) */
+    asm volatile("r2 = %[act]\n"
+                 "r3 = #0x7c\n"
+                 ".word 0x9202c3e4    /* activation.hf=mxmem(r2,r3) */\n"
+                 :
+                 : [act] "r"(CF_act_buf)
+                 : "r2", "r3", "memory");
+
+    /* weight.hf = mxmem(r4,r5) -- triggers the FP matrix multiply. */
+    asm volatile("r4 = %[wei]\n"
+                 "r5 = #0xffff\n"
+                 ".word 0x9204e5ef    /* weight.hf=mxmem(r4,r5) */\n"
+                 :
+                 : [wei] "r"(CF_wei_buf)
+                 : "r4", "r5", "memory");
+
+    /*
+     * cvt.f8=acc(r9), r9=0 (acc_clear/relu/fb_dst/maxnorm/fp8_odd_sel/
+     * bias_sel all zero -- fp8_odd_sel=0 selects the even half).
+     */
+    asm volatile("r9 = #0\n"
+                 ".word 0xa6e9db10    /* cvt.f8=acc(r9) */\n"
+                 :
+                 :
+                 : "r9", "memory");
+
+    /* mxmem(r6,r7).f8=cvt -- reads the F8 convert result. */
+    asm volatile("r6 = %[out]\n"
+                 "r7 = #0\n"
+                 ".word 0xa6e6c71d    /* mxmem(r6,r7).f8=cvt */\n"
+                 :
+                 : [out] "r"(CF_out_buf)
+                 : "r6", "r7", "memory");
+
+    for (int i = 0; i < CF_OUT_SIZE; i += 2) {
+        check32(CF_out_buf[i], CF_EXPECTED_EVEN);
+        check32(CF_out_buf[i + 1], CF_EXPECTED_ODD);
+    }
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
 /* hmx_matmul_fp_bf16_cvt */
 #define BC_ACT_SIZE  1024  /* one crouton, as uint16_t: 2048 bytes / 2 */
 #define BC_WEI_SIZE  1024  /* 16 vectors x 128 bytes, as uint16_t */
@@ -359,6 +522,103 @@ static int hmx_test_hmx_matmul_fp_bf16_cvt(void)
     for (int i = 0; i < BC_OUT_SIZE; i += 2) {
         check32(BC_out_buf[i], BC_EXPECTED_LO);
         check32(BC_out_buf[i + 1], BC_EXPECTED_HI);
+    }
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
+/* hmx_cvt_rs_f8_both_halves */
+#define BH_ACT_SIZE  1024  /* one crouton, as uint16_t: 2048 bytes / 2 */
+#define BH_WEI_SIZE  1024  /* 16 vectors x 128 bytes, as uint16_t */
+#define BH_OUT_SIZE  2048
+
+static uint16_t BH_act_buf[BH_ACT_SIZE] __attribute__((aligned(2048)));
+static uint16_t BH_wei_buf[BH_WEI_SIZE] __attribute__((aligned(128)));
+static uint32_t BH_bias_buf[32] __attribute__((aligned(128)));
+static uint8_t BH_out_buf[BH_OUT_SIZE] __attribute__((aligned(2048)));
+
+#define BH_FP16_ONE    0x3C00u
+#define BH_BIAS_LOW32  BH_FP16_ONE   /* scale=1.0, everything else 0 */
+#define BH_EXPECTED    0x60u      /* 32.0 as F8 (e4m3), both halves */
+
+static int hmx_test_hmx_cvt_rs_f8_both_halves(void)
+{
+    err = 0;
+    clear_accumulators();
+    for (int i = 0; i < BH_ACT_SIZE; i++) {
+        BH_act_buf[i] = BH_FP16_ONE;
+    }
+    for (int i = 0; i < BH_WEI_SIZE; i++) {
+        BH_wei_buf[i] = BH_FP16_ONE;
+    }
+    for (int i = 0; i < 32; i++) {
+        BH_bias_buf[i] = BH_BIAS_LOW32;
+    }
+    memset(BH_out_buf, 0xff, sizeof(BH_out_buf));
+
+    /* bias = mxmem(r8) */
+    asm volatile("r8 = %[bias]\n"
+                 ".word 0x9208c3ff    /* bias=mxmem(r8) */\n"
+                 :
+                 : [bias] "r"(BH_bias_buf)
+                 : "r8", "memory");
+
+    /* activation.hf = mxmem(r2,r3) */
+    asm volatile("r2 = %[act]\n"
+                 "r3 = #0x7c\n"
+                 ".word 0x9202c3e4    /* activation.hf=mxmem(r2,r3) */\n"
+                 :
+                 : [act] "r"(BH_act_buf)
+                 : "r2", "r3", "memory");
+
+    /* weight.hf = mxmem(r4,r5) -- triggers the FP matrix multiply. */
+    asm volatile("r4 = %[wei]\n"
+                 "r5 = #0xffff\n"
+                 ".word 0x9204e5ef    /* weight.hf=mxmem(r4,r5) */\n"
+                 :
+                 : [wei] "r"(BH_wei_buf)
+                 : "r4", "r5", "memory");
+
+    /*
+     * cvt.f8=acc(r9), r9=1 -- fp8_odd_sel=0: writes the even half.
+     * Rs[0]=1 (retain) is essential here: Rs[0]=0 would mark the
+     * accumulator for a deferred clear-and-flip-current_acc_set at
+     * this packet's boundary (HELPER(hmx_commit_packet)), which would
+     * make the second cvt.f8 below read from the *other*,
+     * never-populated accumulator set instead of the matmul's result
+     * (an earlier version of this test used r9=0 here and got exactly
+     * that: every other byte read back 0x00 -- accumulator 0.0's F8
+     * encoding -- instead of 0x60, a test bug caught by comparing
+     * against the real deferred-clear semantics, not an
+     * implementation bug).
+     */
+    asm volatile("r9 = #1\n"
+                 ".word 0xa6e9db10    /* cvt.f8=acc(r9) */\n"
+                 :
+                 :
+                 : "r9", "memory");
+
+    /*
+     * cvt.f8=acc(r9), r9=0x800 (Rs[11]=1) -- fp8_odd_sel=1: writes the
+     * odd half, preserving the even half just written above.
+     */
+    asm volatile("r9 = #0x800\n"
+                 ".word 0xa6e9db10    /* cvt.f8=acc(r9) */\n"
+                 :
+                 :
+                 : "r9", "memory");
+
+    /* mxmem(r6,r7).f8=cvt -- reads the F8 convert result. */
+    asm volatile("r6 = %[out]\n"
+                 "r7 = #0\n"
+                 ".word 0xa6e6c71d    /* mxmem(r6,r7).f8=cvt */\n"
+                 :
+                 : [out] "r"(BH_out_buf)
+                 : "r6", "r7", "memory");
+
+    for (int i = 0; i < BH_OUT_SIZE; i++) {
+        check32(BH_out_buf[i], BH_EXPECTED);
     }
 
     puts(err ? "FAIL" : "PASS");
@@ -1079,9 +1339,227 @@ static int hmx_test_hmx_matmul_fp_group_conv(void)
     return err ? 1 : 0;
 }
 
+/*
+ * cvt.{hf,f8}=acc(Rs) reads Rs for its control bits but does not write
+ * it. Only bit 0 ("retain") of the control word is meaningful here, so
+ * the rest is a distinctive pattern. The other tests reload Rs before
+ * every convert, which would hide a clobbered register.
+ */
+#define CVT_RS_CTL  0xa5a50001u
+
+#define CVT_RS_KEEPS_RS(NAME, WORD) \
+static uint32_t cvt_rs_##NAME(void) \
+{ \
+    register uint32_t rs asm("r9") = CVT_RS_CTL; \
+    asm volatile(WORD : [rs] "+r"(rs) : : "memory"); \
+    return rs; \
+}
+
+CVT_RS_KEEPS_RS(hf, ".word 0xa6e9da10    /* cvt.hf=acc(r9) */\n")
+CVT_RS_KEEPS_RS(f8, ".word 0xa6e9db10    /* cvt.f8=acc(r9) */\n")
+
+static int hmx_test_hmx_cvt_rs_preserves_rs(void)
+{
+    err = 0;
+    clear_accumulators();
+
+    check32(cvt_rs_hf(), CVT_RS_CTL);
+    check32(cvt_rs_f8(), CVT_RS_CTL);
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
+/*
+ * hmx_mxmem_deep_f8: mxmem(Rs,Rt):deep.f8=cvt stores the F8 convert
+ * pipeline entry older than the one mxmem(Rs,Rt).f8=cvt stores.
+ *
+ * Two matmuls accumulate into the same (retained) accumulator, 32.0
+ * after the first and 64.0 after the second, with a cvt.f8 after each.
+ * The newest entry then holds 64.0 (e4m3 0x68) and the one before it
+ * 32.0 (0x60).
+ */
+#define DF_ACT_SIZE  1024
+#define DF_WEI_SIZE  1024
+#define DF_OUT_SIZE  2048
+
+static uint16_t DF_act_buf[DF_ACT_SIZE] __attribute__((aligned(2048)));
+static uint16_t DF_wei_buf[DF_WEI_SIZE] __attribute__((aligned(128)));
+static uint32_t DF_bias_buf[32] __attribute__((aligned(128)));
+static uint8_t DF_out_buf[DF_OUT_SIZE] __attribute__((aligned(2048)));
+static uint8_t DF_deep_buf[DF_OUT_SIZE] __attribute__((aligned(2048)));
+
+#define DF_FP16_ONE      0x3C00u
+#define DF_F8_32         0x60u    /* 32.0 as F8 (e4m3) */
+#define DF_F8_64         0x68u    /* 64.0 as F8 (e4m3) */
+
+static void df_matmul(void)
+{
+    asm volatile("r2 = %[act]\n"
+                 "r3 = #0x7c\n"
+                 ".word 0x9202c3e4    /* activation.hf=mxmem(r2,r3) */\n"
+                 :
+                 : [act] "r"(DF_act_buf)
+                 : "r2", "r3", "memory");
+    asm volatile("r4 = %[wei]\n"
+                 "r5 = #0xffff\n"
+                 ".word 0x9204e5ef    /* weight.hf=mxmem(r4,r5) */\n"
+                 :
+                 : [wei] "r"(DF_wei_buf)
+                 : "r4", "r5", "memory");
+}
+
+static void df_cvt_f8_retain(void)
+{
+    /* Rs[0]=1 retains the accumulator, Rs[11]=0 selects the even half. */
+    asm volatile("r9 = #1\n"
+                 ".word 0xa6e9db10    /* cvt.f8=acc(r9) */\n"
+                 :
+                 :
+                 : "r9", "memory");
+}
+
+static int hmx_test_hmx_mxmem_deep_f8(void)
+{
+    err = 0;
+    clear_accumulators();
+    for (int i = 0; i < DF_ACT_SIZE; i++) {
+        DF_act_buf[i] = DF_FP16_ONE;
+    }
+    for (int i = 0; i < DF_WEI_SIZE; i++) {
+        DF_wei_buf[i] = DF_FP16_ONE;
+    }
+    for (int i = 0; i < 32; i++) {
+        DF_bias_buf[i] = DF_FP16_ONE;
+    }
+    memset(DF_out_buf, 0xff, sizeof(DF_out_buf));
+    memset(DF_deep_buf, 0xff, sizeof(DF_deep_buf));
+
+    asm volatile("r8 = %[bias]\n"
+                 ".word 0x9208c3ff    /* bias=mxmem(r8) */\n"
+                 :
+                 : [bias] "r"(DF_bias_buf)
+                 : "r8", "memory");
+
+    df_matmul();
+    df_cvt_f8_retain();
+    df_matmul();
+    df_cvt_f8_retain();
+
+    asm volatile("r6 = %[out]\n"
+                 "r7 = #0\n"
+                 ".word 0xa6e6c71d    /* mxmem(r6,r7).f8=cvt */\n"
+                 :
+                 : [out] "r"(DF_out_buf)
+                 : "r6", "r7", "memory");
+    asm volatile("r6 = %[out]\n"
+                 "r7 = #0\n"
+                 ".word 0xa6e6c71e    /* mxmem(r6,r7):deep.f8=cvt */\n"
+                 :
+                 : [out] "r"(DF_deep_buf)
+                 : "r6", "r7", "memory");
+
+    for (int i = 0; i < DF_OUT_SIZE; i += 2) {
+        check32(DF_out_buf[i], DF_F8_64);
+        check32(DF_deep_buf[i], DF_F8_32);
+    }
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
+/*
+ * The legacy HF convert-and-store forms, mxmem(Rs,Rt):{before,after}
+ * [:retain][:pos].hf=acc, are not implemented. They must raise SIGILL
+ * and leave memory untouched, not execute as a silent NOP that a guest
+ * would mistake for a successful store. Drop this test when they are
+ * implemented.
+ */
+static void *resume_pc;
+
+static void handle_sigill(int sig, siginfo_t *info, void *puc)
+{
+    ucontext_t *uc = (ucontext_t *)puc;
+
+    if (sig != SIGILL) {
+        _exit(EXIT_FAILURE);
+    }
+
+    uc->uc_mcontext.r0 = SIGILL;
+    uc->uc_mcontext.pc = (unsigned long)resume_pc;
+}
+
+#define TRY_LEGACY_HF(NAME, WORD) \
+static int try_##NAME(uint8_t *out) \
+{ \
+    int sig; \
+    asm volatile( \
+        "r0 = #0\n" \
+        "r1 = ##1f\n" \
+        "memw(%[resume]) = r1\n" \
+        "r2 = %[out]\n" \
+        "r3 = #0\n" \
+        WORD \
+        "1:\n" \
+        "%[sig] = r0\n" \
+        : [sig] "=r"(sig) \
+        : [resume] "r"(&resume_pc), [out] "r"(out) \
+        : "r0", "r1", "r2", "r3", "memory"); \
+    return sig; \
+}
+
+TRY_LEGACY_HF(before_hf,
+    ".word 0xa6e2e300    /* mxmem(r2,r3):before.hf=acc */\n")
+TRY_LEGACY_HF(before_pos_hf,
+    ".word 0xa6e2e301    /* mxmem(r2,r3):before:pos.hf=acc */\n")
+TRY_LEGACY_HF(after_hf,
+    ".word 0xa6e2e304    /* mxmem(r2,r3):after.hf=acc */\n")
+TRY_LEGACY_HF(before_retain_pos_hf,
+    ".word 0xa6e2e305    /* mxmem(r2,r3):before:retain:pos.hf=acc */\n")
+TRY_LEGACY_HF(before_retain_hf,
+    ".word 0xa6e2e308    /* mxmem(r2,r3):before:retain.hf=acc */\n")
+TRY_LEGACY_HF(after_pos_hf,
+    ".word 0xa6e2e309    /* mxmem(r2,r3):after:pos.hf=acc */\n")
+TRY_LEGACY_HF(after_retain_hf,
+    ".word 0xa6e2e30c    /* mxmem(r2,r3):after:retain.hf=acc */\n")
+TRY_LEGACY_HF(after_retain_pos_hf,
+    ".word 0xa6e2e30d    /* mxmem(r2,r3):after:retain:pos.hf=acc */\n")
+
+static uint8_t LH_out_buf[DF_OUT_SIZE] __attribute__((aligned(2048)));
+
+static int hmx_test_hmx_legacy_hf_unimplemented(void)
+{
+    static int (*const try_fn[])(uint8_t *) = {
+        try_before_hf, try_before_pos_hf, try_after_hf,
+        try_before_retain_pos_hf, try_before_retain_hf, try_after_pos_hf,
+        try_after_retain_hf, try_after_retain_pos_hf,
+    };
+    struct sigaction act;
+
+    err = 0;
+    memset(&act, 0, sizeof(act));
+    act.sa_sigaction = handle_sigill;
+    act.sa_flags = SA_SIGINFO;
+    check32(sigaction(SIGILL, &act, NULL), 0);
+
+    for (int i = 0; i < ARRAY_SIZE(try_fn); i++) {
+        memset(LH_out_buf, 0xff, sizeof(LH_out_buf));
+        check32(try_fn[i](LH_out_buf), SIGILL);
+        for (int j = 0; j < DF_OUT_SIZE; j++) {
+            check32(LH_out_buf[j], 0xff);
+        }
+    }
+
+    puts(err ? "FAIL" : "PASS");
+    return err ? 1 : 0;
+}
+
 int main(void)
 {
     if (hmx_test_hmx_matmul_fp_hf()) {
+        return 1;
+    }
+    if (hmx_test_hmx_matmul_fp_f8()) {
         return 1;
     }
     if (hmx_test_hmx_matmul_fp_bf16()) {
@@ -1090,7 +1568,13 @@ int main(void)
     if (hmx_test_hmx_cvt_rs_bf16()) {
         return 1;
     }
+    if (hmx_test_hmx_cvt_rs_f8()) {
+        return 1;
+    }
     if (hmx_test_hmx_matmul_fp_bf16_cvt()) {
+        return 1;
+    }
+    if (hmx_test_hmx_cvt_rs_f8_both_halves()) {
         return 1;
     }
     if (hmx_test_hmx_cvt_rs_negate_outbias()) {
@@ -1115,6 +1599,15 @@ int main(void)
         return 1;
     }
     if (hmx_test_hmx_matmul_fp_group_conv()) {
+        return 1;
+    }
+    if (hmx_test_hmx_cvt_rs_preserves_rs()) {
+        return 1;
+    }
+    if (hmx_test_hmx_mxmem_deep_f8()) {
+        return 1;
+    }
+    if (hmx_test_hmx_legacy_hf_unimplemented()) {
         return 1;
     }
     return 0;
