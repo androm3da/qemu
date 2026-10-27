@@ -183,6 +183,53 @@ static inline bool hmx_take_mac_cycle(HmxState *hmx)
 }
 
 /*
+ * Initialize one FP accumulator array to XFP true-zero.
+ *
+ * All-zero memory is not an XFP true zero: a true zero has
+ * sig=0, status.zero=1, exp=-(1<<(EXP-1)), and the shape fields filled.
+ * Every FP accumulator reset site on the XFP path must use this rather
+ * than memset(0). The SoftFloat path's accumulators are IEEE binary64
+ * bit patterns, for which memset(0) already is zero, so it keeps using
+ * plain memset. Only ever called when hmx_cfg->hmx_fp_uses_xfp (currently
+ * v81 only, see every call site), so hmx_xfp_zero()'s v81-fixed
+ * accumulator shape (int=8 frac=22 exp=9) is always the right one --
+ * same reasoning as hmx_fp_mac_lanes().
+ */
+static void hmx_fp_acc_zero(const HmxConfig *hmx_cfg, HmxAccFp *acc)
+{
+    HmxXfp z = hmx_xfp_zero();
+    for (int s = 0; s < HMX_SPATIAL_DIM_FP; s++) {
+        for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+            acc->xfp_data[s][o] = z;
+        }
+    }
+}
+
+/*
+ * Start a new rate-8 channel batch: forget the products of the previous
+ * one.  A lane that has not been written since reads as an XFP true zero
+ * (see hmx_fp_mac_lanes()), so clearing the valid mask is all it takes.
+ */
+static void hmx_fp_mac_batch_begin(HmxState *hmx)
+{
+    memset(hmx->fp_mac_valid, 0, sizeof(hmx->fp_mac_valid));
+}
+
+/*
+ * Initialize all FP accumulators of a zeroed HmxState to XFP true-zero.
+ * Called from CPU reset (cpu.c),
+ * gated on hmx_cfg->hmx_fp_uses_xfp (the SoftFloat path's plain zeroed
+ * memory is already correct for it).
+ */
+void hmx_init_fp_state(const HmxConfig *hmx_cfg, void *hmx_state)
+{
+    HmxState *hmx = hmx_state;
+    for (int a = 0; a < HMX_NUM_ACC_SETS; a++) {
+        hmx_fp_acc_zero(hmx_cfg, &hmx->acc[a].fp_primary);
+    }
+}
+
+/*
  * Forward declaration: defined below, alongside the deferred-convert
  * flush helpers, but needed by the FP matmul path further up in the file.
  */
@@ -199,17 +246,21 @@ void HELPER(hmx_clracc)(CPUHexagonState *env)
     memset(&hmx->acc[1].fxp_primary, 0, sizeof(HmxAccFxp));
 }
 
-/*
- * M8_mxclracc_hf - clear both FP accumulator sets.  The accumulators are
- * IEEE doubles, whose zero is all-zero bits.
- */
+/* M8_mxclracc_hf - clear both FP accumulator sets. */
 void HELPER(hmx_clracc_hf)(CPUHexagonState *env)
 {
     HmxState *hmx = env->hmx_state;
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
 
-    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
-    memset(&hmx->acc[0].fp_primary, 0, sizeof(HmxAccFp));
-    memset(&hmx->acc[1].fp_primary, 0, sizeof(HmxAccFp));
+    if (hmx_cfg->hmx_fp_uses_xfp) {
+        for (int a = 0; a < HMX_NUM_ACC_SETS; a++) {
+            hmx_fp_acc_zero(hmx_cfg, &hmx->acc[a].fp_primary);
+        }
+        hmx_fp_mac_batch_begin(hmx);
+    } else {
+        memset(&hmx->acc[0].fp_primary, 0, sizeof(HmxAccFp));
+        memset(&hmx->acc[1].fp_primary, 0, sizeof(HmxAccFp));
+    }
 }
 
 /*
@@ -1497,13 +1548,467 @@ mac_budget_exhausted:
 }
 
 /*
- * M8_mxmem_wei_hf: FP weight load + matrix multiply (SoftFloat path).
+ * Extract one weight column set for the XFP path (v81,
+ * hmx_cfg->hmx_fp_uses_xfp): HF, 2 weights per 32-bit word. Leaves each
+ * result as a raw FP16/BF16 uint16_t (without conversion to SoftFloat
+ * binary64)
+ * since hmx_fp_spatial_mac_xfp() decodes through hmx_xfp_decode_fp16()/
+ * hmx_xfp_decode_bf16() instead -- the bit-exact flat XFP decode, not
+ * a host floating-point approximation.
+ */
+static void hmx_fp_extract_weights_xfp(
+    const uint32_t *wei_words, int sub_idx, int wei_negate, uint16_t *wei_raw)
+{
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        uint16_t f16 = (wei_words[o] >> (sub_idx * 16)) & 0xFFFF;
+
+        if (wei_negate) {
+            f16 ^= 0x8000;
+        }
+        wei_raw[o] = f16;
+    }
+}
+
+/*
+ * The eight products of the current rate-8 batch for one accumulator
+ * cell, with the lanes that were not written this batch as true zero.
+ */
+static void hmx_fp_mac_lanes(const HmxState *hmx, int acc_sel, int fp_spatial,
+                             int o, HmxXfp zero, HmxXfp *lanes)
+{
+    uint8_t valid = hmx->fp_mac_valid[acc_sel][fp_spatial][o];
+
+    for (int l = 0; l < 8; l++) {
+        lanes[l] = ((valid >> l) & 1)
+            ? hmx->fp_mac_cache[acc_sel][fp_spatial][o][l] : zero;
+    }
+}
+
+/*
+ * v81 flat XFP MAC. Decodes each gated weight once per call and each
+ * activation once per cell (both invariant across the inner loops);
+ * the decode is a pure function of its args so this is bit-identical
+ * regardless of how many times a given raw value is decoded.
+ * is_bf16 selects the decode per site.
+ */
+static void hmx_fp_spatial_mac_xfp(
+    const HmxConfig *hmx_cfg,
+    HmxState *hmx, const uint16_t *wei_raw,
+    const uint8_t *act_fp,
+    int y_count, int x_count,
+    const int *intra_y_array, const int *intra_x_array,
+    int y_tap, int x_tap,
+    int32_t tile_x_mask, int32_t tile_y_mask,
+    int ch_addr, int drop, int deep,
+    int current_acc, int format_mask,
+    int group_idx, int group_size, int out_start, int out_end,
+    HexagonXfpUsr mac_usr, int input_channel_raw, int force_zero_wgt,
+    int is_bf16)
+{
+    int rate = hmx_cfg->mx_fp_rate;
+    int group_pos = input_channel_raw & (rate - 1);
+    int parallel_group_size = hmx_cfg->mx_fp_cols / hmx_cfg->mx_parallel_grps;
+
+    int chan_insert_zero =
+        (rate == 8) && (group_size <= 4) &&
+        ((input_channel_raw / group_size) != group_idx);
+
+    /*
+     * MAC decode/mult forces nan_propagate=1 locally; batch8 uses the
+     * caller's mac_usr.
+     */
+    HexagonXfpUsr mac_usr_mult = mac_usr;
+    mac_usr_mult.nan_propagate = 1;
+
+    const HmxXfp zero_prod = hmx_xfp_zero();
+    HmxXfp wei_decoded[HMX_OUTPUT_CHANNELS];
+    for (int o = out_start; o < out_end; o++) {
+        int mod_col = o & (parallel_group_size - 1);
+        uint16_t wgt = wei_raw[o];
+        if (chan_insert_zero || force_zero_wgt) {
+            wgt = 0;
+        }
+        if (parallel_group_size > 8) {
+            if (group_size <= 8 &&
+                mod_col / group_size !=
+                    group_idx % (parallel_group_size / group_size)) {
+                wgt = 0;
+            }
+        } else {
+            if (group_size <= 4 &&
+                mod_col / group_size !=
+                    group_idx % (parallel_group_size / group_size)) {
+                wgt = 0;
+            }
+        }
+        wei_decoded[o] = is_bf16
+            ? hmx_xfp_decode_bf16(mac_usr_mult, wgt)
+            : hmx_xfp_decode_fp16(mac_usr_mult, wgt);
+    }
+
+    for (int iy = 0; iy < y_count; iy++) {
+        int intra_y = intra_y_array[iy];
+        int32_t y_ovf = 0;
+        int32_t act_y = hmx_inc_with_spatial_mask_ovf(
+            y_tap, intra_y, tile_y_mask, &y_ovf);
+        act_y = (act_y & 0x7FFFFFFF) + y_ovf * 0x800;
+
+        for (int ix = 0; ix < x_count; ix++) {
+            int intra_x = intra_x_array[ix];
+            int32_t x_ovf = 0;
+            int32_t output_idx = hmx_inc_with_spatial_mask_ovf(
+                x_tap, intra_x, tile_x_mask, &x_ovf);
+            int acc_sel = x_ovf
+                ? (current_acc ^ 1) & 1
+                : current_acc & 1;
+
+            output_idx |= intra_y;
+
+            int spatial = ((output_idx >> 5) & ~format_mask)
+                        | (output_idx & format_mask);
+
+            if (x_ovf && (drop || deep)) {
+                continue;
+            }
+
+            if (spatial & 1) {
+                continue;
+            }
+            int fp_spatial = spatial >> 1;
+            if (fp_spatial < 0 || fp_spatial >= HMX_SPATIAL_DIM_FP) {
+                continue;
+            }
+
+            int32_t act_idx = (act_y + intra_x + ch_addr) & 0xFFF;
+            uint16_t act = lduw_le_p(&act_fp[act_idx & ~1]);
+            HmxXfp act_decoded = is_bf16
+                ? hmx_xfp_decode_bf16(mac_usr_mult, act)
+                : hmx_xfp_decode_fp16(mac_usr_mult, act);
+
+            HmxAccFp *acc = &hmx->acc[acc_sel].fp_primary;
+
+            for (int o = out_start; o < out_end; o++) {
+                /*
+                 * Grouped/depthwise gates most columns to zero but
+                 * still needs a product per rate-8 slot; take the
+                 * finite-activation shortcut. Must recheck
+                 * act.status.inf: the shortcut is invalid for
+                 * Inf/NaN.
+                 */
+                HmxXfp prod =
+                    (wei_decoded[o].status.zero && !act_decoded.status.inf)
+                    ? hmx_xfp_mult_zero_weight(act_decoded)
+                    : hmx_xfp_mult(mac_usr_mult, act_decoded, wei_decoded[o]);
+                /*
+                 * Product cache and accumulator are flat-typed: write
+                 * directly, no per-product HexagonXfp conversion.
+                 */
+                hmx->fp_mac_cache[acc_sel][fp_spatial][o][group_pos] = prod;
+                hmx->fp_mac_valid[acc_sel][fp_spatial][o] |= 1 << group_pos;
+
+                if (group_pos == rate - 1) {
+                    HmxXfp lanes[8];
+
+                    hmx_fp_mac_lanes(hmx, acc_sel, fp_spatial, o, zero_prod,
+                                     lanes);
+                    acc->xfp_data[fp_spatial][o] = hmx_xfp_batch8(
+                        hmx_cfg, mac_usr, lanes, acc->xfp_data[fp_spatial][o]);
+                }
+            }
+        }
+    }
+}
+
+/*
+ * M8_mxmem_wei_hf - v81 FP weight load + matrix multiply, bit-exact
+ * XFP MAC path (hmx_cfg->hmx_fp_uses_xfp). Structurally the same tap/
+ * channel/group loop nest as hmx_matmul_fp_softfloat(), but the innermost MAC
+ * goes through hmx_fp_spatial_mac_xfp()'s rate-8 product cache +
+ * hmx_xfp_batch8() reduce instead of a running SoftFloat sum.
+ *
+ * The "valid_batch" handling below is a real hardware quirk, not
+ * an approximation: a rate-8 batch that started with a weight vector
+ * still in range must keep running (with the out-of-range channels'
+ * weight forced to zero) so hmx_xfp_batch8()'s reduction still fires
+ * at group_pos==rate-1 -- skipping those channels entirely (as a
+ * naive port following hmx_matmul_fp_softfloat()'s simple `goto` pattern
+ * would) drops the final reduction for grouped convolutions whose
+ * channel count isn't a multiple of the weight range, leaving that
+ * accumulator cell stuck without its rate-8 reduce ever running.
+ */
+static void hmx_matmul_fp_xfp(CPUHexagonState *env, uint32_t rs, uint32_t rt,
+                              uint32_t params)
+{
+    HmxState *hmx = env->hmx_state;
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
+    hmx_flush_acc_clear(env, hmx);
+
+    int wei_mod = HMX_UNPACK_MOD(params);
+    int current_acc = hmx->current_acc_set;
+    uintptr_t ra = GETPC();
+
+    HexagonXfpUsr mac_usr = {
+        .inf_nan_enable = GET_USR_FIELD(USR_FPCOPROC_INFNAN),
+        .nan_propagate = GET_USR_FIELD(USR_FPCOPROC_NANPROP),
+    };
+
+    int wei_negate = (rs >> 5) & 1;
+    uint32_t wei_base = rs & ~(hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES - 1);
+    int max_valid_vec = rt / (hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES);
+
+    /* The deep modifier accumulates into the other set as well. */
+    HmxUndo undo;
+    hmx_undo_begin(&undo, hmx, &hmx->acc[current_acc].fp_primary.xfp_data,
+                   wei_mod == HMX_MOD_DP
+                       ? &hmx->acc[current_acc ^ 1].fp_primary.xfp_data : NULL,
+                   sizeof(hmx->acc[0].fp_primary.xfp_data));
+
+    hmx->is_bf16 = ((rs >> HMX_MATMUL_RS_BF16_BIT) & 1)
+                && (hmx_cfg->mx_fp_acc_exp >= HMX_BF16_MIN_ACC_EXP);
+
+    HmxTaps taps;
+
+    hmx_compute_taps(hmx, wei_mod, &taps);
+    int format_offset = taps.format_offset;
+
+    int ch_start = hmx->ch_start;
+    int ch_stop = hmx->ch_stop;
+
+    const uint8_t *act_fp = hmx->act_buffer;
+
+    int wgt_stream_idx = 0;
+    /*
+     * Rate-8 batch-start weight-vector index. Latched at the first
+     * channel of each rate-8 batch; used to decide whether
+     * out-of-range channels within a started batch still emit a
+     * zero-weight MAC -- see this function's doc comment.
+     */
+    int batch_start_vec = 0;
+    /* HF: 2 input channels per 128B vector. */
+    const int cpv = 2;
+    uint32_t wei_words[HMX_OUTPUT_CHANNELS];
+    int prev_vec_idx = -1;
+
+    int num_deep_blk = taps.deep ? 2 : 1;
+    int num_croutons = hmx->blocks;
+    uint32_t act_base = hmx->act_rs & 0xFFFFF800;
+
+    int group_count = hmx->group_count;
+    int group_size = hmx->group_size;
+    int parallel_group_size = hmx_cfg->mx_fp_cols / hmx_cfg->mx_parallel_grps;
+    int input_ch_stride = 1 << format_offset;
+    int input_channels = (hmx_cfg->mx_fp_cols << format_offset) / group_count;
+
+    /*
+     * FP rate-8 input-channel batch stride. For mx_fp_rate==8 (every
+     * v75/v79/v81 config -- see hmx_config.c) the outer channel loop
+     * advances a whole rate-8 batch at a time.
+     */
+    int input_ch_fp_rate_stride = 4 * input_ch_stride;
+    if (hmx_cfg->mx_fp_rate == 2 && group_size <= parallel_group_size / 2) {
+        input_ch_fp_rate_stride = hmx_cfg->mx_fp_rate * input_ch_stride;
+    } else if (hmx_cfg->mx_fp_rate == 8) {
+        input_ch_fp_rate_stride = hmx_cfg->mx_fp_rate * input_ch_stride;
+    }
+
+    for (int crouton_idx = 0; crouton_idx < num_croutons; crouton_idx++) {
+        if (num_croutons > 1) {
+            hmx_reload_act_crouton(env, hmx, act_base, crouton_idx,
+                                   hmx->act_type, &undo, ra);
+        }
+
+        int crouton_ch_start, crouton_ch_stop;
+        hmx_crouton_ch_range(crouton_idx, num_croutons, ch_start, ch_stop,
+                             &crouton_ch_start, &crouton_ch_stop);
+
+        int input_ch_start = crouton_ch_start << format_offset;
+        int input_ch_end = crouton_ch_stop << format_offset;
+        if (num_croutons > 1 && crouton_idx != num_croutons - 1) {
+            input_ch_end = input_channels;
+        }
+
+        if (hmx_cfg->mx_fp_rate == 8) {
+            int align_mask = 0xfff8 << format_offset;
+            input_ch_start &= align_mask;
+            input_ch_end = (input_ch_end & 0x1f)
+                ? ((input_ch_end + 32) & align_mask)
+                : (input_ch_end & align_mask);
+        }
+
+        for (int ytd = 0; ytd < taps.y_tap_count; ytd++) {
+            int y_tap = taps.y_tap_array[ytd];
+
+            for (int deep_blk = 0; deep_blk < num_deep_blk; deep_blk++) {
+                for (int xtd = 0; xtd < taps.x_tap_count; xtd++) {
+                    int x_tap = taps.x_tap_array[xtd];
+
+                    for (int input_ch_idx = input_ch_start;
+                         input_ch_idx < input_ch_end;
+                         input_ch_idx += input_ch_fp_rate_stride) {
+                        /* One MAC cycle per rate-8 channel batch. */
+                        if (!hmx_take_mac_cycle(hmx)) {
+                            goto mac_budget_exhausted;
+                        }
+
+                        int saved_wgt_stream_idx = wgt_stream_idx;
+
+                        /*
+                         * Start of a new raw rate-8 channel batch: lanes
+                         * that go unwritten (e.g. weight-vector out of
+                         * range) contribute a true-zero product to the
+                         * reduction.
+                         */
+                        hmx_fp_mac_batch_begin(hmx);
+
+                        for (int group_idx = 0; group_idx < group_count;
+                             group_idx++) {
+                            wgt_stream_idx = saved_wgt_stream_idx;
+
+                            int input_ch_start_group = input_ch_idx +
+                                (group_idx << format_offset) * group_size;
+                            int input_ch_stop_group =
+                                input_ch_start_group + 4 * input_ch_stride;
+                            if (hmx_cfg->mx_fp_rate == 2 &&
+                                group_size <= parallel_group_size / 2) {
+                                input_ch_stop_group = input_ch_start_group +
+                                    hmx_cfg->mx_fp_rate * input_ch_stride;
+                            } else if (hmx_cfg->mx_fp_rate == 8 &&
+                                       group_size > 4) {
+                                input_ch_stop_group = input_ch_start_group +
+                                    hmx_cfg->mx_fp_rate * input_ch_stride;
+                            } else if (hmx_cfg->mx_fp_rate == 8 &&
+                                       group_size <= 4) {
+                                input_ch_stop_group =
+                                    (group_idx << format_offset) * group_size +
+                                    MIN(group_size << format_offset,
+                                        input_ch_end);
+                            }
+                            if (group_size < 4) {
+                                input_ch_stop_group =
+                                    (group_idx << format_offset) * group_size +
+                                    MIN(group_size << format_offset,
+                                        input_ch_end);
+                            }
+
+                            int out_start = group_idx * group_size;
+                            int out_end = out_start + group_size;
+                            if (group_size <= parallel_group_size / 2) {
+                                out_start =
+                                    (group_idx /
+                                     (parallel_group_size / group_size)) *
+                                    parallel_group_size;
+                                out_end = out_start + parallel_group_size;
+                            }
+                            out_start = MAX(out_start, 0);
+                            out_end = MIN(out_end, (int)hmx_cfg->mx_fp_cols);
+
+                            uint32_t batch_ch_stop =
+                                input_ch_end >> format_offset;
+
+                            for (int input_ch_idx2 = input_ch_start_group;
+                                 input_ch_idx2 < input_ch_stop_group;
+                                 input_ch_idx2 += input_ch_stride) {
+                                int input_channel_raw =
+                                    input_ch_idx2 >> format_offset;
+                                int vec_idx = wgt_stream_idx / cpv;
+
+                                /*
+                                 * See this function's doc comment:
+                                 * valid = this weight vector is within
+                                 * the loaded range; valid_batch =
+                                 * the vector at the START of this
+                                 * rate-8 batch was in range.
+                                 */
+                                if ((input_channel_raw &
+                                     (hmx_cfg->mx_fp_rate - 1)) == 0) {
+                                    batch_start_vec = vec_idx;
+                                }
+                                int valid = (vec_idx <= max_valid_vec);
+                                int valid_batch =
+                                    (batch_start_vec <= max_valid_vec);
+                                int force_zero_wgt = 0;
+                                if (!valid) {
+                                    if (!valid_batch) {
+                                        goto fp_wgt_advance;
+                                    }
+                                    force_zero_wgt = 1;
+                                }
+
+                                int ch_addr = input_ch_idx2;
+
+                                if (!force_zero_wgt &&
+                                    vec_idx != prev_vec_idx) {
+                                    hmx_preload_weight_vec(
+                                        hmx_cfg, env, wei_base, vec_idx,
+                                        wei_words, &undo, ra);
+                                    prev_vec_idx = vec_idx;
+                                }
+
+                                uint16_t wei_raw[HMX_OUTPUT_CHANNELS];
+                                if (force_zero_wgt) {
+                                    memset(wei_raw, 0, sizeof(wei_raw));
+                                } else {
+                                    int sub_idx = wgt_stream_idx % cpv;
+                                    hmx_fp_extract_weights_xfp(
+                                        wei_words, sub_idx, wei_negate,
+                                        wei_raw);
+                                }
+
+                                hmx_fp_spatial_mac_xfp(
+                                    hmx_cfg, hmx, wei_raw, act_fp,
+                                    taps.y_count, taps.x_count,
+                                    taps.intra_y_array, taps.intra_x_array,
+                                    y_tap, x_tap,
+                                    taps.tile_x_mask, taps.tile_y_mask,
+                                    ch_addr, taps.drop, taps.deep,
+                                    current_acc, taps.format_mask,
+                                    group_idx, group_size,
+                                    out_start, out_end,
+                                    mac_usr, input_channel_raw,
+                                    force_zero_wgt, hmx->is_bf16);
+
+fp_wgt_advance:
+                                if (hmx_cfg->mx_fp_rate == 8 &&
+                                    group_size > 4 &&
+                                    (input_channel_raw -
+                                     group_idx * group_size) >=
+                                        (int)batch_ch_stop) {
+                                    /* no increment */
+                                } else {
+                                    wgt_stream_idx++;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (taps.deep) {
+                    current_acc = (current_acc ^ 1) & 1;
+                }
+            }
+        }
+    }
+mac_budget_exhausted:
+    return;
+}
+
+/*
+ * M8_mxmem_wei_hf dispatcher: dispatch by CPU revision
+ * (hmx_config.c's hmx_fp_uses_xfp). v75/v79 use hmx_matmul_fp_softfloat()
+ * (SoftFloat); v81 uses the bit-exact XFP path,
+ * hmx_matmul_fp_xfp().
  */
 void HELPER(hmx_matmul_fp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
                            uint32_t params)
 {
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
     g_assert(HMX_UNPACK_WEI_TYPE(params) == HMX_WEI_HF);
-    hmx_matmul_fp_softfloat(env, rs, rt, params);
+    if (hmx_cfg->hmx_fp_uses_xfp) {
+        hmx_matmul_fp_xfp(env, rs, rt, params);
+    } else {
+        hmx_matmul_fp_softfloat(env, rs, rt, params);
+    }
 }
 
 /*
@@ -1841,9 +2346,26 @@ static void hmx_flush_acc_clear(CPUHexagonState *env, HmxState *hmx)
     }
     acc = &hmx->acc[hmx->cvt_acc_clear_set].fxp_primary;
     memset(acc, 0, sizeof(HmxAccFxp));
-    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
-    memset(&hmx->acc[hmx->cvt_acc_clear_set].fp_primary, 0,
-           sizeof(HmxAccFp));
+    /*
+     * Also clear the FP accumulator here, not just FXP -- clearing
+     * only the FXP set would leave stale FP sums to accumulate across
+     * layers. Dispatch by CPU revision (hmx_config.c's
+     * hmx_fp_uses_xfp): the SoftFloat path's true-zero is a
+     * plain memset (all-zero bits *is* IEEE +0.0); the XFP path needs
+     * hmx_fp_acc_zero()'s non-trivial canonical-zero builder, since
+     * all-zero bits are not XFP's true-zero encoding. This branch was
+     * unreachable (and untested) until hmx_fp_uses_xfp went live for
+     * v81; a leftover g_assert(!...hmx_fp_uses_xfp) here (dating from
+     * before any XFP code existed) caught that immediately as an
+     * abort the moment it did.
+     */
+    if (hmx_cfg_from_env(env)->hmx_fp_uses_xfp) {
+        hmx_fp_acc_zero(hmx_cfg_from_env(env),
+                        &hmx->acc[hmx->cvt_acc_clear_set].fp_primary);
+    } else {
+        memset(&hmx->acc[hmx->cvt_acc_clear_set].fp_primary, 0,
+               sizeof(HmxAccFp));
+    }
     hmx->current_acc_set = hmx->cvt_acc_clear_set ^ 1;
     hmx->cvt_acc_clear_pending = 0;
 }
