@@ -185,6 +185,19 @@ tests += [
   {
     'hmx_fxp.c': {'qemu_args': ['-cpu', 'v79'], 'test_name': 'hmx_fxp-v79'},
   },
+  # v83 and v85 inherit the v81 HMX configuration.
+  {
+    'hmx_fxp.c': {'qemu_args': ['-cpu', 'v83'], 'test_name': 'hmx_fxp-v83'},
+  },
+  {
+    'hmx_fxp.c': {'qemu_args': ['-cpu', 'v85'], 'test_name': 'hmx_fxp-v85'},
+  },
+  {
+    'hmx_fp.c': {'qemu_args': ['-cpu', 'v83'], 'test_name': 'hmx_fp-v83'},
+  },
+  {
+    'hmx_fp.c': {'qemu_args': ['-cpu', 'v85'], 'test_name': 'hmx_fp-v85'},
+  },
   {
     'hvx_ext.c': {
       'qemu_args': ['-cpu', 'v79'],
