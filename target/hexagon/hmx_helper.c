@@ -77,6 +77,15 @@ static void hmx_mem_read(const HmxMem *m, uint32_t off, uint8_t *dst,
     }
 }
 
+static inline void hmx_mem_st8(const HmxMem *m, uint32_t off, uint8_t val)
+{
+    if (m->host) {
+        m->host[off] = val;
+    } else {
+        cpu_stb_data_ra(m->env, m->base + off, val, m->ra);
+    }
+}
+
 /* Room for the largest accumulator array: 32 x 32 XFP cells of 16 bytes. */
 #define HMX_UNDO_MAX_BYTES (16 * 1024)
 
@@ -1063,5 +1072,573 @@ void HELPER(hmx_matmul_fxp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
     }
 mac_budget_exhausted:
     return;
+}
+
+/*
+ * FXP accumulator convert math (hmx_acc_shift/rectify/scale/bias,
+ * hmx_sat_to_max, hmx_u8_cvt): bit-exact rounding/rectify/saturation
+ * pipeline that matches the hardware and is not derivable from first
+ * principles -- written as literally as possible rather than
+ * simplified, since there is no independent way to re-derive it.
+ */
+static inline int64_t hmx_acc_shift(int64_t acc_biased, int32_t exp,
+                                    int32_t sat, int32_t frac_bits,
+                                    int32_t int_bits)
+{
+    int32_t shift_acc = 32 - frac_bits;
+    int64_t acc_shifted = acc_biased << exp;
+    int64_t mask = ((int64_t)((1ULL << (frac_bits + int_bits)) - 1))
+                   << shift_acc;
+    if (sat) {
+        mask |= ((int64_t)((1ULL << 32) - 1)) << 32;
+    }
+    acc_shifted &= mask;
+    return acc_shifted;
+}
+
+static inline int64_t hmx_acc_rectify(int64_t acc_shifted, int16_t zeroing,
+                                      int16_t legacy, int64_t acc_biased,
+                                      uint16_t element_size,
+                                      int16_t disable_jam)
+{
+    int64_t acc_rectified = 0;
+    int64_t summarize_output = 0;
+    int64_t sign_bit = 0;
+    uint16_t frac_bits = element_size * 12;
+    int64_t summarization_bits = acc_shifted & 0xFFFFFFFE00000000LL;
+
+    if (acc_biased < 0) {
+        sign_bit = 0x400000000LL;
+    }
+    if (sign_bit) {
+        if (summarization_bits == (int64_t)0xFFFFFFFE00000000LL) {
+            summarize_output = 0x200000000LL;
+        }
+    } else {
+        if (summarization_bits) {
+            summarize_output = 0x200000000LL;
+        }
+    }
+
+    int64_t maskbits = ((1LL << (frac_bits + 1)) - 1) << (32 - frac_bits);
+    acc_shifted &= maskbits;
+    acc_shifted |= summarize_output;
+    acc_shifted |= sign_bit;
+
+    if (!legacy && !disable_jam && acc_shifted) {
+        acc_shifted |= 1LL << (31 - frac_bits);
+    }
+
+    if (((zeroing >= 4) || ((zeroing == 3) && sign_bit))
+        && !((zeroing == 7) && sign_bit)) {
+        acc_shifted &= (0x000000FFFFF00000LL | maskbits);
+    }
+
+    acc_shifted = (acc_shifted << 29) >> 29 >> (31 - frac_bits);
+
+    switch (zeroing) {
+    case 1:
+        acc_rectified = (acc_shifted > 0) ? 0 : acc_shifted;
+        break;
+    case 2:
+        acc_rectified = (acc_shifted < 0) ? 0 : acc_shifted;
+        break;
+    case 3:
+        if (acc_shifted != 0) {
+            acc_rectified = (acc_shifted >= 0) ? acc_shifted
+                                               : -acc_shifted - 1;
+        }
+        break;
+    case 4:
+        if (acc_biased != 0) {
+            acc_rectified = -acc_shifted - 1;
+        }
+        break;
+    case 5:
+        acc_rectified = (acc_biased >= 0) ? 0 : -acc_shifted - 1;
+        break;
+    case 6:
+        acc_rectified = (acc_biased <= 0) ? 0 : -acc_shifted - 1;
+        break;
+    case 7:
+        if (acc_biased != 0) {
+            acc_rectified = (acc_shifted >= 0) ? -acc_shifted - 1
+                                               : acc_shifted;
+        }
+        break;
+    default:
+        acc_rectified = acc_shifted;
+        break;
+    }
+
+    acc_rectified = acc_rectified << (31 - frac_bits);
+    return acc_rectified;
+}
+
+static inline Int128 hmx_acc_scale(int64_t acc_rectified, int64_t scale_cvt)
+{
+    uint64_t lo, hi;
+
+    muls64(&lo, &hi, scale_cvt, acc_rectified);
+    return int128_make128(lo, hi);
+}
+
+static inline int64_t hmx_acc_bias(Int128 acc_scaled,
+                                   int32_t element_size,
+                                   uint32_t rnd_bit, int32_t frac_bits)
+{
+    int64_t ulp_bit = 64 - 8 * element_size - 3 - 1;
+    /* The ULP is zero-extended, not sign-extended. */
+    Int128 ulp = int128_make64((uint64_t)((int64_t)rnd_bit << ulp_bit));
+    acc_scaled = int128_add(acc_scaled, acc_scaled);
+    Int128 acc_rnd = int128_add(acc_scaled, ulp);
+    ulp_bit += 3;
+    int convert_width = 12;
+    return (int64_t)int128_getlo(int128_rshift(
+        acc_rnd, ulp_bit + 1 - ((convert_width - 8) * element_size)));
+}
+
+static inline uint32_t hmx_sat_to_max(int64_t in, int32_t element_size,
+                                      int32_t sat)
+{
+    int convert_width = 12;
+    int64_t max_element = (1LL << (element_size * convert_width)) - 1;
+    uint32_t out;
+    if (sat) {
+        if (in < 0) {
+            out = 0;
+        } else if (in > max_element) {
+            out = (uint32_t)max_element;
+        } else {
+            out = (uint32_t)(in & max_element);
+        }
+    } else {
+        out = (uint32_t)(in & max_element);
+    }
+    return out;
+}
+
+/*
+ * hmx_u8_cvt: byte convert.
+ *
+ *   acc      - 32-bit accumulator value (sign-extended to 64-bit)
+ *   bias32   - input bias (signed 32-bit, from bias register [63:32])
+ *   exp      - exponent/shift amount (5-bit, [14:10])
+ *   zeroing  - shape function selector (3-bit)
+ *   sig      - scale value (unsigned 12-bit)
+ *   out_bias - output bias (unsigned 12-bit)
+ *   sat      - saturation enable (1=clamp to [0,max], 0=mask)
+ *   legacy   - 1 for the legacy combined convert+store instructions
+ */
+static uint32_t hmx_u8_cvt(int64_t acc, int32_t bias32, int16_t exp,
+                           int16_t zeroing, int16_t sig, uint16_t out_bias,
+                           int32_t sat, int16_t legacy)
+{
+    const int32_t element_size = 1;
+    const int32_t frac_bits = 12;
+    int64_t acc_biased = acc + (int64_t)bias32;
+
+    int32_t int_bits = 32;
+    int64_t acc_shifted = hmx_acc_shift(acc_biased, exp, sat,
+                                        frac_bits, int_bits);
+
+    int64_t acc_rectified = hmx_acc_rectify(acc_shifted, zeroing, legacy,
+                                            acc_biased, element_size, 0);
+
+    int64_t scale_cvt = ((int64_t)sig) << 20;
+    Int128 acc_scaled = hmx_acc_scale(acc_rectified, scale_cvt);
+    int64_t acc_final = hmx_acc_bias(acc_scaled, element_size,
+                                     out_bias, frac_bits);
+
+    return hmx_sat_to_max(acc_final, element_size, sat);
+}
+
+/*
+ * hmx_acc_rnd: rounding-only variant of hmx_acc_bias(), used where the
+ * convert has no output-bias field to add (e.g. UH 2x1's feedback-off
+ * path, which uses rnd_bit instead).
+ */
+static inline int64_t hmx_acc_rnd(Int128 acc_scaled,
+                                  int32_t element_size,
+                                  int32_t rnd_bit, int32_t frac_bits)
+{
+    int convert_width = 12;
+    int64_t ulp_bit = 64 - 8 * element_size - 1;
+    Int128 ulp = int128_makes64((int64_t)rnd_bit << ulp_bit);
+
+    (void)frac_bits;
+    acc_scaled = int128_add(acc_scaled, acc_scaled);
+    Int128 acc_rnd = int128_add(acc_scaled, ulp);
+    return (int64_t)int128_getlo(int128_rshift(
+        acc_rnd, (ulp_bit + 1) - ((convert_width - 8) * element_size)));
+}
+
+/*
+ * Split a 20-bit UH result into lo/hi 16-bit CVT buffer entries.
+ * lo = result[11:0] (12 bits); hi = result[19:8] aligned to bits
+ * [11:4] (12 bits, lower 4 zeroed).
+ */
+static inline uint16_t hmx_cvt_out_lo(uint32_t result)
+{
+    return (uint16_t)(result & 0xFFF);
+}
+
+static inline uint16_t hmx_cvt_out_hi(uint32_t result)
+{
+    return (uint16_t)((result >> 8) & 0xFF0);
+}
+
+/*
+ * hmx_u16_cvt: unsigned halfword 16x8 (2x1) convert. Combines two
+ * adjacent spatial accumulators into a wider-precision value. Uses
+ * rounding, not the output bias.
+ */
+static uint32_t hmx_u16_cvt(int64_t acc_hl, int64_t acc_ll,
+                            int32_t bias32, int16_t exp,
+                            int16_t zeroing, uint32_t sig,
+                            uint16_t rnd_bit, int32_t sat,
+                            int16_t legacy, int16_t has_feedback,
+                            int16_t has_extra_acc_bits)
+{
+    const int32_t element_size = 2;
+    const int32_t frac_bits = 24;
+
+    int64_t acc_combined = acc_hl + (acc_ll >> 8);
+    int64_t acc_biased = acc_combined + (int64_t)bias32;
+
+    /*
+     * extra_8bit_acc (Rs[5]): the 8 LSBs dropped by (acc_ll >> 8) are
+     * reintroduced as extra precision below the binary point; the
+     * conversion only takes effect for exp > 8, otherwise the extra
+     * bits are truncated by the shift, so acc_biased_for_shift stays
+     * at the un-extended value. acc_biased (extended) still feeds
+     * rectify's sign/zero detection.
+     */
+    int64_t acc_biased_for_shift = acc_biased;
+    if (has_extra_acc_bits) {
+        uint32_t extra_8bits = (uint32_t)(acc_ll & 0xFF);
+        acc_biased = (acc_biased << 8) | extra_8bits;
+        if (exp > 8) {
+            acc_biased_for_shift = acc_biased;
+            exp -= 8;
+        }
+    }
+
+    int64_t acc_shifted = hmx_acc_shift(acc_biased_for_shift, exp, sat,
+                                        frac_bits, 32);
+    int64_t acc_rectified = hmx_acc_rectify(acc_shifted, zeroing, legacy,
+                                            acc_biased, element_size, 0);
+
+    int64_t scale_cvt = ((int64_t)sig) << 12;
+    Int128 acc_scaled = hmx_acc_scale(acc_rectified, scale_cvt);
+    int64_t acc_final;
+    if (has_feedback) {
+        acc_final = hmx_acc_bias(acc_scaled, element_size,
+                                 rnd_bit, frac_bits);
+    } else {
+        acc_final = hmx_acc_rnd(acc_scaled, element_size,
+                                rnd_bit, frac_bits);
+    }
+
+    return hmx_sat_to_max(acc_final, element_size, sat);
+}
+
+/*
+ * hmx_u16x16_cvt: unsigned halfword 16x16 (2x2) convert. Combines four
+ * accumulator positions (2 spatial x 2 output channels) into a single
+ * wider-precision value. Uses output bias (unlike 2x1's rounding-only
+ * path), concatenated from two adjacent bias registers.
+ */
+static uint32_t hmx_u16x16_cvt(int64_t acc_hh, int64_t acc_hl,
+                               int64_t acc_lh, int64_t acc_ll,
+                               int64_t bias48, int16_t exp,
+                               int16_t zeroing, int32_t sig,
+                               uint32_t out_bias, int32_t sat,
+                               int16_t legacy)
+{
+    const int32_t element_size = 2;
+    const int32_t frac_bits = 24;
+
+    int64_t acc_combined = acc_ll +
+        ((acc_lh + acc_hl + (acc_hh << 8)) << 8);
+    /* Sign-extend bias48 from 48 bits */
+    bias48 = (bias48 << 16) >> 16;
+    int64_t acc_biased = (acc_combined + bias48) >> 16;
+
+    int64_t acc_shifted = hmx_acc_shift(acc_biased, exp, sat,
+                                        frac_bits, 32);
+    int64_t acc_rectified = hmx_acc_rectify(acc_shifted, zeroing, legacy,
+                                            acc_biased, element_size, 0);
+
+    /* 2x2 uses scale shifted by 10 (not 20 like 8x8 and 2x1) */
+    int64_t scale_cvt = (int64_t)sig << 10;
+    Int128 acc_scaled = hmx_acc_scale(acc_rectified, scale_cvt);
+    int64_t acc_final = hmx_acc_bias(acc_scaled, element_size,
+                                     out_bias, frac_bits);
+
+    return hmx_sat_to_max(acc_final, element_size, sat);
+}
+
+/*
+ * Apply any deferred accumulator clear+flip from a previous packet.
+ * Deferred pipeline aging (cvt_fxp_pending*): both the legacy
+ * HELPER(hmx_cvt_transfer) convert+store path and the non-legacy
+ * cvt_rs + mxmem(...)=cvt pair flush through here; see
+ * HELPER(hmx_commit_packet) for the packet-boundary flush.
+ */
+static void hmx_flush_cvt_fxp(HmxState *hmx)
+{
+    if (!hmx->cvt_fxp_pending) {
+        return;
+    }
+    if (hmx->cvt_fxp_pending_age) {
+        hmx->cvt_fxp[2] = hmx->cvt_fxp[1];
+        hmx->cvt_fxp[1] = hmx->cvt_fxp[0];
+    }
+    hmx->cvt_fxp[0] = hmx->cvt_future_fxp;
+    hmx->cvt_fxp_pending = 0;
+    hmx->cvt_fxp_pending_age = 0;
+}
+
+static void hmx_flush_acc_clear(CPUHexagonState *env, HmxState *hmx)
+{
+    HmxAccFxp *acc;
+
+    if (!hmx->cvt_acc_clear_pending) {
+        return;
+    }
+    acc = &hmx->acc[hmx->cvt_acc_clear_set].fxp_primary;
+    memset(acc, 0, sizeof(HmxAccFxp));
+    g_assert(!hmx_cfg_from_env(env)->hmx_fp_uses_xfp);
+    memset(&hmx->acc[hmx->cvt_acc_clear_set].fp_primary, 0,
+           sizeof(HmxAccFp));
+    hmx->current_acc_set = hmx->cvt_acc_clear_set ^ 1;
+    hmx->cvt_acc_clear_pending = 0;
+}
+
+/*
+ * M8_mxcvt{l,r}[_dm]_[sat_]ub[_r] / M8_mxcvt{b,a}[_sat]_uh[_r] - legacy
+ * convert-and-store: convert the current FXP accumulator to bytes (UB)
+ * or halfwords (UH, combining adjacent spatial pairs) and store them
+ * to VTCM in one instruction (as opposed to the newer cvt_rs +
+ * mxmem(...)=cvt pair, which defers the store -- see
+ * hmx_flush_cvt_fxp()). UH2X2 combines 2x2
+ * spatial+channel blocks via hmx_u16x16_cvt(), with scale/output-bias
+ * concatenated from two adjacent bias registers rather than UH's
+ * single one.
+ *
+ * The legacy HF forms (M8_mxcvt{l,r}_sat[_pos]_hf[_r]) do not use this
+ * helper.
+ */
+void HELPER(hmx_cvt_transfer)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
+                              uint32_t params)
+{
+    HmxState *hmx = env->hmx_state;
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+    int dir = HMX_UNPACK_CVT_DIR(params);
+    int fmt = HMX_UNPACK_CVT_FMT(params);
+    int relu = HMX_UNPACK_CVT_RELU(params);
+    int retain = HMX_UNPACK_CVT_RETAIN(params);
+    uintptr_t ra = GETPC();
+
+    g_assert(fmt == HMX_CVT_FMT_UB_SM || fmt == HMX_CVT_FMT_UB_DM ||
+             fmt == HMX_CVT_FMT_UH || fmt == HMX_CVT_FMT_UH2X2);
+
+    /* The pipeline ages and the accumulator clears below, so fault first. */
+    HmxMem dst;
+
+    hmx_mem_map(&dst, env, rs & 0xFFFFF800, HMX_ACT_CROUTON_SIZE,
+                MMU_DATA_STORE, ra);
+
+    hmx_flush_cvt_fxp(hmx);
+    hmx_flush_acc_clear(env, hmx);
+
+    /* Legacy: always use bias set 0, no control bits from Rs. */
+    uint32_t bias_set = 0;
+
+    HmxAccFxp *acc = &hmx->acc[hmx->current_acc_set].fxp_primary;
+    HmxCvtStateFxp *cvt = &hmx->cvt_fxp[0];
+
+    int s_start = 0, s_end = HMX_SPATIAL_DIM_FXP;
+
+    int is_sm_fmt = (fmt != HMX_CVT_FMT_UB_DM);
+    uint32_t spatial_mask = is_sm_fmt ? 0x783 : 0x7E0;
+    uint32_t tile_x_mask = (~rt) & spatial_mask;
+    uint32_t tile_y_mask = rt & spatial_mask;
+    uint32_t x_offset = rs & tile_x_mask;
+    uint32_t tile_x_inc = tile_x_mask & (~tile_x_mask + 1);
+    uint32_t x_count = tile_x_inc ? (tile_x_mask / tile_x_inc + 1) : 1;
+    uint32_t x_off_pos = tile_x_inc ? (x_offset / tile_x_inc) : 0;
+    uint32_t y_offset = rs & tile_y_mask;
+    uint32_t tile_y_inc = tile_y_mask & (~tile_y_mask + 1);
+    uint32_t y_count = tile_y_inc ? (tile_y_mask / tile_y_inc + 1) : 1;
+    uint32_t y_off_pos = tile_y_inc ? (y_offset / tile_y_inc) : 0;
+
+    /* Age pipeline: shift ages 2 <- 1, 1 <- 0 */
+    hmx->cvt_fxp[2] = hmx->cvt_fxp[1];
+    hmx->cvt_fxp[1] = hmx->cvt_fxp[0];
+
+    int32_t  bias_input[HMX_OUTPUT_CHANNELS];
+    int16_t  bias_exp[HMX_OUTPUT_CHANNELS];
+    int16_t  bias_shape[HMX_OUTPUT_CHANNELS];
+    int16_t  bias_scale[HMX_OUTPUT_CHANNELS];
+    uint16_t bias_out[HMX_OUTPUT_CHANNELS];
+
+    for (int o = 0; o < hmx_cfg->mx_cols; o++) {
+        uint64_t raw = hmx->bias_raw[bias_set][o];
+        bias_input[o] = hmx_bias_input_bias(raw);
+        bias_exp[o]   = (int16_t)hmx_bias_exponent(raw);
+        bias_shape[o] = (int16_t)hmx_bias_shape(raw);
+        bias_scale[o] = (int16_t)hmx_bias_scale(raw);
+        bias_out[o]   = hmx_bias_output_bias_unsigned(raw);
+    }
+
+    if (fmt == HMX_CVT_FMT_UH) {
+        /*
+         * UH 2x1: combine adjacent spatial pairs. Uses rnd_bit
+         * (BIAS[22]) instead of the full output bias.
+         */
+        for (int s = s_start; s < s_end; s += 2) {
+            for (int o = 0; o < hmx_cfg->mx_cols; o++) {
+                int64_t acc_ll = (int64_t)acc->data[s][o];
+                int64_t acc_hl = (int64_t)acc->data[s + 1][o];
+                uint64_t raw = hmx->bias_raw[bias_set][o];
+                uint16_t rnd = (raw >> 22) & 1;
+                uint32_t bias1 = (raw >> 23) & 0xFF;
+                uint32_t poly_scale = ((uint32_t)bias_scale[o] << 8) | bias1;
+
+                uint32_t result = hmx_u16_cvt(
+                    acc_hl, acc_ll, bias_input[o], bias_exp[o],
+                    bias_shape[o], poly_scale, rnd,
+                    /* sat */ !relu, /* legacy */ 1,
+                    /* has_feedback */ 0, /* has_extra_acc_bits */ 0);
+
+                result >>= 4;
+                cvt->data[s][o] = hmx_cvt_out_lo(result);
+                cvt->data[s + 1][o] = hmx_cvt_out_hi(result);
+            }
+        }
+    } else if (fmt == HMX_CVT_FMT_UH2X2) {
+        /*
+         * UH 2x2: combine 2x2 spatial+channel blocks. Scale and
+         * output bias are concatenated from adjacent bias registers.
+         */
+        for (int s = s_start; s < s_end; s += 2) {
+            for (int o = 0; o < hmx_cfg->mx_cols; o += 2) {
+                uint64_t raw_lo = hmx->bias_raw[bias_set][o];
+                uint64_t raw_hi = hmx->bias_raw[bias_set][o + 1];
+
+                int32_t ibias = hmx_bias_input_bias(raw_lo);
+                int16_t exp2 = (int16_t)hmx_bias_exponent(raw_lo);
+                int16_t shp = (int16_t)hmx_bias_shape(raw_lo);
+
+                uint32_t sig_lo = hmx_bias_scale(raw_lo);
+                uint32_t sigmsb_hi = !((raw_hi >> 16) & 1);
+                uint32_t sig_hi = raw_hi & 0x3FF;
+                uint32_t scale2 =
+                    (((sigmsb_hi << 10) | sig_hi) << 11) |
+                    (sig_lo & 0x7FF);
+
+                uint32_t bhi = (raw_hi >> 23) & 0xFF;
+                int32_t blo = hmx_bias_output_bias(raw_lo);
+                uint32_t obias2 = (uint32_t)(((bhi << 12) +
+                    (blo & 0xFFF)) << 2);
+
+                int64_t bias48 = (int64_t)ibias << 16;
+
+                int64_t acc_ll = (int64_t)acc->data[s][o];
+                int64_t acc_hl = (int64_t)acc->data[s + 1][o];
+                int64_t acc_lh = (int64_t)acc->data[s][o + 1];
+                int64_t acc_hh = (int64_t)acc->data[s + 1][o + 1];
+
+                uint32_t result = hmx_u16x16_cvt(
+                    acc_hh, acc_hl, acc_lh, acc_ll,
+                    bias48, exp2, shp, scale2, obias2,
+                    /* sat */ !relu, /* legacy */ 1);
+
+                result >>= 4;
+                cvt->data[s][o] = hmx_cvt_out_lo(result);
+                cvt->data[s + 1][o] = hmx_cvt_out_hi(result);
+                cvt->data[s][o + 1] = 0;
+                cvt->data[s + 1][o + 1] = 0;
+            }
+        }
+    } else {
+        /* UB convert (8x8 byte) */
+        for (int s = s_start; s < s_end; s++) {
+            for (int o = 0; o < hmx_cfg->mx_cols; o++) {
+                int64_t acc_combined = (int64_t)acc->data[s][o];
+
+                /*
+                 * Legacy mode: sat = !relu (relu=0 -> saturate,
+                 * relu=1 -> mask/wrap), legacy=1 (disables jamming).
+                 */
+                uint32_t result = hmx_u8_cvt(
+                    acc_combined, bias_input[o], bias_exp[o],
+                    bias_shape[o], bias_scale[o], bias_out[o],
+                    /* sat */ !relu, /* legacy */ 1);
+
+                cvt->data[s][o] = (uint16_t)result;
+            }
+        }
+    }
+
+    /*
+     * Store convert state to VTCM.  LEFT and BOTTOM store the spatial
+     * positions before the split offset, RIGHT and ABOVE those from it
+     * onward.
+     */
+    int is_cm = (fmt == HMX_CVT_FMT_UB_DM);
+    int is_y_dir = (dir >= HMX_CVT_BOTTOM);
+    uint32_t split_mask = is_y_dir ? tile_y_mask : tile_x_mask;
+    uint32_t split_offset = is_y_dir ? y_offset : x_offset;
+    uint32_t split_inc = is_y_dir ? tile_y_inc : tile_x_inc;
+    uint32_t split_count = is_y_dir ? y_count : x_count;
+    uint32_t split_off_pos = is_y_dir ? y_off_pos : x_off_pos;
+    int split_before = (dir == HMX_CVT_LEFT || dir == HMX_CVT_BOTTOM);
+
+    for (int s = s_start; s < s_end; s++) {
+        uint32_t sp_addr = is_cm ? hmx_act_offset_cm(s, 0)
+                                 : hmx_act_offset_sm(s, 0);
+        uint32_t split_bits = sp_addr & split_mask;
+        if (split_before && split_bits >= split_offset) {
+            continue;
+        }
+        if (!split_before && split_bits < split_offset) {
+            continue;
+        }
+
+        int acc_s = s;
+        if (split_offset != 0 && split_inc != 0) {
+            uint32_t sa = is_cm ? (uint32_t)(s << 5) :
+                          (uint32_t)(((s >> 2) << 7) | (s & 3));
+            uint32_t sa_split = sa & split_mask;
+            uint32_t o_addr = sa & ~split_mask & spatial_mask;
+            uint32_t s_pos = sa_split / split_inc;
+            uint32_t acc_s_pos = (s_pos + split_count -
+                                  split_off_pos) % split_count;
+            uint32_t acc_addr = (acc_s_pos * split_inc) | o_addr;
+            if (is_cm) {
+                acc_s = acc_addr >> 5;
+            } else {
+                acc_s = ((acc_addr >> 7) << 2) | (acc_addr & 3);
+            }
+        }
+
+        for (int o = 0; o < hmx_cfg->mx_cols; o++) {
+            int offset = is_cm ? hmx_act_offset_cm(s, o)
+                               : hmx_act_offset_sm(s, o);
+            uint8_t val = (cvt->data[acc_s][o] >> 4) & 0xFF;
+            hmx_mem_st8(&dst, offset, val);
+        }
+    }
+
+    /* Clear accumulator and flip acc set, unless retaining. */
+    if (!retain) {
+        for (int s = s_start; s < s_end; s++) {
+            memset(&acc->data[s], 0, sizeof(acc->data[s]));
+        }
+        hmx->current_acc_set ^= 1;
+    }
 }
 

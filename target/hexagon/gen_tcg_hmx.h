@@ -86,6 +86,15 @@
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_NORMAL)))
 
 /*
+ * M8_mxcvtr_sat_ub - legacy convert-and-store (spatial-major, byte,
+ * saturating, direction AFTER, clear accumulator).
+ */
+#define fGEN_TCG_M8_mxcvtr_sat_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_SM, \
+                                      0, 0)))
+
+/*
  * M8_mxmem*_act_ub - activation load, all modifiers.
  * HELPER(hmx_act_load) already handles every type/format/modifier
  * combination, so these are all straightforward.
@@ -275,5 +284,149 @@
 #define fGEN_TCG_M8_mxmemdi_wei_n_2x(SHORTCODE) \
     gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_N_2X, HMX_MOD_DI)))
+
+/*
+ * M8_mxcvt{l,r}[_dm][_sat]_ub[_r] - legacy convert-and-store,
+ * all UB format/direction/saturation/retain combinations.
+ * HELPER(hmx_cvt_transfer)'s UB path already handles all of
+ * them via its fmt/dir/relu/retain parameters.
+ */
+#define fGEN_TCG_M8_mxcvtl_sat_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_SM, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvtl_sat_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_SM, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtl_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_SM, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtl_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_SM, \
+                                      1, 1)))
+#define fGEN_TCG_M8_mxcvtl_dm_sat_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_DM, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvtl_dm_sat_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_DM, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtl_dm_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_DM, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtl_dm_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UB_DM, \
+                                      1, 1)))
+#define fGEN_TCG_M8_mxcvtr_sat_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_SM, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtr_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_SM, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtr_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_SM, \
+                                      1, 1)))
+#define fGEN_TCG_M8_mxcvtr_dm_sat_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_DM, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvtr_dm_sat_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_DM, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtr_dm_ub(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_DM, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtr_dm_ub_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UB_DM, \
+                                      1, 1)))
+
+/*
+ * M8_mxcvt{b,a}[_sat]_uh[_r] - legacy UH (2x1) convert-and-store:
+ * combines adjacent spatial pairs into one 16-bit value via
+ * hmx_u16_cvt(). b=BEFORE(LEFT), a=AFTER(RIGHT) direction, same
+ * sat/retain convention as the UB tags above.
+ */
+#define fGEN_TCG_M8_mxcvtb_sat_uh(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvtb_sat_uh_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtb_uh(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtb_uh_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH, \
+                                      1, 1)))
+#define fGEN_TCG_M8_mxcvta_sat_uh(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvta_sat_uh_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvta_uh(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvta_uh_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH, \
+                                      1, 1)))
+
+/*
+ * M8_mxcvt{b,a}[_sat]_uh2x2[_r] - legacy UH2X2 convert-and-store:
+ * combines 2x2 spatial+channel blocks via hmx_u16x16_cvt(). Same
+ * direction/sat/retain convention as the UB/UH tags above.
+ */
+#define fGEN_TCG_M8_mxcvtb_sat_uh2x2(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH2X2, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvtb_sat_uh2x2_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH2X2, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvtb_uh2x2(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH2X2, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvtb_uh2x2_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_LEFT, HMX_CVT_FMT_UH2X2, \
+                                      1, 1)))
+#define fGEN_TCG_M8_mxcvta_sat_uh2x2(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH2X2, \
+                                      0, 0)))
+#define fGEN_TCG_M8_mxcvta_sat_uh2x2_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH2X2, \
+                                      0, 1)))
+#define fGEN_TCG_M8_mxcvta_uh2x2(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH2X2, \
+                                      1, 0)))
+#define fGEN_TCG_M8_mxcvta_uh2x2_r(SHORTCODE) \
+    gen_helper_hmx_cvt_transfer(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVT(HMX_CVT_RIGHT, HMX_CVT_FMT_UH2X2, \
+                                      1, 1)))
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */
