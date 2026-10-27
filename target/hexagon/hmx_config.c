@@ -50,6 +50,12 @@ void hmx_init_config(HexagonCPU *cpu)
          */
         hmx_cfg->mx_fp_acc_exp      = 9;
         hmx_cfg->mx_fp8_en          = true;
+        /*
+         * v81 uses the bit-exact XFP MAC/convert path
+         * (hmx_matmul_fp_xfp()/hmx_fp_convert_xfp()) instead of the
+         * SoftFloat path every other version uses.
+         */
+        hmx_cfg->hmx_fp_uses_xfp    = true;
     }
 
     g_assert(hmx_cfg->mx_rows != 0 && hmx_cfg->mx_rows <= HMX_SPATIAL_DIM_FXP);
