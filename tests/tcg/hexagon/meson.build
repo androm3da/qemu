@@ -76,6 +76,8 @@ tests += {
                files('hvx_histogram_row.S')]
   },
   'hmx_fxp.c': {'cflags': [cflags, '-mv81']},
+  # mxaccshl exists only on v75.
+  'hmx_v75.c': {'cflags': [cflags, '-mv81'], 'qemu_args': ['-cpu', 'v75']},
   'invalid-encoding.c': {'cflags': cflags, 'qemu_args': ['-cpu', 'v85']},
   'invalid-slots.c': {'cflags': cflags},
   'icinva.c': {'cflags': cflags},
@@ -167,6 +169,13 @@ tests += [
       'qemu_args': ['-cpu', 'v71'],
       'test_name': 'hmx_pre_v75-v71',
     },
+  },
+  # HMX is present from v75; also run the fixed-point test on v75 and v79.
+  {
+    'hmx_fxp.c': {'qemu_args': ['-cpu', 'v75'], 'test_name': 'hmx_fxp-v75'},
+  },
+  {
+    'hmx_fxp.c': {'qemu_args': ['-cpu', 'v79'], 'test_name': 'hmx_fxp-v79'},
   },
   {
     'hvx_ext.c': {
