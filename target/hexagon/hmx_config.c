@@ -69,4 +69,24 @@ void hmx_init_config(HexagonCPU *cpu)
      */
     g_assert(hmx_cfg->hmx_present ==
              opcode_supported(M8_mxclracc, cpu->cfg.hex_def));
+
+    /*
+     * The F8 helpers rely on mx_fp8_en, but it is tag_rev_info.c.inc that
+     * makes the F8 instructions illegal where FP8 is absent, so the two
+     * must agree. Only the XFP path implements F8.
+     */
+    static const unsigned f8_opcodes[] = {
+        M8_cvt_rs_f8, M8_mxmem_f8, M8_mxmem_deep_f8,
+        M8_mxmem_sm_act_f8, M8_mxmem_blk_sm_act_f8,
+        M8_mxmemu_blk_sm_act_f8, M8_mxmems_blk_sm_act_f8,
+        M8_mxmemd_blk_sm_act_f8, M8_mxmem_wei_f8,
+        M8_mxmems_wei_f8, M8_mxmemdr_wei_f8, M8_mxmemdp_wei_f8,
+        M8_mxmema_wei_f8, M8_mxmemdi_wei_f8,
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(f8_opcodes); i++) {
+        g_assert(hmx_cfg->mx_fp8_en ==
+                 opcode_supported(f8_opcodes[i], cpu->cfg.hex_def));
+    }
+    g_assert(!hmx_cfg->mx_fp8_en || hmx_cfg->hmx_fp_uses_xfp);
 }

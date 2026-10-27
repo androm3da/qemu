@@ -98,7 +98,7 @@
                                       0, 0)))
 
 /*
- * M8_mxmem*_act_{ub,hf} - activation load, all formats/modifiers.
+ * M8_mxmem*_act_{ub,hf,f8} - activation load, all formats/modifiers.
  * HELPER(hmx_act_load) already handles every type/format/modifier
  * combination, so these are all straightforward.
  */
@@ -137,6 +137,26 @@
 #define fGEN_TCG_M8_mxmemd_blk_sm_act_hf(SHORTCODE) \
     gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_HF, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_D)))
+#define fGEN_TCG_M8_mxmem_blk_sm_act_f8(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_F8, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK)))
+#define fGEN_TCG_M8_mxmem_sm_act_f8(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_F8, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_NOBLK)))
+#define fGEN_TCG_M8_mxmemu_blk_sm_act_f8(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_F8, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_U)))
+#define fGEN_TCG_M8_mxmems_blk_sm_act_f8(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_F8, HMX_ACT_FMT_SM, \
+                                      HMX_ACT_BLK_S)))
+#define fGEN_TCG_M8_mxmemd_blk_sm_act_f8(SHORTCODE) \
+    gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_F8, HMX_ACT_FMT_SM, \
                                       HMX_ACT_BLK_D)))
 #define fGEN_TCG_M8_mxmem_blk_dm_act_ub(SHORTCODE) \
     gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
@@ -506,6 +526,32 @@
         tcg_constant_i32(HMX_CVT_RS_HF))
 
 /*
+ * M8_cvt_rs_f8 - trigger the FP8 convert (see hmx_fp_convert_xfp()'s
+ * is_f8 branch), same shape as M8_cvt_rs_hf above.
+ */
+#define fGEN_TCG_M8_cvt_rs_f8(SHORTCODE) \
+    gen_helper_hmx_cvt_rs(tcg_env, RsV, \
+        tcg_constant_i32(HMX_CVT_RS_F8))
+
+/*
+ * M8_mxmem_deep_f8 - same as M8_mxmem_f8 but reads the older (deep)
+ * entry of the FP8 convert pipeline, mirroring M8_mxmem_deep.
+ */
+#define fGEN_TCG_M8_mxmem_deep_f8(SHORTCODE) \
+    gen_helper_hmx_cvt_store(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_F8, HMX_CVTST_AGE1)))
+
+/*
+ * M8_mxmem_f8 - store the FP8 convert pipeline's output. A dedicated
+ * tag (distinct opcode from the generic M8_mxmem), matching real
+ * hardware's separate F8 store addressing (see
+ * HELPER(hmx_cvt_store)'s HMX_CVTST_F8 branch).
+ */
+#define fGEN_TCG_M8_mxmem_f8(SHORTCODE) \
+    gen_helper_hmx_cvt_store(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_F8, HMX_CVTST_AGE0)))
+
+/*
  * M8_mxmem_2x2 - store the deferred UH2X2 convert pipeline's output.
  * HELPER(hmx_cvt_store)'s addressing already treats HMX_CVTST_2X2 the
  * same as HMX_CVTST_NORMAL (both use the 4-byte-stride SM peg store,
@@ -518,8 +564,8 @@
         tcg_constant_i32(HMX_PACK_CVTST(HMX_CVTST_2X2, HMX_CVTST_AGE0)))
 
 /*
- * M8_mxmem[s,dr,dp,a,di]_wei_hf - FP weight load + FP matrix
- * multiply, every modifier.
+ * M8_mxmem[s,dr,dp,a,di]_wei_{hf,f8} - FP weight load + FP matrix
+ * multiply, every weight type/modifier combination.
  */
 #define fGEN_TCG_M8_mxmem_wei_hf(SHORTCODE) \
     gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
@@ -539,6 +585,24 @@
 #define fGEN_TCG_M8_mxmemdi_wei_hf(SHORTCODE) \
     gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_HF, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmem_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmems_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmemdr_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdp_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmema_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmemdi_wei_f8(SHORTCODE) \
+    gen_helper_hmx_matmul_fp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_F8, HMX_MOD_DI)))
 
 /*
  * M8_mxcvt{l,r}_sat[_pos]_hf[_r] - legacy HF convert-and-store.
