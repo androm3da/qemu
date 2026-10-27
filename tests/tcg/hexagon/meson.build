@@ -77,6 +77,7 @@ tests += {
   },
   'hmx_fxp.c': {'cflags': [cflags, '-mv81']},
   'hmx_fp.c': {'cflags': [cflags, '-mv81']},
+  'hmx_fault.c': {'cflags': [cflags, '-mv81']},
   # mxaccshl exists only on v75.
   'hmx_v75.c': {'cflags': [cflags, '-mv81'], 'qemu_args': ['-cpu', 'v75']},
   'invalid-encoding.c': {'cflags': cflags, 'qemu_args': ['-cpu', 'v85']},
