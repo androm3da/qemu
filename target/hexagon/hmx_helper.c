@@ -55,6 +55,14 @@ static void hmx_mem_map(HmxMem *m, CPUHexagonState *env, uint32_t base,
                            cpu_mmu_index(env_cpu(env), false), ra);
 }
 
+static inline uint32_t hmx_mem_ld32(const HmxMem *m, uint32_t off)
+{
+    if (m->host) {
+        return ldl_le_p(m->host + off);
+    }
+    return cpu_ldl_le_data_ra(m->env, m->base + off, m->ra);
+}
+
 /* Copy @n bytes (a multiple of 4) at @off to @dst. */
 static void hmx_mem_read(const HmxMem *m, uint32_t off, uint8_t *dst,
                          uint32_t n)
@@ -67,6 +75,90 @@ static void hmx_mem_read(const HmxMem *m, uint32_t off, uint8_t *dst,
         stl_le_p(&dst[i], cpu_ldl_le_data_ra(m->env, m->base + off + i,
                                              m->ra));
     }
+}
+
+/* Room for the largest accumulator array: 32 x 32 XFP cells of 16 bytes. */
+#define HMX_UNDO_MAX_BYTES (16 * 1024)
+
+/*
+ * Undo log for a multiply.  A multiply accumulates as it goes and reads
+ * its weights and activation croutons lazily, so a fault taken part-way
+ * through (a TLB miss the guest handles before the instruction restarts)
+ * would make the restart add the products already accumulated a second
+ * time.  The multiply saves the accumulators it can change up front, and
+ * hmx_mem_map_load() puts them back before it raises the fault.  Only
+ * accumulator arrays are saved, since everything else a multiply changes is
+ * rebuilt when it runs again.
+ */
+typedef struct HmxUndo {
+    HmxState *hmx;
+    int32_t mac_cycle_limit;
+    void *region[2];
+    size_t len;
+    uint8_t saved[2][HMX_UNDO_MAX_BYTES];
+} HmxUndo;
+
+/* Save @len bytes at @r0, and at @r1 unless it is NULL (the deep modifier). */
+static void hmx_undo_begin(HmxUndo *undo, HmxState *hmx, void *r0, void *r1,
+                           size_t len)
+{
+    g_assert(len <= sizeof(undo->saved[0]));
+    undo->hmx = hmx;
+    undo->mac_cycle_limit = hmx->mac_cycle_limit;
+    undo->region[0] = r0;
+    undo->region[1] = r1;
+    undo->len = len;
+    memcpy(undo->saved[0], r0, len);
+    if (r1) {
+        memcpy(undo->saved[1], r1, len);
+    }
+}
+
+/*
+ * Map a window that a multiply is about to read.  If the read would fault,
+ * restore the accumulators and raise the fault, so that the restart sees
+ * the state the instruction started with.
+ */
+static void hmx_mem_map_load(HmxMem *m, CPUHexagonState *env, HmxUndo *undo,
+                             uint32_t base, uint32_t len, uintptr_t ra)
+{
+    int mmu_idx = cpu_mmu_index(env_cpu(env), false);
+    void *host;
+    int flags;
+
+    g_assert(len <= -(base | TARGET_PAGE_MASK));
+    flags = probe_access_flags(env, base, len, MMU_DATA_LOAD, mmu_idx, true,
+                               &host, ra);
+    if (flags & TLB_INVALID_MASK) {
+        undo->hmx->mac_cycle_limit = undo->mac_cycle_limit;
+        memcpy(undo->region[0], undo->saved[0], undo->len);
+        if (undo->region[1]) {
+            memcpy(undo->region[1], undo->saved[1], undo->len);
+        }
+        probe_access(env, base, len, MMU_DATA_LOAD, mmu_idx, ra);
+        /* The page became accessible meanwhile: run the instruction again. */
+        cpu_loop_exit_restore(env_cpu(env), ra);
+    }
+
+    m->env = env;
+    m->base = base;
+    m->ra = ra;
+    m->host = flags ? NULL : host;
+}
+
+/*
+ * Take one MAC cycle from the budget that an activation load grants to the
+ * multiplies that follow it.  Returns false once it is spent, and the
+ * rest of that multiply is dropped.
+ */
+static inline bool hmx_take_mac_cycle(HmxState *hmx)
+{
+    if (hmx->mac_cycle_limit <= 0) {
+        hmx->mac_cycle_limit = 0;
+        return false;
+    }
+    hmx->mac_cycle_limit--;
+    return true;
 }
 
 /*
@@ -406,5 +498,570 @@ void HELPER(hmx_act_load)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
                     MMU_DATA_LOAD, ra);
         hmx_load_act_crouton(hmx, &mem, HMX_ACT_CROUTON_SIZE, act_type);
     }
+}
+
+/*
+ * Weight memory layout in VTCM (per 128B vector):
+ *
+ * Each 128B vector contains 32 output channels x 4 bytes.  Word at
+ * offset (och * 4) contains weights for output channel 'och'.  Within
+ * each 4-byte word, bytes map to input channels:
+ *   byte[0] = input_ch_in_group 0
+ *   byte[1] = input_ch_in_group 1
+ *   byte[2] = input_ch_in_group 2
+ *   byte[3] = input_ch_in_group 3
+ *
+ * For byte weights: 4 input channels per vector.
+ * For nibble weights: 8 input channels per vector (lo/hi nibbles).
+ * For crumb weights: 16 input channels per vector (4 crumbs/byte).
+ * For bit weights: 32 input channels per vector (8 bits/byte).
+ */
+
+/*
+ * Bulk-load one weight vector as little-endian int32 words.
+ *
+ * Zero-fill storage past mx_cols so fixed-size downstream loops consume
+ * zero contributions for inactive output channels.
+ */
+static inline void hmx_preload_weight_vec(const HmxConfig *hmx_cfg,
+                                           CPUHexagonState *env,
+                                           uint32_t wei_base,
+                                           int vec_idx,
+                                           uint32_t *wei_words,
+                                           HmxUndo *undo, uintptr_t ra)
+{
+    uint32_t base =
+        wei_base + vec_idx * (hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES);
+
+    HmxMem mem;
+
+    hmx_mem_map_load(&mem, env, undo, base,
+                     hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES, ra);
+    for (int i = 0; i < hmx_cfg->mx_cols; i++) {
+        wei_words[i] = hmx_mem_ld32(&mem, i * HMX_OUTPUT_WORD_BYTES);
+    }
+    for (int i = hmx_cfg->mx_cols; i < HMX_OUTPUT_CHANNELS; i++) {
+        wei_words[i] = 0;
+    }
+}
+
+/* Byte: 4 stream indices per vector */
+static inline void hmx_extract_weights_byte(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int shift = sub_idx * 8;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = (int8_t)((wei_words[o] >> shift) & 0xFF);
+    }
+}
+
+/*
+ * Sign-magnitude: same packing as byte, different interpretation.
+ * Positive (bit7=0): result = magnitude.  Negative (bit7=1):
+ * result = 0x7F ^ in = ~magnitude = -(magnitude+1), mapping
+ * [0x80..0xFF] to [-1..-128] with no negative zero.
+ */
+static inline void hmx_extract_weights_sm(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int shift = sub_idx * 8;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        int8_t v = (int8_t)((wei_words[o] >> shift) & 0xFF);
+        weights[o] = (((v >> 7) & 0x7F) ^ v);
+    }
+}
+
+/*
+ * Nibble: 8 stream indices per vector.  Extract 4-bit value and sign
+ * extend: values 8-15 become -8..-1.
+ */
+static inline void hmx_extract_weights_nibble(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int byte_in_word = sub_idx % 4;
+    int nibble_sel = sub_idx / 4;
+    int shift = byte_in_word * 8 + nibble_sel * 4;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = (int8_t)sextract32(wei_words[o] >> shift, 0, 4);
+    }
+}
+
+/*
+ * Crumb: 16 stream indices per vector.  Extract 2-bit value and sign
+ * extend: {0,1,2,3} -> {0,1,-2,-1}.
+ */
+static inline void hmx_extract_weights_crumb(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int byte_in_word = sub_idx % 4;
+    int crumb_sel = sub_idx / 4;
+    int shift = byte_in_word * 8 + crumb_sel * 2;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = (int8_t)sextract32(wei_words[o] >> shift, 0, 2);
+    }
+}
+
+/* Signed crumb: lookup table {0,1,2,3} -> {2,1,-2,-1} */
+static inline void hmx_extract_weights_signed_crumb(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    static const int8_t sc_map[4] = { 2, 1, -2, -1 };
+    int byte_in_word = sub_idx % 4;
+    int crumb_sel = sub_idx / 4;
+    int shift = byte_in_word * 8 + crumb_sel * 2;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = sc_map[(wei_words[o] >> shift) & 0x3];
+    }
+}
+
+/* Bit (unsigned 1-bit): 32 stream indices per vector */
+static inline void hmx_extract_weights_bit(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int byte_in_word = sub_idx % 4;
+    int bit_sel = sub_idx / 4;
+    int shift = byte_in_word * 8 + bit_sel;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = (wei_words[o] >> shift) & 0x1;
+    }
+}
+
+/* Signed bit: {0,1} -> {+1,-1} */
+static inline void hmx_extract_weights_signed_bit(
+    const uint32_t *wei_words, int sub_idx, int8_t *weights)
+{
+    int byte_in_word = sub_idx % 4;
+    int bit_sel = sub_idx / 4;
+    int shift = byte_in_word * 8 + bit_sel;
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        weights[o] = ((wei_words[o] >> shift) & 0x1) ? -1 : 1;
+    }
+}
+
+/*
+ * Byte weights are always signed int8_t at every revision; treating
+ * them as unsigned on v71+ gives all-0xff output for filters with bytes
+ * > 0x7f.
+ */
+static inline void hmx_mac32(int32_t *acc_row, const int8_t *weights,
+                              int32_t act_x_negate)
+{
+    for (int o = 0; o < HMX_OUTPUT_CHANNELS; o++) {
+        acc_row[o] += act_x_negate * (int32_t)weights[o];
+    }
+}
+
+/* Range-limited MAC for group convolution. */
+static inline void hmx_mac_group(int32_t *acc_row, const int8_t *weights,
+                                  int32_t act_x_negate,
+                                  int grp_start, int grp_end)
+{
+    for (int o = grp_start; o < grp_end; o++) {
+        acc_row[o] += act_x_negate * (int32_t)weights[o];
+    }
+}
+
+/* Weight extraction function pointer type */
+typedef void (*hmx_extract_fn)(const uint32_t *, int, int8_t *);
+
+/* Stream indices packed per 128-byte weight vector, indexed by wei_type */
+static const int hmx_channels_per_vec[8] = {
+    4, 4, 8, 16, 16, 32, 32, 8
+};
+
+/* Extraction function dispatch table, indexed by wei_type */
+static const hmx_extract_fn hmx_extract_table[8] = {
+    hmx_extract_weights_byte,          /* HMX_WEI_B    */
+    hmx_extract_weights_sm,            /* HMX_WEI_SM   */
+    hmx_extract_weights_nibble,        /* HMX_WEI_N    */
+    hmx_extract_weights_crumb,         /* HMX_WEI_C    */
+    hmx_extract_weights_signed_crumb,  /* HMX_WEI_SC   */
+    hmx_extract_weights_bit,           /* HMX_WEI_B1   */
+    hmx_extract_weights_signed_bit,    /* HMX_WEI_SB1  */
+    hmx_extract_weights_nibble,        /* HMX_WEI_N_2X */
+};
+
+/*
+ * Reload activation crouton for a given block index.  Only used when
+ * blocks > 1 (deep activation mode with more than one 2KB crouton).
+ */
+static void hmx_reload_act_crouton(CPUHexagonState *env, HmxState *hmx,
+                                   uint32_t base_addr, int crouton_idx,
+                                   int act_type, HmxUndo *undo, uintptr_t ra)
+{
+    HmxMem mem;
+
+    hmx_mem_map_load(&mem, env, undo,
+                     base_addr + crouton_idx * HMX_ACT_CROUTON_SIZE,
+                     HMX_ACT_CROUTON_SIZE, ra);
+    hmx_load_act_crouton(hmx, &mem, 0, act_type);
+}
+
+/*
+ * The tap and spatial parameters of a multiply: what the activation load
+ * left in HmxState, as modified by the weight modifier.  Shared by the FXP
+ * and FP multiplies.
+ */
+typedef struct HmxTaps {
+    int deep;               /* DP: accumulate into both accumulator sets */
+    int drop;               /* DR: drop positions that carry past the tile */
+    int format_offset;
+    int format_mask;
+    int32_t tile_x_mask;
+    int32_t tile_y_mask;
+    int x_tap_count;
+    int y_tap_count;
+    int x_count;
+    int y_count;
+    int x_tap_array[HMX_MAX_TAP_ARRAY];
+    int y_tap_array[HMX_MAX_TAP_ARRAY];
+    int intra_x_array[HMX_MAX_TAP_ARRAY];
+    int intra_y_array[HMX_MAX_TAP_ARRAY];
+} HmxTaps;
+
+static void hmx_compute_taps(const HmxState *hmx, int wei_mod, HmxTaps *t)
+{
+    uint32_t x_start = 0;
+    uint32_t x_stop = 0;
+    int x_dilate = 0;
+
+    t->deep = 0;
+    t->drop = 0;
+
+    switch (wei_mod) {
+    case HMX_MOD_NORMAL:
+        x_stop = hmx->fx;
+        break;
+    case HMX_MOD_SINGLE:
+        x_start = hmx->fx;
+        x_stop = hmx->fx;
+        break;
+    case HMX_MOD_DR:
+        x_stop = hmx->fx;
+        t->drop = 1;
+        break;
+    case HMX_MOD_DP:
+        t->deep = 1;
+        x_stop = 0;
+        break;
+    case HMX_MOD_ABOVE:
+        x_start = hmx->fx;
+        x_stop = hmx->tile_x_mask;
+        break;
+    case HMX_MOD_DI:
+        x_stop = hmx->fx;
+        x_dilate = 1;
+        break;
+    }
+
+    t->format_offset = hmx->format_offset;
+    t->tile_x_mask = hmx->tile_x_mask;
+    t->tile_y_mask = hmx->tile_y_mask;
+    t->format_mask = (1 << t->format_offset) - 1;
+
+    int32_t tile_x_mask_msb = (int32_t)(t->tile_x_mask | (1u << 31));
+    int32_t tile_y_mask_msb = (int32_t)(t->tile_y_mask | (1u << 31));
+
+    t->x_tap_count = hmx_compute_indices(
+        x_start, x_stop, hmx->tile_x_inc, tile_x_mask_msb,
+        x_dilate, t->x_tap_array, HMX_MAX_TAP_ARRAY);
+    t->y_tap_count = hmx_compute_indices(
+        hmx->y_start, hmx->y_stop, hmx->tile_y_inc, tile_y_mask_msb,
+        hmx->y_dilate, t->y_tap_array, HMX_MAX_TAP_ARRAY);
+    t->x_count = hmx_compute_indices(
+        0, 0x7FFFFFFF, hmx->tile_x_inc, tile_x_mask_msb,
+        0, t->intra_x_array, HMX_MAX_TAP_ARRAY);
+    t->y_count = hmx_compute_indices(
+        0, 0x7FFFFFFF, hmx->tile_y_inc, tile_y_mask_msb,
+        0, t->intra_y_array, HMX_MAX_TAP_ARRAY);
+}
+
+/*
+ * Compute per-crouton channel range for deep activation mode.
+ *
+ *   - First crouton (idx=0): [ch_start, 32)
+ *   - Middle croutons:       [0, 32)
+ *   - Last crouton (idx=blocks-1): [0, ch_stop)
+ */
+static void hmx_crouton_ch_range(int crouton_idx, int num_croutons,
+                                 int orig_ch_start, int orig_ch_stop,
+                                 int *out_start, int *out_stop)
+{
+    if (num_croutons <= 1) {
+        *out_start = orig_ch_start;
+        *out_stop = orig_ch_stop;
+        return;
+    }
+    if (crouton_idx == 0) {
+        *out_start = orig_ch_start;
+        *out_stop = 32;
+    } else if (crouton_idx == num_croutons - 1) {
+        *out_start = 0;
+        *out_stop = orig_ch_stop;
+    } else {
+        *out_start = 0;
+        *out_stop = 32;
+    }
+}
+
+static void hmx_fxp_spatial_mac(
+    HmxState *hmx, const int8_t *weights,
+    int y_count, int x_count,
+    const int *intra_y_array, const int *intra_x_array,
+    int y_tap, int x_tap,
+    int32_t tile_x_mask, int32_t tile_y_mask,
+    int ch_addr, int drop, int deep,
+    int current_acc, int format_mask, int negate,
+    int grp_count, int out_start, int out_end)
+{
+    for (int iy = 0; iy < y_count; iy++) {
+        int intra_y = intra_y_array[iy];
+        int32_t y_ovf = 0;
+        int32_t act_y = hmx_inc_with_spatial_mask_ovf(
+            y_tap, intra_y, tile_y_mask, &y_ovf);
+        act_y = (act_y & 0x7FFFFFFF) + y_ovf * 0x800;
+
+        for (int ix = 0; ix < x_count; ix++) {
+            int intra_x = intra_x_array[ix];
+            int32_t x_ovf = 0;
+            int32_t output_idx = hmx_inc_with_spatial_mask_ovf(
+                x_tap, intra_x, tile_x_mask, &x_ovf);
+            int acc_sel = x_ovf
+                ? (current_acc ^ 1) & 1
+                : current_acc & 1;
+
+            output_idx |= intra_y;
+
+            int spatial = ((output_idx >> 5) & ~format_mask)
+                        | (output_idx & format_mask);
+
+            if (x_ovf && (drop || deep)) {
+                continue;
+            }
+
+            if (spatial < 0 || spatial >= HMX_SPATIAL_DIM_FXP) {
+                continue;
+            }
+
+            int32_t act_idx = (act_y + intra_x + ch_addr) & 0xFFF;
+            uint8_t act_val = hmx->act_buffer[act_idx];
+
+            HmxAccFxp *acc = &hmx->acc[acc_sel].fxp_primary;
+            int32_t act_x_neg = (int32_t)act_val * negate;
+
+            if (grp_count > 1) {
+                hmx_mac_group(acc->data[spatial], weights, act_x_neg,
+                              out_start, out_end);
+            } else {
+                hmx_mac32(acc->data[spatial], weights, act_x_neg);
+            }
+        }
+    }
+}
+
+/*
+ * A weight vector at wei_base + vec_idx * (mx_cols * 4) is valid only
+ * while that byte offset stays within the Rt range and the MAC cycle
+ * budget.  There is no VTCM device to bound-check against (see
+ * hw/hexagon/hexagon.h's cfgtable.vtcm_size_kb for where its size would
+ * come from), so VTCM is treated as unbounded.  The N_2X type packs two
+ * output channels per word, so it needs one less weight_count.
+ */
+static int hmx_fxp_max_valid_vec(CPUHexagonState *env, uint32_t rs,
+                                 uint32_t rt, int wei_type)
+{
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+    const uint32_t mx_cols = hmx_cfg->mx_cols;
+    const uint32_t mx_rows = hmx_cfg->mx_rows;
+    const uint32_t last_wgt_mask = mx_cols * HMX_OUTPUT_WORD_BYTES - 1u;
+
+    int cpv = hmx_channels_per_vec[wei_type];
+    int output_ch_scale = (wei_type == HMX_WEI_N_2X) ? 2 : 1;
+    int weight_count = ctz32((uint32_t)cpv) - 2; /* log2(cpv/4) */
+    if (output_ch_scale == 2) {
+        weight_count -= 1;
+    }
+    if (weight_count < 0) {
+        weight_count = 0;
+    }
+
+    /* Weight decompression buffer limit, as a byte offset. */
+    uint64_t limit = (uint64_t)mx_rows * mx_cols;
+    limit = limit * mx_cols;
+    limit = limit * 9 / 8;
+    int wgtc_mode = (rs >> 4) & 1;
+    if (wgtc_mode == 0) {
+        limit >>= weight_count;
+    }
+
+    /* Rt range, rounded up to the end of the vector it lands in. */
+    uint64_t max_wgt_off = (uint64_t)rt | last_wgt_mask;
+
+    if (max_wgt_off >= limit) {
+        max_wgt_off = limit - 1;
+    }
+
+    /* 512 FXP MAC cycles, not applied for compressed weights. */
+    uint32_t mac_cycle_limit = 512;
+    uint32_t fxp_max_wgt = HMX_FXP_WEIGHTS_PER_WORD * mx_cols;
+    uint64_t mac_off =
+        ((uint64_t)mac_cycle_limit * fxp_max_wgt) >> weight_count;
+    if (mac_off >= 1) {
+        mac_off -= 1;
+    }
+    if (wgtc_mode != 1 && mac_off < max_wgt_off) {
+        max_wgt_off = mac_off;
+    }
+
+    return (int)(max_wgt_off / (mx_cols * HMX_OUTPUT_WORD_BYTES));
+}
+
+/*
+ * M8_mxmem_wei_* - load one weight stream and run the FXP matrix
+ * multiply against the activation crouton latched by the preceding
+ * HELPER(hmx_act_load) call.
+ *
+ * Loop order: crouton -> y_tap -> deep_blk -> x_tap -> channel ->
+ * (preload+extract) -> spatial_y -> spatial_x -> MAC32.  Weights are
+ * preloaded once per 128B vector and extracted once per stream index;
+ * the same extracted weights are then reused across all spatial
+ * positions.
+ */
+void HELPER(hmx_matmul_fxp)(CPUHexagonState *env, uint32_t rs, uint32_t rt,
+                            uint32_t params)
+{
+    HmxState *hmx = env->hmx_state;
+    int wei_type = HMX_UNPACK_WEI_TYPE(params);
+    int wei_mod = HMX_UNPACK_MOD(params);
+    int current_acc = hmx->current_acc_set;
+    uintptr_t ra = GETPC();
+    const HmxConfig *hmx_cfg = hmx_cfg_from_env(env);
+
+    /* Align to one weight vector. */
+    uint32_t wei_base = rs & ~(hmx_cfg->mx_cols * HMX_OUTPUT_WORD_BYTES - 1);
+    int max_valid_vec = hmx_fxp_max_valid_vec(env, rs, rt, wei_type);
+    /* Rs[5] (weight negate) only applies to the FP matmul, not FXP. */
+    int negate = 1;
+
+    /* The deep modifier accumulates into the other set as well. */
+    HmxUndo undo;
+    hmx_undo_begin(&undo, hmx, &hmx->acc[current_acc].fxp_primary,
+                   wei_mod == HMX_MOD_DP
+                       ? &hmx->acc[current_acc ^ 1].fxp_primary : NULL,
+                   sizeof(HmxAccFxp));
+
+    /* Tap parameters, determined by the activation load and the modifier. */
+    HmxTaps taps;
+
+    hmx_compute_taps(hmx, wei_mod, &taps);
+    int format_offset = taps.format_offset;
+
+    int ch_start = hmx->ch_start;
+    int ch_stop = hmx->ch_stop;
+
+    /*
+     * Sub-byte weight types iterate over all 32 input channels
+     * regardless of the activation instruction's channel range.
+     */
+    int cpv = hmx_channels_per_vec[wei_type];
+    if (cpv > 4) {
+        ch_start = 0;
+        ch_stop = 32;
+    }
+
+    int wgt_stream_idx = 0;
+    hmx_extract_fn extract = hmx_extract_table[wei_type];
+    uint32_t wei_words[HMX_OUTPUT_CHANNELS];
+    int prev_vec_idx = -1;
+
+    /*
+     * Deep mode processes twice the weight kernels: the first set of
+     * 32 channels accumulates to the current accumulator set, the second
+     * to the other one.
+     */
+    int num_deep_blk = taps.deep ? 2 : 1;
+
+    int num_croutons = hmx->blocks;
+    uint32_t act_base = hmx->act_rs & 0xFFFFF800;
+
+    for (int crouton_idx = 0; crouton_idx < num_croutons; crouton_idx++) {
+        if (num_croutons > 1) {
+            hmx_reload_act_crouton(env, hmx, act_base, crouton_idx,
+                                   hmx->act_type, &undo, ra);
+        }
+
+        int crouton_ch_start, crouton_ch_stop;
+        hmx_crouton_ch_range(crouton_idx, num_croutons, ch_start, ch_stop,
+                             &crouton_ch_start, &crouton_ch_stop);
+
+        for (int ytd = 0; ytd < taps.y_tap_count; ytd++) {
+            int y_tap = taps.y_tap_array[ytd];
+
+            for (int deep_blk = 0; deep_blk < num_deep_blk; deep_blk++) {
+                for (int xtd = 0; xtd < taps.x_tap_count; xtd++) {
+                    int x_tap = taps.x_tap_array[xtd];
+
+                    for (int ch = crouton_ch_start; ch < crouton_ch_stop;
+                         ch++) {
+                        /*
+                         * One MAC cycle per cpv channels, i.e. per
+                         * weight vector consumed.  An exhausted budget
+                         * drops the rest of the multiply.
+                         */
+                        if (((ch - crouton_ch_start) % cpv) == 0 &&
+                            !hmx_take_mac_cycle(hmx)) {
+                            goto mac_budget_exhausted;
+                        }
+
+                        int saved_wgt = wgt_stream_idx;
+                        int grp_count = hmx->group_count;
+                        int grp_size = hmx->group_size;
+
+                        for (int grp = 0; grp < grp_count; grp++) {
+                            wgt_stream_idx = saved_wgt;
+
+                            int ch_in = ch + grp * grp_size;
+                            int ch_addr = ch_in << format_offset;
+                            int out_start = grp * grp_size;
+                            int out_end = out_start + grp_size;
+
+                            int vec_idx = wgt_stream_idx / cpv;
+                            if (vec_idx > max_valid_vec) {
+                                wgt_stream_idx++;
+                                continue;
+                            }
+
+                            if (vec_idx != prev_vec_idx) {
+                                hmx_preload_weight_vec(
+                                    hmx_cfg, env, wei_base, vec_idx,
+                                    wei_words, &undo, ra);
+                                prev_vec_idx = vec_idx;
+                            }
+
+                            int8_t weights[HMX_OUTPUT_CHANNELS];
+                            int sub_idx = wgt_stream_idx % cpv;
+                            extract(wei_words, sub_idx, weights);
+
+                            hmx_fxp_spatial_mac(
+                                hmx, weights, taps.y_count, taps.x_count,
+                                taps.intra_y_array, taps.intra_x_array,
+                                y_tap, x_tap,
+                                taps.tile_x_mask, taps.tile_y_mask,
+                                ch_addr, taps.drop, taps.deep, current_acc,
+                                taps.format_mask, negate, grp_count,
+                                out_start, out_end);
+
+                            wgt_stream_idx++;
+                        }
+                    }
+                }
+                if (taps.deep) {
+                    current_acc = (current_acc ^ 1) & 1;
+                }
+            }
+        }
+    }
+mac_budget_exhausted:
+    return;
 }
 

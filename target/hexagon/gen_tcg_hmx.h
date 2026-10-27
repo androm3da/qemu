@@ -78,6 +78,14 @@
                                       HMX_ACT_BLK)))
 
 /*
+ * M8_mxmem_wei_b - byte weight load + FXP matrix multiply against the
+ * activation latched by the preceding act-load instruction.
+ */
+#define fGEN_TCG_M8_mxmem_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_NORMAL)))
+
+/*
  * M8_mxmem*_act_ub - activation load, all modifiers.
  * HELPER(hmx_act_load) already handles every type/format/modifier
  * combination, so these are all straightforward.
@@ -118,5 +126,46 @@
     gen_helper_hmx_act_load(tcg_env, RsV, RtV, \
         tcg_constant_i32(HMX_PACK_ACT(HMX_ACT_UB, HMX_ACT_FMT_DM, \
                                       HMX_ACT_BLK_D)))
+
+/*
+ * M8_mxmem*_wei_{b,sm,n,c,sc,b1,sb1,n_2x} - FXP weight load +
+ * matrix multiply, all modifiers. HELPER(hmx_matmul_fxp)'s
+ * extraction table and modifier switch already handle every
+ * combination. The float weights (HF/F8) are not FXP and are
+ * overridden separately.
+ */
+#define fGEN_TCG_M8_mxmem_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_NORMAL)))
+#define fGEN_TCG_M8_mxmems_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmems_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_SINGLE)))
+#define fGEN_TCG_M8_mxmemdr_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdr_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DR)))
+#define fGEN_TCG_M8_mxmemdp_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmemdp_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DP)))
+#define fGEN_TCG_M8_mxmema_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmema_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_ABOVE)))
+#define fGEN_TCG_M8_mxmemdi_wei_b(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_B, HMX_MOD_DI)))
+#define fGEN_TCG_M8_mxmemdi_wei_sm(SHORTCODE) \
+    gen_helper_hmx_matmul_fxp(tcg_env, RsV, RtV, \
+        tcg_constant_i32(HMX_PACK_WEI(HMX_WEI_SM, HMX_MOD_DI)))
 
 #endif /* HEXAGON_GEN_TCG_HMX_H */
