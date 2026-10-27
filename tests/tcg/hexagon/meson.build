@@ -45,6 +45,12 @@ tests += {
     'cflags': [cflags, '-mv66', '-O2'],
     'qemu_args': ['-cpu', 'v66'],
   },
+  # HMX starts at v75.  Compile for v73 and run the same binary on each
+  # older CPU (see the list at the end of this file).
+  'hmx_pre_v75.c': {
+    'cflags': [cflags, '-mv73', '-O2'],
+    'qemu_args': ['-cpu', 'v73'],
+  },
   'circ.c': {'cflags': cflags},
   'first.S': {'cflags': asmflags},
   'fpstuff.c': {'cflags': cflags},
@@ -143,6 +149,24 @@ tests += {
 }
 
 tests += [
+  {
+    'hmx_pre_v75.c': {
+      'qemu_args': ['-cpu', 'v68'],
+      'test_name': 'hmx_pre_v75-v68',
+    },
+  },
+  {
+    'hmx_pre_v75.c': {
+      'qemu_args': ['-cpu', 'v69'],
+      'test_name': 'hmx_pre_v75-v69',
+    },
+  },
+  {
+    'hmx_pre_v75.c': {
+      'qemu_args': ['-cpu', 'v71'],
+      'test_name': 'hmx_pre_v75-v71',
+    },
+  },
   {
     'hvx_ext.c': {
       'qemu_args': ['-cpu', 'v79'],
