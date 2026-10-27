@@ -80,6 +80,12 @@ tests += {
   'hmx_fault.c': {'cflags': [cflags, '-mv81']},
   # mxaccshl exists only on v75.
   'hmx_v75.c': {'cflags': [cflags, '-mv81'], 'qemu_args': ['-cpu', 'v75']},
+  # F8 HMX instructions are v81-only; run on v79 where the rest of HMX
+  # exists.
+  'hmx_rev_gating.c': {
+    'cflags': [cflags, '-mv79', '-O2'],
+    'qemu_args': ['-cpu', 'v79'],
+  },
   'invalid-encoding.c': {'cflags': cflags, 'qemu_args': ['-cpu', 'v85']},
   'invalid-slots.c': {'cflags': cflags},
   'icinva.c': {'cflags': cflags},
