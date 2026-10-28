@@ -287,8 +287,20 @@ def need_PC(tag):
     return "A_IMPLICIT_READS_PC" in attribdict[tag]
 
 
+def resumes_at_next_PC(tag):
+    """
+    The instructions that can complete and continue with the next packet,
+    and so have to be told its address because they set the PC themselves.
+    trap1 does so when it executes as a guest virtual instruction.  trap0
+    and trap2 always raise an event instead, which is entered with the PC of
+    the trap, as an access that faults while the event is handled has to
+    restart the trap.
+    """
+    return tag == "J2_trap1"
+
+
 def need_next_PC(tag):
-    return "A_CALL" in attribdict[tag]
+    return "A_CALL" in attribdict[tag] or resumes_at_next_PC(tag)
 
 
 def need_pkt_has_multi_cof(tag):
