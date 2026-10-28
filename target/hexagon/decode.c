@@ -184,7 +184,6 @@ static bool decode_opcode_can_jump(int opcode)
 {
     if ((GET_ATTRIB(opcode, A_JUMP)) ||
         (GET_ATTRIB(opcode, A_CALL)) ||
-        (opcode == J2_trap0) ||
         (opcode == J2_trap1) ||
         (opcode == J2_trap2) ||
         (opcode == J2_rte) ||
