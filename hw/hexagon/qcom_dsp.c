@@ -329,7 +329,7 @@ static void qcom_dsp_init(MachineState *ms)
     hex_board_create_tcm(info->cfg, &qms->tcm);
 
     hex_board_fdt_add_hvx(ms, info->cfg);
-    l2vic_phandle = hex_board_fdt_add_l2vic(ms, info->cfg);
+    l2vic_phandle = hex_board_fdt_add_interrupt_controller(ms, info->cfg);
     qcom_dsp_fdt_add_gpt(ms);
     /* loadlinux gives the kernel a virtual CPU for every thread that runs. */
     hex_board_fdt_add_cpus(ms);

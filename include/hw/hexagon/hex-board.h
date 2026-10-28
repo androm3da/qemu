@@ -12,6 +12,7 @@
 
 /* The L2VIC interrupt specifiers of the 32 per-cpu lines precede its lines. */
 #define HEX_BOARD_L2VIC_SPI_BASE 32
+#define HEX_BOARD_KERNEL_VADDR 0xc0000000
 
 /*
  * Create the device tree with its root, /soc and /chosen (including an
@@ -20,9 +21,21 @@
 void hex_board_create_fdt(MachineState *ms, const char *model,
                           const char *compatible, int *fdt_size);
 
-/* Add the L2VIC node and make it the interrupt parent of /soc. */
-int32_t hex_board_fdt_add_l2vic(MachineState *ms,
-                                const struct hexagon_machine_config *cfg);
+/* Add the "hvm" machine property, which makes QEMU the monitor of the guest. */
+void hex_board_add_hvm_property(ObjectClass *oc);
+
+/* Tell the guest of the monitor where its device tree is, in r1:r0. */
+void hex_board_set_hvm_boot_args(HexagonCommonMachineState *hms,
+                                 hwaddr fdt_addr);
+
+/*
+ * Return the input for a device interrupt: the L2VIC or HVM controller.
+ */
+qemu_irq hex_board_irq(HexagonCommonMachineState *hms, int irq);
+
+/* Add the active interrupt controller and make it /soc's interrupt parent. */
+int32_t hex_board_fdt_add_interrupt_controller(
+    MachineState *ms, const struct hexagon_machine_config *cfg);
 
 /* Add the /soc/vtcm and /soc/hvx nodes, for what the config provides. */
 void hex_board_fdt_add_hvx(MachineState *ms,
