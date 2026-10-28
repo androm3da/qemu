@@ -13,6 +13,7 @@
 #include "hw/hexagon/hexagon.h"
 #include "hw/hexagon/hex-board.h"
 #include "hw/hexagon/hex-subsys.h"
+#include "hw/hexagon/hexagon_hvm.h"
 #include "hw/hexagon/qcom_dsp.h"
 #include "hw/misc/unimp.h"
 #include "qemu/datadir.h"
@@ -31,7 +32,7 @@ enum {
 static const MemMapEntry qcom_dsp_memmap[] = {
     [QCOM_DSP_UART0] = { 0x37000000, 0x00001000 },
     [QCOM_DSP_VIRTIO] = { 0x37010000, 0x00001000 },
-    /* Not a device: the window the kernel's H2 timer driver binds to. */
+    /* Not a device: the window used by the guest timer driver. */
     [QCOM_DSP_GPT] = { 0xab000000, 0x00001000 },
     [QCOM_DSP_BOOT] = { 0x99c00000, 0x00000200 },
 };
@@ -39,7 +40,7 @@ static const MemMapEntry qcom_dsp_memmap[] = {
 static const int QCOM_DSP_UART0_IRQ = 15;
 /* Virtio IRQs run from QCOM_DSP_VIRTIO_IRQ to QCOM_DSP_VIRTIO_IRQ + 7 */
 static const int QCOM_DSP_VIRTIO_IRQ = 96;
-static const int QCOM_DSP_GPT_IRQ = 12;
+static const int QCOM_DSP_GPT_IRQ = HVM_TIMER_INT;
 
 #define QCOM_DSP_L2_ECC_SIZE 0x1000
 
@@ -140,11 +141,29 @@ static void qcom_dsp_create_fdt(QcomDspMachineState *qms)
     hex_board_create_fdt(ms, MACHINE_GET_CLASS(ms)->desc, compatible,
                          &qms->fdt_size);
     qemu_fdt_setprop_string(ms->fdt, "/soc", "compatible", "simple-bus");
+    if (HEXAGON_COMMON_MACHINE(ms)->hvm_enabled) {
+        /* Linux recognizes HVM guests through this fallback compatible. */
+        char *compat_list[] = { compatible, (char *)"qcom,sm8150" };
+
+        qemu_fdt_setprop_string_array(ms->fdt, "/", "compatible", compat_list,
+                                      ARRAY_SIZE(compat_list));
+    }
 }
 
 /*
- * The H2 hypervisor provides the guest timer through hypercalls, so this
- * node only tells the kernel's timer driver which interrupt to expect.
+ * Whether the configured kernel is an HVM guest or runs through firmware.
+ */
+static bool qcom_dsp_linux_guest(QcomDspMachineState *qms)
+{
+    MachineState *ms = MACHINE(qms);
+
+    return ms->kernel_filename &&
+           (qms->firmware_path || HEXAGON_COMMON_MACHINE(ms)->hvm_enabled);
+}
+
+/*
+ * The monitor provides the guest timer through hypercalls, so this node only
+ * tells the guest timer driver which interrupt to expect.
  */
 static void qcom_dsp_fdt_add_gpt(MachineState *ms)
 {
@@ -259,9 +278,15 @@ static uint64_t qcom_dsp_setup_boot_stub(QcomDspMachineState *qms,
 static void qcom_dsp_check_boot_options(QcomDspMachineState *qms)
 {
     MachineState *ms = MACHINE(qms);
+    HexagonCommonMachineState *hms = HEXAGON_COMMON_MACHINE(ms);
     hwaddr ddr_base = qcom_dsp_info(ms)->cfg->ddr_base;
     hwaddr kernel_addr = qcom_dsp_info(ms)->kernel_addr;
 
+    if (hms->hvm_enabled && ms->firmware) {
+        error_report("hvm=on runs the guest without a hypervisor firmware "
+                     "(-bios)");
+        exit(1);
+    }
     if (ms->firmware) {
         qms->firmware_path = qemu_find_file(QEMU_FILE_TYPE_BIOS, ms->firmware);
         if (!qms->firmware_path) {
@@ -270,13 +295,13 @@ static void qcom_dsp_check_boot_options(QcomDspMachineState *qms)
         }
     }
 
-    if (ms->initrd_filename && !(ms->kernel_filename && qms->firmware_path)) {
-        error_report("-initrd needs both -kernel and the H2 loadlinux "
-                     "firmware given with -bios");
+    if (ms->initrd_filename && !qcom_dsp_linux_guest(qms)) {
+        error_report("-initrd needs both -kernel and either monitor firmware "
+                     "given with -bios, or hvm=on");
         exit(1);
     }
 
-    if (ms->kernel_filename && qms->firmware_path &&
+    if (qcom_dsp_linux_guest(qms) &&
         (ddr_base > qcom_dsp_memmap[QCOM_DSP_BOOT].base ||
          ddr_base + ms->ram_size <= kernel_addr)) {
         error_report("RAM (%" PRIu64 " MiB at 0x%" HWADDR_PRIx ") is too "
@@ -290,8 +315,24 @@ static void qcom_dsp_check_boot_options(QcomDspMachineState *qms)
 static bool qcom_dsp_load_images(QcomDspMachineState *qms, uint64_t *start)
 {
     MachineState *ms = MACHINE(qms);
+    HexagonCommonMachineState *hms = HEXAGON_COMMON_MACHINE(ms);
     hwaddr image_high = 0;
 
+    if (hms->hvm_enabled && ms->kernel_filename) {
+        uint64_t entry = qcom_dsp_load_kernel(ms, true, &image_high);
+
+        qms->fdt_addr = QEMU_ALIGN_UP(image_high + 16 * MiB, 4 * MiB);
+        qcom_dsp_load_initrd(qms);
+        hex_board_set_hvm_boot_args(hms, qms->fdt_addr);
+        /* The kernel is linked at its virtual address, run at its physical. */
+        *start = entry - HEX_BOARD_KERNEL_VADDR +
+                 qcom_dsp_info(ms)->kernel_addr;
+        return true;
+    }
+    if (hms->hvm_enabled) {
+        /* A bare guest, which the user loads where it wants to run. */
+        return false;
+    }
     if (ms->kernel_filename && qms->firmware_path) {
         uint64_t firmware_entry = qcom_dsp_load_firmware(qms);
 
@@ -333,7 +374,7 @@ static void qcom_dsp_init(MachineState *ms)
     qcom_dsp_fdt_add_gpt(ms);
     /* loadlinux gives the kernel a virtual CPU for every thread that runs. */
     hex_board_fdt_add_cpus(ms);
-    if (ms->kernel_filename && qms->firmware_path) {
+    if (qcom_dsp_linux_guest(qms)) {
         qcom_dsp_fdt_add_memory(ms);
     }
     hex_board_create_uart(ms, qcom_dsp_memmap[QCOM_DSP_UART0].base,
@@ -364,7 +405,7 @@ static void qcom_dsp_init(MachineState *ms)
     have_start = qcom_dsp_load_images(qms, &start);
     hex_board_create_cpus(ms, have_start, start);
 
-    if (ms->kernel_filename && qms->firmware_path) {
+    if (qcom_dsp_linux_guest(qms)) {
         hex_board_load_fdt(ms, qms->fdt_size, qms->fdt_addr);
     }
 }
@@ -373,6 +414,7 @@ static void qcom_dsp_base_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
+    hex_board_add_hvm_property(oc);
     mc->init = qcom_dsp_init;
     mc->default_ram_size = 1 * GiB;
     mc->is_default = false;
