@@ -19,6 +19,27 @@ static int hexagon_cpu_post_load(void *opaque, int version_id)
     return 0;
 }
 
+static bool hexagon_hvm_needed(void *opaque)
+{
+    HexagonCPU *cpu = opaque;
+
+    return cpu->hvm != NULL;
+}
+
+static const VMStateDescription vmstate_hexagon_hvm_map = {
+    .name = "cpu/hvm_map",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = hexagon_hvm_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT8(env.hvm_map.type, HexagonCPU),
+        VMSTATE_UINT8(env.hvm_map.extra, HexagonCPU),
+        VMSTATE_BOOL(env.hvm_map.identity, HexagonCPU),
+        VMSTATE_UINT32(env.hvm_map.ptb, HexagonCPU),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 const VMStateDescription vmstate_hexagon_cpu = {
     .name = "cpu",
     .version_id = 3,
@@ -40,5 +61,9 @@ const VMStateDescription vmstate_hexagon_cpu = {
         VMSTATE_UINT32_V(env.cfi_active, HexagonCPU, 3),
 
         VMSTATE_END_OF_LIST()
+    },
+    .subsections = (const VMStateDescription * const []) {
+        &vmstate_hexagon_hvm_map,
+        NULL
     },
 };

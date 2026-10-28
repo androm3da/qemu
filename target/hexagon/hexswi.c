@@ -14,11 +14,14 @@
 #include "internal.h"
 #include "macros.h"
 #include "sys_macros.h"
+#include "exec/cpu-interrupt.h"
 #include "accel/tcg/cpu-loop.h"
 #include "tcg/tcg-op.h"
 #include "hex_mmu.h"
 #include "hexswi.h"
 #include "hw/hexagon/hexagon_globalreg.h"
+#include "hw/hexagon/hexagon_hvm.h"
+#include "hvm.h"
 
 #ifdef CONFIG_USER_ONLY
 #error "This file is only used in system emulation"
@@ -409,7 +412,7 @@ static void coredump(CPUHexagonState *env)
     qemu_log_unlock(f);
 }
 
-static void sim_handle_trap0(CPUHexagonState *env)
+void sim_handle_trap0(CPUHexagonState *env)
 {
     target_ulong what_swi, swi_info;
     CPUState *cs = env_cpu(env);
@@ -825,7 +828,26 @@ void hexagon_vmrte(CPUHexagonState *env)
     env->cfi_active = GET_FIELD(GSR_CFI, gsr);
     fSET_FIELD(env->greg[HEX_GREG_GSR], GSR_CFI, 0);
     env->gpr[HEX_REG_PC] = env->greg[HEX_GREG_GELR] & ~3;
+    if (GET_FIELD(GSR_IE, gsr) && env_archcpu(env)->hvm) {
+        hexagon_hvm_ie_enabled(env);
+    }
     cpu_loop_exit(cs);
+}
+
+void hexagon_hvm_ie_enabled(CPUHexagonState *env)
+{
+    HexagonHVMState *hvm = env_archcpu(env)->hvm;
+
+    BQL_LOCK_GUARD();
+    /* Check for a pending virtual interrupt after enabling interrupts. */
+    if (hexagon_hvm_int_peek(hvm, env->threadId) >= 0) {
+        cpu_interrupt(env_cpu(env), CPU_INTERRUPT_HARD);
+    }
+}
+
+void hexagon_semihost_trap0(CPUHexagonState *env)
+{
+    sim_handle_trap0(env);
 }
 
 void hexagon_cpu_do_interrupt(CPUState *cs)
@@ -844,6 +866,11 @@ void hexagon_cpu_do_interrupt(CPUState *cs)
                   env->cause_code);
 
     env->llsc_addr = ~0;
+
+    if (cpu->hvm) {
+        hexagon_hvm_do_interrupt(cs);
+        return;
+    }
 
     ssr = env->t_sreg[HEX_SREG_SSR];
     if (GET_SSR_FIELD(SSR_EX, ssr) == 0) {

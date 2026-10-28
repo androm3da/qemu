@@ -20,6 +20,8 @@ void clear_wait_mode(CPUHexagonState *env);
 void hexagon_ssr_set_cause(CPUHexagonState *env, uint32_t cause);
 void hexagon_start_threads(CPUHexagonState *env, uint32_t mask);
 void hexagon_stop_thread(CPUHexagonState *env);
+void hexagon_enable_thread(CPUHexagonState *env);
+void hexagon_disable_thread(CPUHexagonState *env);
 void hexagon_nmi(CPUHexagonState *env, uint32_t thread_mask);
 void hexagon_resume_threads(CPUHexagonState *env, uint32_t mask);
 
