@@ -32,7 +32,7 @@ static const int VIRTIO_IRQ_BASE = 16;
 static const int VIRT_UART0_IRQ = 15;
 
 static const MemMapEntry base_memmap[] = {
-    [VIRT_UART0] = { 0x10000000, 0x00000200 },
+    [VIRT_UART0] = { 0x10000000, 0x00001000 },
     [VIRT_MMIO] = { 0x11000000, 0x00001000 },
     [VIRT_FDT] = { 0x99800000, 0x00400000 },
 };
