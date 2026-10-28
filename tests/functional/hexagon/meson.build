@@ -2,6 +2,7 @@
 
 tests_hexagon_system_thorough = [
   'arch_tests',
+  'hvm_linux',
   'qcom_dsp_firmware',
   'systests',
   'minivm',
