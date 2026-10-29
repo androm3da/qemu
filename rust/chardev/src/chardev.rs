@@ -54,7 +54,11 @@ impl Write for CharFrontendMut<'_> {
 
         let len = buf.len().try_into().unwrap();
         let r = unsafe { bindings::qemu_chr_fe_write(addr_of_mut!(*chr), buf.as_ptr(), len) };
-        errno::into_io_result(r).map(|cnt| cnt as usize)
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(r as usize)
+        }
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -62,13 +66,13 @@ impl Write for CharFrontendMut<'_> {
 
         let len = buf.len().try_into().unwrap();
         let r = unsafe { bindings::qemu_chr_fe_write_all(addr_of_mut!(*chr), buf.as_ptr(), len) };
-        errno::into_io_result(r).and_then(|cnt| {
-            if cnt as usize == buf.len() {
-                Ok(())
-            } else {
-                Err(ErrorKind::WriteZero.into())
-            }
-        })
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else if r as usize == buf.len() {
+            Ok(())
+        } else {
+            Err(ErrorKind::WriteZero.into())
+        }
     }
 }
 
@@ -229,7 +233,11 @@ impl CharFrontend {
         let len = buf.len().try_into().unwrap();
         // SAFETY: qemu_chr_fe_write is thread-safe
         let r = unsafe { bindings::qemu_chr_fe_write(self.inner.as_ptr(), buf.as_ptr(), len) };
-        errno::into_io_result(r).map(|cnt| cnt as usize)
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(r as usize)
+        }
     }
 
     /// Write data to a character backend from the front end.  This function
@@ -243,13 +251,13 @@ impl CharFrontend {
         let len = buf.len().try_into().unwrap();
         // SAFETY: qemu_chr_fe_write_all is thread-safe
         let r = unsafe { bindings::qemu_chr_fe_write_all(self.inner.as_ptr(), buf.as_ptr(), len) };
-        errno::into_io_result(r).and_then(|cnt| {
-            if cnt as usize == buf.len() {
-                Ok(())
-            } else {
-                Err(ErrorKind::WriteZero.into())
-            }
-        })
+        if r < 0 {
+            Err(io::Error::last_os_error())
+        } else if r as usize == buf.len() {
+            Ok(())
+        } else {
+            Err(ErrorKind::WriteZero.into())
+        }
     }
 }
 
