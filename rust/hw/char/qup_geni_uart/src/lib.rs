@@ -3,6 +3,7 @@
 
 //! Qualcomm QUP GENI UART device model
 
+mod device;
 pub mod registers;
 
 pub const TYPE_QUP_GENI_UART: &::std::ffi::CStr = c"qup-geni-uart";

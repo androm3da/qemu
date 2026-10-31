@@ -152,9 +152,3 @@ pub const UART_FIFO_WIDTH_BITS: u32 = 32;
 pub const STALE_TIMEOUT: u32 = 160;
 pub const DEF_TX_WM: u32 = 2;
 pub const UART_RX_WM: u32 = 2;
-
-// DMA interrupt status fields
-pub const DMA_DONE: u32 = 1 << 0;
-pub const DMA_EOT: u32 = 1 << 1;
-pub const DMA_AHB_ERR: u32 = 1 << 2;
-pub const DMA_RESET_DONE: u32 = 1 << 3;
