@@ -87,6 +87,17 @@ and executing from the indicated start address::
 
     $ qemu-system-hexagon -kernel ./prog -append 'arg1 arg2'
 
+The ``virt`` machine
+--------------------
+The ``virt`` machine's console is a PL011 UART at ``0x10000000``, which
+takes the first ``-serial``.  When QEMU is built with Rust support it also has
+a Qualcomm QUP GENI UART (``qup-geni-uart``, behind a ``qup-wrapper``) at
+``0x10004000``, for guests that use the Linux ``qcom_geni_serial`` driver.  It
+takes the second ``-serial`` and does its DMA through the system memory::
+
+    $ qemu-system-hexagon -M virt -kernel vmlinux \
+        -serial mon:stdio -serial tcp::4444,server=on,wait=off
+
 Semihosting
 -----------
 Hexagon supports a semihosting interface similar to other architectures'.
