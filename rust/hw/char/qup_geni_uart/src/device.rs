@@ -4,15 +4,26 @@
 use std::{
     ffi::{c_void, CStr},
     io::ErrorKind,
+    ptr,
 };
 
 use bql::prelude::*;
 use chardev::prelude::*;
-use common::prelude::*;
-use hwcore::prelude::*;
+use common::{prelude::*, Opaque};
+use hwcore::{bindings::qdev_prop_allow_set_link_before_realize, prelude::*};
 use migration::{self, prelude::*};
-use qom::prelude::*;
-use system::prelude::*;
+use qom::{
+    bindings::{object_property_add_link, object_ref, object_unref, OBJ_PROP_LINK_STRONG},
+    prelude::*,
+};
+use system::{
+    bindings::{
+        address_space_destroy, address_space_init, address_space_rw, get_system_memory,
+        AddressSpace,
+    },
+    prelude::*,
+    MEMTXATTRS_UNSPECIFIED,
+};
 use util::{self, log::Log, log_mask_ln};
 
 use crate::registers::{self, RegisterOffset, UART_FIFO_DEPTH_WORDS};
@@ -22,6 +33,8 @@ pub const QUP_FIFO_DEPTH: u32 = UART_FIFO_DEPTH_WORDS;
 const TX_QUEUE_BYTES: usize = (UART_FIFO_DEPTH_WORDS * registers::BYTES_PER_FIFO_WORD) as usize;
 
 const QUP_GENI_UART_MMIO_SIZE: u64 = 0x6000;
+
+const DMA_CHUNK_SIZE: usize = 4096;
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -117,9 +130,41 @@ pub struct QupGeniUartRegs {
     pub rx_tail_closed: bool,
     pub tx_remaining: u32,
 
+    pub dma_tx_ptr_l: u32,
+    pub dma_tx_ptr_h: u32,
+    pub dma_tx_attr: u32,
+    pub dma_tx_len: u32,
+    pub dma_tx_sent: u32,
+    pub dma_tx_irq_en: u32,
+    pub dma_tx_irq_stat: u32,
+    pub dma_rx_ptr_l: u32,
+    pub dma_rx_ptr_h: u32,
+    pub dma_rx_attr: u32,
+    pub dma_rx_len: u32,
+    pub dma_rx_len_in: u32,
+    pub dma_rx_irq_en: u32,
+    pub dma_rx_irq_stat: u32,
+
     pub tx_enabled: bool,
     pub rx_enabled: bool,
+    pub dma_mode_enabled: bool,
+    // A TX DMA may be configured before its TX command is started.
+    pub dma_tx_armed: bool,
+    pub dma_tx_active: bool,
+    pub dma_rx_active: bool,
 }
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct DmaRegion(*mut system::bindings::MemoryRegion);
+
+// SAFETY: the pointer is only used under the BQL
+unsafe impl Send for DmaRegion {}
+
+struct DmaAddressSpace(Opaque<AddressSpace>);
+
+// SAFETY: address_space_rw() may be called from any thread
+unsafe impl Sync for DmaAddressSpace {}
 
 #[repr(C)]
 #[derive(qemu_macros::Object, hwcore::Device)]
@@ -131,6 +176,11 @@ pub struct QupGeniUartState {
     pub regs: BqlRefCell<QupGeniUartRegs>,
     pub irq: InterruptSource,
     pub tx_watch: BqlCell<u32>,
+    pub dma_mr: BqlCell<DmaRegion>,
+    dma_as: DmaAddressSpace,
+    dma_as_ready: BqlCell<bool>,
+    // Prevent DMA to this device's MMIO from recursively starting TX DMA.
+    dma_tx_busy: BqlCell<bool>,
 }
 
 qom_isa!(QupGeniUartState : SysBusDevice, DeviceState, Object);
@@ -251,6 +301,7 @@ impl QupGeniUartRegs {
             SE_GENI_TX_PACKING_CFG1 => self.geni_tx_packing_cfg1,
             SE_GENI_RX_PACKING_CFG0 => self.geni_rx_packing_cfg0,
             SE_GENI_RX_PACKING_CFG1 => self.geni_rx_packing_cfg1,
+            SE_GENI_DMA_MODE_EN => self.dma_mode_enabled as u32,
             SE_GENI_TX_FIFO_STATUS => self.tx_pending_words(),
             SE_GENI_RX_FIFO_STATUS => {
                 let mut status = self.rx_fifo_len & registers::RX_FIFO_WC_MSK;
@@ -308,6 +359,19 @@ impl QupGeniUartRegs {
                 (registers::UART_FIFO_WIDTH_BITS << registers::RX_FIFO_WIDTH_SHFT)
                     | (registers::UART_FIFO_DEPTH_WORDS << registers::RX_FIFO_DEPTH_SHFT)
             }
+            SE_DMA_TX_PTR_L => self.dma_tx_ptr_l,
+            SE_DMA_TX_PTR_H => self.dma_tx_ptr_h,
+            SE_DMA_TX_ATTR => self.dma_tx_attr,
+            SE_DMA_TX_LEN => self.dma_tx_len,
+            SE_DMA_TX_IRQ_EN => self.dma_tx_irq_en,
+            SE_DMA_TX_IRQ_STAT => self.dma_tx_irq_stat,
+            SE_DMA_RX_PTR_L => self.dma_rx_ptr_l,
+            SE_DMA_RX_PTR_H => self.dma_rx_ptr_h,
+            SE_DMA_RX_ATTR => self.dma_rx_attr,
+            SE_DMA_RX_LEN => self.dma_rx_len,
+            SE_DMA_RX_LEN_IN => self.dma_rx_len_in,
+            SE_DMA_RX_IRQ_EN => self.dma_rx_irq_en,
+            SE_DMA_RX_IRQ_STAT => self.dma_rx_irq_stat,
             _ => {
                 log_mask_ln!(
                     Log::Unimp,
@@ -444,6 +508,9 @@ impl QupGeniUartRegs {
                     );
                 }
             }
+            SE_GENI_DMA_MODE_EN => {
+                self.dma_mode_enabled = (value & 1) != 0;
+            }
             SE_GENI_M_CMD0 => {
                 self.geni_m_cmd0 = value;
                 let opcode = (value & registers::M_OPCODE_MSK) >> registers::M_OPCODE_SHFT;
@@ -458,6 +525,8 @@ impl QupGeniUartRegs {
                             self.geni_status &= !registers::M_GENI_CMD_ACTIVE;
                             self.tx_enabled = false;
                             self.geni_m_irq_status |= registers::M_CMD_DONE;
+                        } else if self.dma_tx_armed {
+                            self.dma_tx_active = true;
                         }
                         return true;
                     }
@@ -492,6 +561,9 @@ impl QupGeniUartRegs {
                 }
                 if value & registers::S_GENI_CMD_CANCEL != 0 {
                     self.s_cmd_stop(registers::S_CMD_CANCEL);
+                    if self.dma_mode_enabled {
+                        self.dma_rx_irq_stat |= registers::DMA_EOT;
+                    }
                     return true;
                 }
             }
@@ -555,6 +627,83 @@ impl QupGeniUartRegs {
                     );
                 }
             }
+            SE_DMA_TX_PTR_L => {
+                self.dma_tx_ptr_l = value;
+            }
+            SE_DMA_TX_PTR_H => {
+                self.dma_tx_ptr_h = value;
+            }
+            SE_DMA_TX_ATTR => {
+                self.dma_tx_attr = value;
+            }
+            SE_DMA_TX_LEN => {
+                self.dma_tx_len = value;
+                self.dma_tx_sent = 0;
+                self.dma_tx_armed = self.dma_mode_enabled && value > 0;
+                self.dma_tx_active = self.dma_tx_armed && self.tx_enabled;
+            }
+            SE_DMA_TX_IRQ_EN => {
+                self.dma_tx_irq_en = value;
+                return true;
+            }
+            SE_DMA_TX_IRQ_EN_SET => {
+                self.dma_tx_irq_en |= value;
+                return true;
+            }
+            SE_DMA_TX_IRQ_EN_CLR => {
+                self.dma_tx_irq_en &= !value;
+                return true;
+            }
+            SE_DMA_TX_IRQ_CLR => {
+                self.dma_tx_irq_stat &= !value;
+                return true;
+            }
+            SE_DMA_TX_FSM_RST => {
+                if value & 1 != 0 {
+                    self.dma_tx_stop();
+                    self.dma_tx_irq_stat |= registers::DMA_RESET_DONE;
+                    return true;
+                }
+            }
+            SE_DMA_RX_PTR_L => {
+                self.dma_rx_ptr_l = value;
+            }
+            SE_DMA_RX_PTR_H => {
+                self.dma_rx_ptr_h = value;
+            }
+            SE_DMA_RX_ATTR => {
+                self.dma_rx_attr = value;
+            }
+            SE_DMA_RX_LEN => {
+                self.dma_rx_len = value;
+                self.dma_rx_len_in = 0;
+                if self.dma_mode_enabled && value > 0 {
+                    self.dma_rx_active = true;
+                }
+            }
+            SE_DMA_RX_FSM_RST => {
+                if value & 1 != 0 {
+                    self.dma_rx_active = false;
+                    self.dma_rx_irq_stat |= registers::DMA_RESET_DONE;
+                    return true;
+                }
+            }
+            SE_DMA_RX_IRQ_EN => {
+                self.dma_rx_irq_en = value;
+                return true;
+            }
+            SE_DMA_RX_IRQ_EN_SET => {
+                self.dma_rx_irq_en |= value;
+                return true;
+            }
+            SE_DMA_RX_IRQ_EN_CLR => {
+                self.dma_rx_irq_en &= !value;
+                return true;
+            }
+            SE_DMA_RX_IRQ_CLR => {
+                self.dma_rx_irq_stat &= !value;
+                return true;
+            }
             _ => {
                 log_mask_ln!(
                     Log::Unimp,
@@ -567,9 +716,67 @@ impl QupGeniUartRegs {
         false
     }
 
+    // Guest memory may map this device, so the caller performs the access
+    // after releasing the register borrow.
+    fn dma_tx_plan(&mut self) -> Option<(u64, usize)> {
+        let len = self.dma_tx_len.min(self.uart_tx_trans_len);
+
+        if !self.dma_tx_active {
+            return None;
+        }
+        if self.dma_tx_sent >= len {
+            self.dma_tx_stop();
+            self.dma_tx_irq_stat |= registers::DMA_DONE;
+            if self.tx_remaining == 0 {
+                self.tx_enabled = false;
+                self.geni_status &= !registers::M_GENI_CMD_ACTIVE;
+                self.geni_m_irq_status |= registers::M_CMD_DONE;
+            }
+            return None;
+        }
+
+        let mut count = (len - self.dma_tx_sent).min(DMA_CHUNK_SIZE as u32) as usize;
+        if self.uart_loopback_cfg & 1 != 0 && self.rx_enabled {
+            if !self.dma_rx_active {
+                return None;
+            }
+            count = count.min(self.dma_rx_len as usize);
+        }
+        let base = (u64::from(self.dma_tx_ptr_h) << 32) | u64::from(self.dma_tx_ptr_l);
+        match base.checked_add(u64::from(self.dma_tx_sent)) {
+            Some(addr) if count > 0 => Some((addr, count)),
+            Some(_) => None,
+            None => {
+                self.dma_tx_irq_stat |= registers::DMA_AHB_ERR;
+                self.dma_tx_stop();
+                None
+            }
+        }
+    }
+
+    fn dma_tx_stop(&mut self) {
+        self.dma_tx_armed = false;
+        self.dma_tx_active = false;
+    }
+
+    fn dma_rx_addr(&self) -> u64 {
+        (u64::from(self.dma_rx_ptr_h) << 32) | u64::from(self.dma_rx_ptr_l)
+    }
+
+    fn dma_rx_finish(&mut self, len: usize, ok: bool) {
+        self.dma_rx_active = false;
+        if ok {
+            self.dma_rx_len_in = len as u32;
+            self.dma_rx_irq_stat |= registers::DMA_DONE;
+        } else {
+            self.dma_rx_irq_stat |= registers::DMA_AHB_ERR;
+        }
+    }
+
     fn m_cmd_stop(&mut self, irq: u32) {
         self.geni_status &= !registers::M_GENI_CMD_ACTIVE;
         self.tx_enabled = false;
+        self.dma_tx_stop();
         self.tx_remaining = 0;
         self.geni_m_irq_status |= irq;
     }
@@ -577,6 +784,7 @@ impl QupGeniUartRegs {
     fn s_cmd_stop(&mut self, irq: u32) {
         self.geni_status &= !registers::S_GENI_CMD_ACTIVE;
         self.rx_enabled = false;
+        self.dma_rx_active = false;
         self.rx_fifo_len = 0;
         self.rx_last_byte_cnt = 0;
         self.rx_tail_closed = false;
@@ -654,6 +862,25 @@ impl QupGeniUartRegs {
         self.tx_pending_len = 0;
         self.tx_enabled = false;
         self.rx_enabled = false;
+        self.dma_mode_enabled = false;
+
+        self.dma_tx_ptr_l = 0;
+        self.dma_tx_ptr_h = 0;
+        self.dma_tx_attr = 0;
+        self.dma_tx_len = 0;
+        self.dma_tx_sent = 0;
+        self.dma_tx_irq_en = 0;
+        self.dma_tx_irq_stat = 0;
+        self.dma_rx_ptr_l = 0;
+        self.dma_rx_ptr_h = 0;
+        self.dma_rx_attr = 0;
+        self.dma_rx_len = 0;
+        self.dma_rx_len_in = 0;
+        self.dma_rx_irq_en = 0;
+        self.dma_rx_irq_stat = 0;
+        self.dma_tx_armed = false;
+        self.dma_tx_active = false;
+        self.dma_rx_active = false;
     }
 }
 
@@ -681,11 +908,30 @@ impl QupGeniUartState {
 
         uninit_field_mut!(*this, regs).write(Default::default());
         uninit_field_mut!(*this, tx_watch).write(Default::default());
+        uninit_field_mut!(*this, dma_mr).write(BqlCell::new(DmaRegion(ptr::null_mut())));
+        // SAFETY: address_space_init() fills it in when the device is realized
+        uninit_field_mut!(*this, dma_as).write(unsafe { DmaAddressSpace(Opaque::zeroed()) });
+        uninit_field_mut!(*this, dma_as_ready).write(Default::default());
+        uninit_field_mut!(*this, dma_tx_busy).write(Default::default());
     }
 
     fn post_init(&self) {
         self.init_mmio(&self.iomem);
         self.init_irq(&self.irq);
+
+        // SAFETY: dma_mr lives as long as the object, and DmaRegion is a
+        // transparent wrapper of the pointer that the link property stores.
+        // The property keeps a reference to what it is set to.
+        unsafe {
+            object_property_add_link(
+                self.as_object_mut_ptr(),
+                c"memory".as_ptr(),
+                c"memory-region".as_ptr(),
+                self.dma_mr.as_ptr().cast(),
+                Some(qdev_prop_allow_set_link_before_realize),
+                OBJ_PROP_LINK_STRONG,
+            );
+        }
     }
 
     fn read(&self, offset: hwaddr, _size: u32) -> u64 {
@@ -718,10 +964,21 @@ impl QupGeniUartState {
             if update_irq {
                 self.update_irq();
             }
+            if matches!(
+                reg,
+                RegisterOffset::SE_GENI_M_CMD0
+                    | RegisterOffset::SE_DMA_TX_LEN
+                    | RegisterOffset::SE_DMA_RX_LEN
+            ) {
+                self.run_dma_tx();
+                self.update_irq();
+            }
             self.update_tx_watch();
             if matches!(
                 reg,
-                RegisterOffset::SE_GENI_S_CMD0 | RegisterOffset::SE_GENI_S_CMD_CTRL_REG
+                RegisterOffset::SE_GENI_S_CMD0
+                    | RegisterOffset::SE_GENI_S_CMD_CTRL_REG
+                    | RegisterOffset::SE_DMA_RX_LEN
             ) {
                 self.char_frontend.accept_input();
             }
@@ -735,10 +992,121 @@ impl QupGeniUartState {
         }
     }
 
+    fn dma_read(&self, addr: u64, buf: &mut [u8]) -> bool {
+        // SAFETY: buf is writable for its length and dma_as was initialized
+        // by realize, before any register could be accessed.
+        let result = unsafe {
+            address_space_rw(
+                self.dma_as.0.as_ptr(),
+                addr,
+                MEMTXATTRS_UNSPECIFIED,
+                buf.as_mut_ptr().cast(),
+                buf.len() as u64,
+                false,
+            )
+        };
+        result == 0
+    }
+
+    fn dma_write(&self, addr: u64, data: &[u8]) -> bool {
+        // SAFETY: data is readable for its length and dma_as was initialized
+        // by realize, before any register could be accessed.
+        let result = unsafe {
+            address_space_rw(
+                self.dma_as.0.as_ptr(),
+                addr,
+                MEMTXATTRS_UNSPECIFIED,
+                data.as_ptr().cast_mut().cast(),
+                data.len() as u64,
+                true,
+            )
+        };
+        result == 0
+    }
+
+    // Complete RX DMA on each delivery, as if the stale timeout expired.
+    // Release the register borrow in case the DMA target is this device.
+    fn dma_rx_deliver(&self, data: &[u8]) {
+        let (addr, data) = {
+            let mut regs = self.regs.borrow_mut();
+            regs.dma_rx_active = false;
+            let len = data.len().min(regs.dma_rx_len as usize);
+            (regs.dma_rx_addr(), &data[..len])
+        };
+        let ok = self.dma_write(addr, data);
+        self.regs.borrow_mut().dma_rx_finish(data.len(), ok);
+    }
+
+    fn run_dma_tx(&self) {
+        if self.dma_tx_busy.replace(true) {
+            return;
+        }
+        self.run_dma_tx_chunks();
+        self.dma_tx_busy.set(false);
+    }
+
+    fn run_dma_tx_chunks(&self) {
+        let mut buf = [0u8; DMA_CHUNK_SIZE];
+
+        loop {
+            let plan = self.regs.borrow_mut().dma_tx_plan();
+            let Some((addr, count)) = plan else {
+                break;
+            };
+            let ok = self.dma_read(addr, &mut buf[..count]);
+
+            let mut regs = self.regs.borrow_mut();
+            if !regs.dma_tx_active {
+                break;
+            }
+            if !ok {
+                regs.dma_tx_irq_stat |= registers::DMA_AHB_ERR;
+                regs.dma_tx_stop();
+                break;
+            }
+            let sent = if regs.uart_loopback_cfg & 1 != 0 {
+                let deliver = regs.rx_enabled && regs.dma_rx_active;
+                drop(regs);
+                if deliver {
+                    self.dma_rx_deliver(&buf[..count]);
+                }
+                regs = self.regs.borrow_mut();
+                count
+            } else {
+                match self.char_frontend.write(&buf[..count]) {
+                    // There is no source to wake us when no backend is present.
+                    Ok(0) => count,
+                    Ok(sent) => sent,
+                    Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                        if self.arm_tx_watch() {
+                            break;
+                        }
+                        log_mask_ln!(
+                            Log::Unimp,
+                            "QUP GENI UART: backend cannot report writability, \
+                             dropping {} bytes of TX DMA data",
+                            count
+                        );
+                        count
+                    }
+                    Err(_) => count,
+                }
+            };
+            regs.dma_tx_sent = regs.dma_tx_sent.saturating_add(sent as u32);
+            regs.tx_remaining = regs.tx_remaining.saturating_sub(sent as u32);
+        }
+    }
+
     fn can_receive(&self) -> u32 {
         let regs = self.regs.borrow();
         if regs.uart_loopback_cfg & 1 != 0 {
             0
+        } else if regs.rx_enabled && regs.dma_mode_enabled {
+            if regs.dma_rx_active {
+                regs.dma_rx_len.min(DMA_CHUNK_SIZE as u32)
+            } else {
+                0
+            }
         } else if regs.rx_enabled {
             if regs.rx_tail_closed {
                 0
@@ -761,6 +1129,17 @@ impl QupGeniUartState {
         if !regs.rx_enabled || (regs.uart_loopback_cfg & 0x1 != 0) {
             return;
         }
+
+        if regs.dma_mode_enabled {
+            let dma_rx_active = regs.dma_rx_active;
+            drop(regs);
+            if dma_rx_active {
+                self.dma_rx_deliver(buf);
+            }
+            self.update_irq();
+            return;
+        }
+
         let mut pushed = false;
         let mut overflow = false;
         for &byte in buf {
@@ -786,6 +1165,31 @@ impl QupGeniUartState {
     fn event(&self, _event: Event) {}
 
     fn realize(&self) -> util::Result<()> {
+        let mut dma_mr = self.dma_mr.get().0;
+        if dma_mr.is_null() {
+            // SAFETY: the system memory exists for the life of the machine.
+            // The link property is strong and unrefs its target when the
+            // device is finalized, so it needs a reference of its own here.
+            dma_mr = unsafe {
+                let mr = get_system_memory();
+                object_ref(mr.cast());
+                mr
+            };
+            self.dma_mr.set(DmaRegion(dma_mr));
+        }
+        // SAFETY: dma_as is not initialized yet and dma_mr is a valid region.
+        // The link property drops its reference before Drop runs, so keep
+        // one that lasts as long as the address space.
+        unsafe {
+            object_ref(dma_mr.cast());
+            address_space_init(
+                self.dma_as.0.as_mut_ptr(),
+                dma_mr,
+                c"qup-geni-uart-dma".as_ptr(),
+            );
+        }
+        self.dma_as_ready.set(true);
+
         self.char_frontend
             .enable_handlers(self, Self::can_receive, Self::receive, Self::event);
         Ok(())
@@ -793,6 +1197,7 @@ impl QupGeniUartState {
 
     fn reset_hold(&self, _type: ResetType) {
         self.clear_tx_watch();
+        self.dma_tx_busy.set(false);
         self.regs.borrow_mut().reset();
         self.update_irq();
         self.char_frontend.accept_input();
@@ -820,7 +1225,7 @@ impl QupGeniUartState {
     fn update_tx_watch(&self) {
         let wanted = {
             let regs = self.regs.borrow();
-            regs.tx_pending_len > 0
+            regs.tx_pending_len > 0 || (regs.dma_tx_active && regs.uart_loopback_cfg & 1 == 0)
         };
 
         if !wanted {
@@ -857,6 +1262,7 @@ impl QupGeniUartState {
         this.tx_watch.set(0);
         this.regs.borrow_mut().tx_flush(&this.char_frontend);
         this.update_irq();
+        this.run_dma_tx();
         this.update_irq();
         this.update_tx_watch();
         0
@@ -871,6 +1277,8 @@ impl QupGeniUartState {
                 || (regs.rx_last_byte_cnt > 0 && regs.rx_fifo_len == 0)
                 || (regs.rx_tail_closed && regs.rx_last_byte_cnt == 0)
                 || regs.tx_pending_len as usize > TX_QUEUE_BYTES
+                || regs.dma_tx_sent > regs.dma_tx_len
+                || regs.dma_rx_len_in > regs.dma_rx_len
             {
                 return Err(migration::InvalidError);
             }
@@ -883,7 +1291,9 @@ impl QupGeniUartState {
     fn update_irq(&self) {
         let regs = self.regs.borrow();
         let irq_active = (regs.geni_m_irq_status & regs.geni_m_irq_en) != 0
-            || (regs.geni_s_irq_status & regs.geni_s_irq_en) != 0;
+            || (regs.geni_s_irq_status & regs.geni_s_irq_en) != 0
+            || (regs.dma_tx_irq_stat & regs.dma_tx_irq_en) != 0
+            || (regs.dma_rx_irq_stat & regs.dma_rx_irq_en) != 0;
         self.irq.set(irq_active);
     }
 }
@@ -891,6 +1301,13 @@ impl QupGeniUartState {
 impl Drop for QupGeniUartState {
     fn drop(&mut self) {
         self.clear_tx_watch();
+        if self.dma_as_ready.get() {
+            // SAFETY: the address space was initialized by realize
+            unsafe {
+                address_space_destroy(self.dma_as.0.as_mut_ptr());
+                object_unref(self.dma_mr.get().0.cast());
+            }
+        }
     }
 }
 
@@ -938,6 +1355,24 @@ impl_vmstate_struct!(
         vmstate_of!(QupGeniUartRegs, tx_remaining),
         vmstate_of!(QupGeniUartRegs, tx_enabled),
         vmstate_of!(QupGeniUartRegs, rx_enabled),
+        vmstate_of!(QupGeniUartRegs, dma_mode_enabled),
+        vmstate_of!(QupGeniUartRegs, dma_tx_ptr_l),
+        vmstate_of!(QupGeniUartRegs, dma_tx_ptr_h),
+        vmstate_of!(QupGeniUartRegs, dma_tx_attr),
+        vmstate_of!(QupGeniUartRegs, dma_tx_len),
+        vmstate_of!(QupGeniUartRegs, dma_tx_sent),
+        vmstate_of!(QupGeniUartRegs, dma_tx_irq_en),
+        vmstate_of!(QupGeniUartRegs, dma_tx_irq_stat),
+        vmstate_of!(QupGeniUartRegs, dma_rx_ptr_l),
+        vmstate_of!(QupGeniUartRegs, dma_rx_ptr_h),
+        vmstate_of!(QupGeniUartRegs, dma_rx_attr),
+        vmstate_of!(QupGeniUartRegs, dma_rx_len),
+        vmstate_of!(QupGeniUartRegs, dma_rx_len_in),
+        vmstate_of!(QupGeniUartRegs, dma_rx_irq_en),
+        vmstate_of!(QupGeniUartRegs, dma_rx_irq_stat),
+        vmstate_of!(QupGeniUartRegs, dma_tx_armed),
+        vmstate_of!(QupGeniUartRegs, dma_tx_active),
+        vmstate_of!(QupGeniUartRegs, dma_rx_active),
         })
         .build()
 );
