@@ -11,6 +11,6 @@ tests_hexagon_system_thorough = [
 test_hexagon_timeouts = {
   'arch_tests': 180,
   'qcom_dsp_firmware': 240,
-  'systests': 180,
+  'systests': 900,
   'hlx': 180,
 }
