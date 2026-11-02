@@ -27,8 +27,6 @@
 /* Number of QTimer frames instantiated for every Hexagon machine. */
 #define HEX_QTIMER_NR_FRAMES 3
 
-#define HEX_QTIMER_L2VIC_IRQ_BASE 2
-
 static DeviceState *l2vic_create(HexagonCommonMachineState *hms,
                                  const struct hexagon_machine_config *m_cfg)
 {
@@ -65,7 +63,7 @@ static DeviceState *qtimer_create(HexagonCommonMachineState *hms,
     for (unsigned int i = 0; i < HEX_QTIMER_NR_FRAMES; i++) {
         sysbus_connect_irq(SYS_BUS_DEVICE(qtimer), i,
                            qdev_get_gpio_in(hms->l2vic,
-                                            HEX_QTIMER_L2VIC_IRQ_BASE + i));
+                                            m_cfg->qtimer_irq_base + i));
     }
 
     return qtimer;

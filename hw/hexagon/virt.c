@@ -62,10 +62,15 @@ static uint64_t load_bios(HexagonVirtMachineState *vms)
 static void virt_init(MachineState *ms)
 {
     HexagonVirtMachineState *vms = HEXAGON_VIRT_MACHINE(ms);
-    const struct hexagon_machine_config *m_cfg = &v68n_1024;
+    /* Linux numbers the QTimer frames from L2VIC input 2 */
+    static struct hexagon_machine_config virt_cfg;
+    const struct hexagon_machine_config *m_cfg = &virt_cfg;
     int32_t l2vic_phandle;
     uint64_t start = 0;
     bool have_start = false;
+
+    virt_cfg = v68n_1024;
+    virt_cfg.qtimer_irq_base = 2;
 
     hex_board_create_fdt(ms, "hexagon-virt,qemu", "qcom,sm8150",
                          &vms->fdt_size);
