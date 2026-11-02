@@ -246,7 +246,18 @@ static void hex_board_cpu_reset(void *opaque)
     cpu_reset(CPU(opaque));
 }
 
-void hex_board_create_cpus(MachineState *ms, bool have_start, uint64_t start)
+void hex_board_set_cpu_memory_props(DeviceState *cpu,
+                                    const struct hexagon_machine_config *cfg)
+{
+    const union hexagon_config_table *t = &cfg->cfgtable;
+
+    qdev_prop_set_uint32(cpu, "l2line-size", t->l2line_size);
+    qdev_prop_set_uint64(cpu, "vtcm-base", (uint64_t)t->vtcm_base << 16);
+    qdev_prop_set_uint64(cpu, "vtcm-size", (uint64_t)t->vtcm_size_kb * 1024);
+}
+
+void hex_board_create_cpus(MachineState *ms, bool have_start, uint64_t start,
+                           const struct hexagon_machine_config *cfg)
 {
     HexagonCommonMachineState *hms = HEXAGON_COMMON_MACHINE(ms);
     g_autofree HexagonCPU **cpus = g_new(HexagonCPU *, ms->smp.cpus);
@@ -259,6 +270,7 @@ void hex_board_create_cpus(MachineState *ms, bool have_start, uint64_t start)
             qdev_prop_set_uint32(DEVICE(cpu), "exec-start-addr", start);
         }
         qdev_prop_set_uint32(DEVICE(cpu), "htid", i);
+        hex_board_set_cpu_memory_props(DEVICE(cpu), cfg);
         qdev_prop_set_bit(DEVICE(cpu), "start-powered-off", i != 0);
         hex_subsys_add_cpu(hms, DEVICE(cpu));
         cpus[i] = cpu;

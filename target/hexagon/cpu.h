@@ -256,6 +256,11 @@ struct ArchCPU {
 #endif
     HmxState *hmx;
     HmxConfig hmx_cfg;
+    /* L2 cache-line size in bytes, from the config table. */
+    uint32_t l2line_size;
+    /* Physical address range of the VTCM, from the config table. */
+    uint64_t vtcm_base;
+    uint64_t vtcm_size;
 };
 
 static inline HexagonHVXContext *hex_hvx(CPUHexagonState *env)

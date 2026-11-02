@@ -1681,6 +1681,37 @@ void HELPER(data_cache_op)(CPUHexagonState *env, target_ulong RsV,
 }
 
 /*
+ * The memcpy instruction copies to VTCM, so a destination outside of it takes
+ * a coprocessor load/store exception.
+ */
+void HELPER(vtcm_memcpy_check)(CPUHexagonState *env, target_ulong dst,
+                               uint32_t bytes)
+{
+    HexagonCPU *cpu = env_archcpu(env);
+    CPUState *cs = env_cpu(env);
+    uintptr_t ra = GETPC();
+    CPUTLBEntryFull *full;
+    void *host;
+    hwaddr phys;
+
+    probe_access_full(env, dst, 1, MMU_DATA_STORE, cpu_mmu_index(cs, false),
+                      false, &host, &full, ra);
+    phys = full->phys_addr | (dst & ~TARGET_PAGE_MASK);
+    if (phys >= cpu->vtcm_base &&
+        phys + bytes <= cpu->vtcm_base + cpu->vtcm_size) {
+        return;
+    }
+
+    cs->exception_index = HEX_EVENT_PRECISE;
+    env->cause_code = HEX_CAUSE_COPROC_LDST;
+    env->t_sreg[HEX_SREG_BADVA0] = dst;
+    SET_SSR_FIELD(env, SSR_V0, 1);
+    SET_SSR_FIELD(env, SSR_V1, 0);
+    SET_SSR_FIELD(env, SSR_BVS, 0);
+    cpu_loop_exit_restore(cs, ra);
+}
+
+/*
  * The instruction cache operations only take a TLB miss exception, whether
  * or not the mapping can be executed.
  */
