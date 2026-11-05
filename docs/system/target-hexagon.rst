@@ -112,5 +112,6 @@ machines. This can be further configured through ``-semihosting-config``.
    hexagon/machines
    hexagon/sdk-programs
    hexagon/boot
+   hexagon/baremetal
    hexagon/emulation
    hexagon/cdsp

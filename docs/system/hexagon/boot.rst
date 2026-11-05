@@ -117,3 +117,31 @@ Console and semihosting
 SDK simulator programs use semihosting for console I/O. The ``virt`` and
 board-specific machines also provide a PL011 UART, whose host backend is
 selected with ``-serial``.
+
+Debugging with LLDB
+-------------------
+
+Use ``lldb`` (tested with LLDB 21) to debug Hexagon guests through QEMU's
+remote stub. Start the bare-metal guest from :doc:`baremetal` stopped:
+
+.. code-block:: sh
+
+    qemu-system-hexagon -M virt -smp 1 -display none -monitor none \
+        -serial stdio -kernel ./hello.elf -s -S
+
+Then, in another terminal:
+
+.. code-block:: text
+
+    $ lldb ./hello.elf
+    (lldb) gdb-remote localhost:1234
+    (lldb) breakpoint set --name main
+    (lldb) continue
+    (lldb) register read pc r29
+    (lldb) thread step-inst
+
+Instruction stepping advances one Hexagon instruction packet.
+
+For remote-stub configuration, see :doc:`../gdb`. When debugging an OS,
+load its firmware or kernel symbols in LLDB. A shared object loaded by
+QuRT may need its runtime load address specified for symbol resolution.
