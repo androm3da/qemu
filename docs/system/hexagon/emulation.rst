@@ -11,7 +11,31 @@ It also has support for the following architecture extensions:
 
 - HVX (Hexagon Vector eXtensions)
 - `HVX floating point <https://docs.qualcomm.com/doc/80-N2040-61/topic/hvx-floating-point.html>`_.
+- HLX (see the `HLX reference manual
+  <https://docs.qualcomm.com/doc/80-N3040-23/topic/hlx.html>`_).
+
+Machine configurations also select the available HVX contexts, VTCM,
+and HMX/HLX resources. See :doc:`machines` for the machine configurations.
 
 For information on the specifics of the HVX extension, please refer
 to the `Qualcomm Hexagon V79 HVX Programmer's Reference Manual
 <https://docs.qualcomm.com/doc/80-N2040-61/>`_.
+
+Emulation limits
+----------------
+
+The system models target functional execution. They do not reproduce
+hardware cycle timings, cache latency, bus contention, or the SDK
+simulator's profiling results. Some simulator profiling operations are
+stubs; a successful call does not imply a measured hardware event.
+
+HVX uses 128-byte vectors; 64-byte mode is not implemented. Small-core
+DSP TLB formats are not supported. Cacheability attributes do not model
+a physical cache hierarchy. Board-specific unimplemented register windows
+allow selected firmware accesses but do not implement the corresponding
+peripheral's behavior. Neither the simulator-compatible machines nor the
+CDSP/NSP models emulate the whole application-processor SoC.
+
+See :doc:`../../devel/hexagon-sys` and
+:doc:`../../devel/hexagon-l2vic` for system-register, TLB, and interrupt
+details relevant to OS and firmware authors.
