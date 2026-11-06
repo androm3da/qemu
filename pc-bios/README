@@ -8,6 +8,14 @@
   via "make -C roms hexagon-<machine>".  H2 is distributed under the terms
   given in "hexagon-hypervisor-license.txt".
 
+- hexagon_minivm_qcs6490_cdsp is minivm, a Hexagon Virtual Machine monitor
+  that boots Linux in place of H2 on the qcs6490-cdsp machine (-bios).  The
+  sources are at https://github.com/quic/hexagonMVM, built from tag v0.6.0
+  (commit ba762a8a8baecfd391653398118dcf00cdf5b381) with the Rust toolchain
+  that repository pins, via "make -C roms hexagon-minivm-qcs6490-cdsp".
+  minivm is distributed under the terms given in
+  "hexagon-minivm-license.txt".
+
 - The VGA BIOS and the Cirrus VGA BIOS come from the LGPL VGA bios
   project (http://www.nongnu.org/vgabios/).
 
