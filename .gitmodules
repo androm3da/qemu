@@ -48,3 +48,6 @@
 [submodule "roms/hexagon-hypervisor"]
 	path = roms/hexagon-hypervisor
 	url = https://gitlab.com/qemu-project/hexagon-hypervisor.git
+[submodule "roms/hexagonMVM"]
+	path = roms/hexagonMVM
+	url = https://github.com/quic/hexagonMVM.git

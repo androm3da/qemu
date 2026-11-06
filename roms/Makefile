@@ -75,6 +75,7 @@ default help:
 	@echo "  qboot              -- update qboot"
 	@echo "  hppa-firmware      -- update 32- and 64-bit hppa firmware"
 	@echo "  hexagon-qcs6490-cdsp -- update H2 firmware for qcs6490-cdsp"
+	@echo "  hexagon-minivm-qcs6490-cdsp -- update minivm firmware"
 	@echo "  hexagon-sm8975-nsp -- update H2 firmware for sm8975-nsp"
 	@echo "  hexagon-sa8775p-cdsp -- update H2 firmware for sa8775p-cdsp"
 	@echo "  hexagon-sc8480xp-nsp0 -- update H2 firmware for sc8480xp-nsp0"
@@ -232,6 +233,14 @@ hexagon_h2_common_flags = USE_PKW=0 TARGET=opt NULL_ANGEL_TRAP=1 \
 	H2K_GIT_COMMIT=0x$(shell git -C hexagon-hypervisor rev-parse --short=8 HEAD) \
 	H2K_GIT_COMMIT_LONG=0x$(shell git -C hexagon-hypervisor rev-parse HEAD) \
 	JFLAG=-j$(shell nproc)
+
+# Needs the Rust toolchain pinned by minivm and a Hexagon LLVM linker on PATH.
+.PHONY: hexagon-minivm-qcs6490-cdsp
+hexagon-minivm-qcs6490-cdsp:
+	$(MAKE) -C hexagonMVM minivm
+	cp hexagonMVM/target/hexagon-unknown-none-elf/release/minivm \
+		../pc-bios/hexagon_minivm_qcs6490_cdsp
+	chmod -x ../pc-bios/hexagon_minivm_qcs6490_cdsp
 
 .PHONY: hexagon-qcs6490-cdsp hexagon-sm8975-nsp \
 	hexagon-sa8775p-cdsp hexagon-sc8480xp-nsp0 hexagon-sa8797p-nsp0 \
