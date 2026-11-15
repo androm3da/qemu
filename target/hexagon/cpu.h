@@ -257,6 +257,28 @@ struct ArchCPU {
     HmxConfig hmx_cfg;
 };
 
+/*
+ * Effective capabilities of a CPU: what its revision provides, narrowed by
+ * the CPU properties.  Report these, and not the revision alone, wherever
+ * the guest is told what the CPU can do.
+ */
+static inline bool hexagon_cpu_has_hvx(const HexagonCPU *cpu)
+{
+    return cpu->cfg.hex_def->hex_version >= HEX_VER_V60;
+}
+
+static inline bool hexagon_cpu_has_hvx_ieee_fp(const HexagonCPU *cpu)
+{
+    return hexagon_cpu_has_hvx(cpu) &&
+           cpu->cfg.hex_def->hex_version >= HEX_VER_V68 &&
+           cpu->cfg.ieee_fp_extension;
+}
+
+static inline bool hexagon_cpu_has_hmx(const HexagonCPU *cpu)
+{
+    return cpu->hmx_cfg.hmx_present;
+}
+
 static inline HexagonHVXContext *hex_hvx(CPUHexagonState *env)
 {
 #ifdef CONFIG_USER_ONLY

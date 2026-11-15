@@ -9,6 +9,7 @@
 
 abi_ulong get_elf_hwcap(CPUState *cs)
 {
+    HexagonCPU *cpu = HEXAGON_CPU(cs);
     HexagonCPUClass *mcc = HEXAGON_CPU_GET_CLASS(cs);
     abi_ulong hwcaps;
     uint32_t hex_ver;
@@ -72,10 +73,16 @@ abi_ulong get_elf_hwcap(CPUState *cs)
         return 0;
     }
 
-    hwcaps |= HWCAP_HEXAGON_HVX;
-    hwcaps |= HWCAP_HEXAGON_HVX_LENGTH_128B;
-    if (hex_ver >= HEX_VER_V68) {
+    /* QEMU implements only the 128-byte HVX vector length. */
+    if (hexagon_cpu_has_hvx(cpu)) {
+        hwcaps |= HWCAP_HEXAGON_HVX;
+        hwcaps |= HWCAP_HEXAGON_HVX_LENGTH_128B;
+    }
+    if (hexagon_cpu_has_hvx_ieee_fp(cpu)) {
         hwcaps |= HWCAP_HEXAGON_HVX_IEEE_FP;
+    }
+    if (hexagon_cpu_has_hmx(cpu)) {
+        hwcaps |= HWCAP_HEXAGON_HMX;
     }
 
     return hwcaps;

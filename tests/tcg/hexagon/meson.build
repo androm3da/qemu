@@ -167,6 +167,29 @@ tests += {
   'vector_add_int.c': {'cflags': [cflags, '-mhvx', '-fvectorize']},
 }
 
+# AT_HWCAP must follow the CPU revision and the ieee-fp property.
+# Each case is: -cpu argument, ISA value, HVX, HVX IEEE FP, HMX.
+hwcap_cases = {
+  'v55': ['v55', 5, 0, 0, 0],
+  'v60': ['v60', 6, 1, 0, 0],
+  'v68': ['v68', 11, 1, 1, 1],
+  'v68-no-ieee-fp': ['v68,ieee-fp=false', 11, 1, 0, 1],
+  'v85': ['v85', 20, 1, 1, 1],
+}
+foreach name, c : hwcap_cases
+  tests += [{
+    'hwcap.c': {
+      'cflags': [cflags, '-DEXPECT_ISA=@0@'.format(c[1]),
+                 '-DEXPECT_HVX=@0@'.format(c[2]),
+                 '-DEXPECT_HVX_IEEE_FP=@0@'.format(c[3]),
+                 '-DEXPECT_HMX=@0@'.format(c[4])],
+      'qemu_args': ['-cpu', c[0]],
+      'exe_name': 'hwcap-' + name,
+      'test_name': 'hwcap-' + name,
+    },
+  }]
+endforeach
+
 tests += [
   {
     'hvx_ext.c': {
