@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+tests_hexagon_system_quick = [
+  'core_dump',
+]
+
 tests_hexagon_system_thorough = [
   'arch_tests',
   'qcom_dsp_firmware',
