@@ -17,54 +17,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include <assert.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-static void *resume_pc;
-static int signals_handled;
-static int expected_signals;
-
-static void handle_sigill(int sig, siginfo_t *info, void *puc)
-{
-    ucontext_t *uc = (ucontext_t *)puc;
-
-    if (sig != SIGILL) {
-        _exit(EXIT_FAILURE);
-    }
-
-    uc->uc_mcontext.r0 = SIGILL;
-    uc->uc_mcontext.pc = (unsigned long)resume_pc;
-    signals_handled++;
-}
-
-/*
- * Try to execute an instruction introduced after v66
- * On a v66 CPU this must raise SIGILL.
- *
- * Since we are building for v66, the assembler will reject
- * the instructions, so introduce them with .word.
- */
-#define TRY_FUNC(NAME, WORD) \
-static int try_##NAME(void) \
-{ \
-    int sig; \
-    expected_signals++; \
-    asm volatile( \
-        "r0 = #0\n" \
-        "r1 = ##1f\n" \
-        "memw(%1) = r1\n" \
-        WORD \
-        "1:\n" \
-        "%0 = r0\n" \
-        : "=r"(sig) \
-        : "r"(&resume_pc) \
-        : "r0", "r1", "memory"); \
-    return sig; \
-}
+#include "rev_gating.h"
 
 TRY_FUNC(v68_loadw_aq,
          ".word 0x9200c800    /* { r0 = memw_aq(r0) } */\n")
@@ -85,6 +38,15 @@ TRY_FUNC(v68_stored_rl_st,
 
 TRY_FUNC(v68hvx_v6mpy,
          ".word 0x1f42e424    /* v5:4.w = v6mpy(v5:4.ub, v3:2.b, #1):v */\n")
+
+TRY_FUNC(v68hvx_vabs_hf,
+         ".word 0x1e06e180    /* v0.hf = vabs(v1.hf) */\n")
+TRY_FUNC(v68hvx_vadd_hf_hf,
+         ".word 0x1fa2e1e0    /* v0.hf = vadd(v1.hf, v2.hf) */\n")
+TRY_FUNC(v68hvx_vfmax_sf,
+         ".word 0x1c62e160    /* v0.sf = vfmax(v1.sf, v2.sf) */\n")
+TRY_FUNC(v68hvx_vmpy_sf_hf,
+         ".word 0x1f83e240    /* v1:0.sf = vmpy(v2.hf, v3.hf) */\n")
 
 TRY_FUNC(v69hvx_vasrvuhubrndsat,
          ".word 0x1d06c465    /* v5.ub = vasr(v5:4.uh, v6.ub):rnd:sat */\n")
@@ -110,6 +72,11 @@ TRY_FUNC(v73_jumprh,
          ".word 0x52c0c000    /* jumprh r0 */\n")
 TRY_FUNC(v73_unpause,
          ".word 0x57e0d000    /* unpause */\n")
+
+TRY_FUNC(v73hvx_vmax_bf,
+         ".word 0x1d42e1e0    /* v0.bf = vmax(v1.bf, v2.bf) */\n")
+TRY_FUNC(v73hvx_vadd_sf_bf,
+         ".word 0x1d43e2c0    /* v1:0.sf = vadd(v2.bf, v3.bf) */\n")
 
 TRY_FUNC(v79_storeri_pi_nt,
          ".word 0xaa82c308    /* memw(r2++#4):nt = r3 */\n")
@@ -180,6 +147,11 @@ int main(void)
 
     assert(try_v68hvx_v6mpy() == SIGILL);
 
+    assert(try_v68hvx_vabs_hf() == SIGILL);
+    assert(try_v68hvx_vadd_hf_hf() == SIGILL);
+    assert(try_v68hvx_vfmax_sf() == SIGILL);
+    assert(try_v68hvx_vmpy_sf_hf() == SIGILL);
+
     assert(try_v69hvx_vasrvuhubrndsat() == SIGILL);
     assert(try_v69hvx_vasrvuhubsat() == SIGILL);
     assert(try_v69hvx_vasrvwuhrndsat() == SIGILL);
@@ -191,6 +163,9 @@ int main(void)
     assert(try_v73_callrh() == SIGILL);
     assert(try_v73_jumprh() == SIGILL);
     assert(try_v73_unpause() == SIGILL);
+
+    assert(try_v73hvx_vmax_bf() == SIGILL);
+    assert(try_v73hvx_vadd_sf_bf() == SIGILL);
 
     assert(try_v79_storeri_pi_nt() == SIGILL);
     assert(try_v79_pstorerit_pi_nt() == SIGILL);

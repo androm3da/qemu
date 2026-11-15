@@ -45,6 +45,13 @@ tests += {
     'cflags': [cflags, '-mv66', '-O2'],
     'qemu_args': ['-cpu', 'v66'],
   },
+  # Compile for v68 so that the ELF selects a v68 CPU; the test then checks
+  # that v68 accepts the HVX IEEE FP instructions it introduced and rejects
+  # the v73 bfloat16 ones.
+  'check_rev_gating_v68.c': {
+    'cflags': [cflags, '-mv68', '-O2'],
+    'qemu_args': ['-cpu', 'v68'],
+  },
   'circ.c': {'cflags': cflags},
   'first.S': {'cflags': asmflags},
   'fpstuff.c': {'cflags': cflags},

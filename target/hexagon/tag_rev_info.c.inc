@@ -620,6 +620,55 @@ static const struct tag_rev_info tag_rev_info[XX_LAST_OPCODE] = {
     [V6_vcombine_tmp] = { .introduced = HEX_VER_V69, .removed = HEX_VER_NONE },
     [V6_vmpyuhvs] = { .introduced = HEX_VER_V69, .removed = HEX_VER_NONE },
 
+    /* HVX IEEE floating point extension */
+    [V6_vabs_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vabs_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vadd_hf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vadd_sf_bf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vadd_sf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vadd_sf_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vassign_fp] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_b_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_bf_sf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vcvt_h_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_hf_b] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_hf_h] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_hf_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_hf_ub] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_hf_uh] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_sf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_ub_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vcvt_uh_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vdmpy_sf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vdmpy_sf_hf_acc] = {
+        .introduced = HEX_VER_V68, .removed = HEX_VER_NONE
+    },
+    [V6_vfmax_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vfmax_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vfmin_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vfmin_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vfneg_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vfneg_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vmax_bf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vmin_bf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vmpy_hf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vmpy_hf_hf_acc] = {
+        .introduced = HEX_VER_V68, .removed = HEX_VER_NONE
+    },
+    [V6_vmpy_sf_bf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vmpy_sf_bf_acc] = {
+        .introduced = HEX_VER_V73, .removed = HEX_VER_NONE
+    },
+    [V6_vmpy_sf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vmpy_sf_hf_acc] = {
+        .introduced = HEX_VER_V68, .removed = HEX_VER_NONE
+    },
+    [V6_vmpy_sf_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vsub_hf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vsub_sf_bf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
+    [V6_vsub_sf_hf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+    [V6_vsub_sf_sf] = { .introduced = HEX_VER_V68, .removed = HEX_VER_NONE },
+
     /* HMX (matrix) coprocessor extension */
     [M8_cvt_rs_f8] = { .introduced = HEX_VER_V81, .removed = HEX_VER_NONE },
     [M8_cvt_rs_hf] = { .introduced = HEX_VER_V73, .removed = HEX_VER_NONE },
