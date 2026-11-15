@@ -873,6 +873,9 @@ static bool hexagon_tlb_fill(CPUState *cs, vaddr address, int size,
 static const struct SysemuCPUOps hexagon_sysemu_ops = {
     .has_work = hexagon_cpu_has_work,
     .translate_for_debug = hexagon_cpu_translate_for_debug,
+    .write_elf32_note = hexagon_cpu_write_elf32_note,
+    .get_dump_info = hexagon_get_dump_info,
+    .get_note_size = hexagon_get_note_size,
 };
 
 static bool hexagon_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
