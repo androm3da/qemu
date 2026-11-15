@@ -314,6 +314,7 @@ hexagon_ss.add(files(
 ))
 
 hexagon_softmmu_ss.add(files(
+    'hexagon-qmp-cmds.c',
     'cpu_helper.c',
     'hex_mmu.c',
     'hex_interrupts.c',

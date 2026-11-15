@@ -10,6 +10,7 @@
 #include "qapi/qapi-types-machine.h"
 
 CpuDefinitionInfoList *qmp_query_arm_cpu_definitions(Error **errp);
+CpuDefinitionInfoList *qmp_query_hexagon_cpu_definitions(Error **errp);
 CpuDefinitionInfoList *qmp_query_i386_cpu_definitions(Error **errp);
 CpuDefinitionInfoList *qmp_query_loongarch_cpu_definitions(Error **errp);
 CpuDefinitionInfoList *qmp_query_mips_cpu_definitions(Error **errp);
@@ -21,6 +22,10 @@ CpuModelExpansionInfo *
 qmp_query_arm_cpu_model_expansion(CpuModelExpansionType type,
                                   CpuModelInfo *model,
                                   Error **errp);
+CpuModelExpansionInfo *
+qmp_query_hexagon_cpu_model_expansion(CpuModelExpansionType type,
+                                     CpuModelInfo *model,
+                                     Error **errp);
 CpuModelExpansionInfo *
 qmp_query_i386_cpu_model_expansion(CpuModelExpansionType type,
                                    CpuModelInfo *model,

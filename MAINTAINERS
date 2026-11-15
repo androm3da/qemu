@@ -252,6 +252,7 @@ M: Brian Cain <brian.cain@oss.qualcomm.com>
 R: Pierrick Bouvier <pierrick.bouvier@oss.qualcomm.com>
 S: Supported
 F: target/hexagon/
+F: stubs/qmp-cpu-hexagon.c
 F: hw/intc/hex-l2vic.c
 F: include/hw/intc/hex-l2vic.h
 F: tests/qtest/l2vic-test.c

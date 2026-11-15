@@ -101,6 +101,8 @@ CpuDefinitionInfoList *qmp_query_cpu_definitions(Error **errp)
     case SYS_EMU_TARGET_AARCH64:
     case SYS_EMU_TARGET_ARM:
         return qmp_query_arm_cpu_definitions(errp);
+    case SYS_EMU_TARGET_HEXAGON:
+        return qmp_query_hexagon_cpu_definitions(errp);
     case SYS_EMU_TARGET_I386:
     case SYS_EMU_TARGET_X86_64:
         return qmp_query_i386_cpu_definitions(errp);
@@ -135,6 +137,8 @@ qmp_query_cpu_model_expansion(CpuModelExpansionType type,
     case SYS_EMU_TARGET_AARCH64:
     case SYS_EMU_TARGET_ARM:
         return qmp_query_arm_cpu_model_expansion(type, model, errp);
+    case SYS_EMU_TARGET_HEXAGON:
+        return qmp_query_hexagon_cpu_model_expansion(type, model, errp);
     case SYS_EMU_TARGET_I386:
     case SYS_EMU_TARGET_X86_64:
         return qmp_query_i386_cpu_model_expansion(type, model, errp);
