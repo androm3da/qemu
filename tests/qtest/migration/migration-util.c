@@ -189,6 +189,13 @@ char *find_common_machine_version(const char *mtype, const char *var1,
     g_autofree char *type1 = qtest_resolve_machine_alias(var1, mtype);
     g_autofree char *type2 = qtest_resolve_machine_alias(var2, mtype);
 
+    /* Unversioned machines have a concrete name but no alias. */
+    if (!type1 && qtest_has_machine_with_env(var1, mtype)) {
+        type1 = g_strdup(mtype);
+    }
+    if (!type2 && qtest_has_machine_with_env(var2, mtype)) {
+        type2 = g_strdup(mtype);
+    }
     g_assert(type1 && type2);
 
     if (g_str_equal(type1, type2)) {
